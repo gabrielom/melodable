@@ -8,7 +8,7 @@
 
 ## How to work
 
-- **One milestone at a time.** M0–M4 are already complete. Start at **M5**. Build it, stop, let me verify, then commit before moving on.
+- **One milestone at a time.** M0–M5 are already complete. Start at **M6**. Build it, stop, let me verify, then commit before moving on.
 - Don't scaffold future milestones ahead of time. No placeholder files for M4–M7.
 - After each milestone, state plainly what to click to verify it against the plan's acceptance criteria.
 - Run `npm test` and `npm run build` before declaring a milestone done.
@@ -30,19 +30,18 @@
 - Rating colors: amber = perfect, teal = great, blue = good, red = miss (`RATING_COLOR` in `src/engine/types.ts`).
 - Respect `prefers-reduced-motion`; keep controls keyboard-focusable.
 
-## Next up: M5 — Piano mode (falling notes)
+## Next up: M6 — Ableton Link play-along
 
 From the plan:
 
-> Tasks: keyboard component, piano-roll renderer, pitch→key mapping, chord support, import routing (melodic → piano), poly synth.
+> Tasks: `link.rs` (rusty_link, feature-flagged), `useLink`, "Follow Ableton" toggle, transport follows Link tempo + phase, peers indicator.
 >
-> **Done when:** a melodic clip imports as a piano lesson; falling notes align to the correct keys; chords grade correctly.
+> **Done when:** with Ableton running Link, the trainer locks to its tempo and downbeat; changing tempo in Ableton moves the trainer.
 
-Notes from M0–M4, already in place — build on these rather than redefining:
+Notes from M0–M5, already in place — build on these rather than redefining:
 
-- **One engine, two views** (invariant 4). The `Scorer` in `src/engine/scoring.ts` is already lane-based and instrument-agnostic — `lessonTargets(lesson, laneOf)` takes a pitch→lane map. For piano the lane is the pitch itself; do **not** duplicate scoring. `useTrainer.ts` currently hardwires the pads renderer (`PadLanes`) and `noteToPad`; M5 generalizes it to pick renderer + `laneOf` by `lesson.instrument`.
-- `src/views/piano/` already has `PianoKeyboard.vue` and `mapping.ts` (`keyGeometry`, tested). Add the falling-note `PianoRoll.ts` canvas renderer alongside `PadLanes.ts`, driven by the same rAF loop and transport clock.
-- The importer (`src/engine/midi-file.ts`) currently forces `instrument: "pads"`. M5 adds the melodic branch: when `looksLikeDrums` is false (or the user overrides in `ImportDialog.vue`), emit an `instrument: "piano"` lesson with pitches used directly (no GM→pad remap). `looksLikeDrums` and the analysis are already surfaced in the dialog.
-- Chords = multiple `NoteEvent`s at the same `time`; the scorer already keys on lane+time, so per-note grading should work — verify with a chord test.
-- `audio.ts` already has a poly `playNote`.
-- Built-in lessons are pitch-based JSON in `src/data/lessons/`. Settings/last-lesson persist via `src/stores/persist.ts` (invariant 7: no localStorage). Ableton play-along (external sound) works; see `docs/ableton-playalong.md`.
+- **The transport is the integration point.** `src/engine/transport.ts` already re-anchors continuously on `setBpm(bpm, now)` (playhead stays put) and exposes `timeOfAbsBeat`. M6's Link follower drives `bpm` from Link tempo and aligns the loop's downbeat to Link phase — extend the transport with a phase/anchor setter rather than bolting on a parallel clock.
+- Keep Link behind a cargo feature (`link` already stubbed in `src-tauri/Cargo.toml`) and a runtime toggle; the app must still build/run without it. `rusty_link` needs CMake — see build_plan.html §11b/§16.
+- Rust→Vue events already flow through the same pattern as MIDI (`src/composables/useMidi.ts`): add `link://state` emission in `src-tauri/src/link.rs` and a `useLink.ts` composable; surface tempo/beat/phase/peers as `LinkState` (already in `types.ts`).
+- **Warn the user (they asked about this):** a lighter alternative to Link is following Ableton's **MIDI Clock** over a virtual port — the MIDI bridge already exists; `src-tauri/src/midi.rs` currently filters clock via `Ignore::All`. `docs/ableton-playalong.md` lays out both paths. Confirm which they want before building.
+- Two views share one engine (M5): the transport/scorer/adaptive are instrument-agnostic, so Link work touches only the transport + a composable, not the renderers.

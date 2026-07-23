@@ -11,9 +11,12 @@ import { persistGet, persistSet } from "./persist";
  */
 export type SoundOutput = "internal" | "external";
 
-/** The subset of settings we persist across launches (Tauri store, M3). */
+/**
+ * The subset of settings we persist across launches (Tauri store, M3).
+ * `instrument` is intentionally absent — from M5 the active view follows the
+ * restored lesson's instrument, so persisting it separately would conflict.
+ */
 interface SettingsSnapshot {
-  instrument: InstrumentType;
   volume: number;
   soundOutput: SoundOutput;
   metronome: boolean;
@@ -43,7 +46,6 @@ export const useSettings = defineStore("settings", () => {
   // Hydrate from the Tauri store (no-op / undefined in the browser).
   void persistGet<SettingsSnapshot>("settings").then((saved) => {
     if (saved) {
-      if (saved.instrument) instrument.value = saved.instrument;
       if (typeof saved.volume === "number") volume.value = saved.volume;
       if (saved.soundOutput) soundOutput.value = saved.soundOutput;
       if (typeof saved.metronome === "boolean") metronome.value = saved.metronome;
@@ -55,10 +57,9 @@ export const useSettings = defineStore("settings", () => {
 
   // Persist on change. Guarded so the async hydrate above doesn't get
   // clobbered by an initial write before it lands.
-  watch([instrument, volume, soundOutput, metronome, pianoLow, pianoHigh], () => {
+  watch([volume, soundOutput, metronome, pianoLow, pianoHigh], () => {
     if (!hydrated.value) return;
     void persistSet("settings", {
-      instrument: instrument.value,
       volume: volume.value,
       soundOutput: soundOutput.value,
       metronome: metronome.value,

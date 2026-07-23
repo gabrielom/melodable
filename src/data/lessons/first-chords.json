@@ -1,0 +1,23 @@
+{
+  "id": "builtin-first-chords",
+  "name": "First Chords",
+  "instrument": "piano",
+  "bpm": 70,
+  "bars": 2,
+  "beatsPerBar": 4,
+  "source": "builtin",
+  "hint": "Right hand: C, E, G one at a time — then land the full C-major chord.",
+  "notes": [
+    { "time": 0, "pitch": 60 },
+    { "time": 1, "pitch": 64 },
+    { "time": 2, "pitch": 67 },
+    { "time": 3, "pitch": 72 },
+    { "time": 4, "pitch": 60 },
+    { "time": 4, "pitch": 64 },
+    { "time": 4, "pitch": 67 },
+    { "time": 6, "pitch": 60 },
+    { "time": 6, "pitch": 64 },
+    { "time": 6, "pitch": 67 },
+    { "time": 6, "pitch": 72 }
+  ]
+}

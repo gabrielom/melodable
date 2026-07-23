@@ -7,15 +7,15 @@
  *
  * Next (see build_plan.html §15): M3 adds the lesson library + persistence.
  */
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { useSettings } from "@/stores/settings";
 import { useLessons } from "@/stores/lessons";
 import { useMidi, isTauri } from "@/composables/useMidi";
 import { useTrainer } from "@/composables/useTrainer";
 import { AudioEngine } from "@/engine/audio";
 import { PADS, PAD_KEY_MAP, PIANO_KEY_MAP, noteToPad } from "@/engine/gm";
-import { parseMidiFile, midiToLesson, type MidiAnalysis } from "@/engine/midi-file";
-import type { MidiMessage, InstrumentType, Lesson } from "@/engine/types";
+import { parseMidiFile, midiToLesson, type ParsedMidi } from "@/engine/midi-file";
+import type { MidiMessage, InstrumentType } from "@/engine/types";
 
 import DevicePicker from "@/components/DevicePicker.vue";
 import MidiMonitor from "@/components/MidiMonitor.vue";
@@ -32,12 +32,26 @@ const audio = new AudioEngine();
 const libraryOpen = ref(false);
 
 // ------------------------------------------------------------- MIDI import
+// The parsed clip is kept and re-projected whenever the chosen instrument
+// changes, so the preview updates live between Pads and Piano.
 const fileInput = ref<HTMLInputElement | null>(null);
 const importOpen = ref(false);
 const importFileName = ref("");
-const importAnalysis = ref<MidiAnalysis | null>(null);
 const importError = ref<string | null>(null);
-let importDraft: Lesson | null = null;
+const importParsed = ref<ParsedMidi | null>(null);
+const importInstrument = ref<InstrumentType>("pads");
+
+const importResult = computed(() => {
+  if (!importParsed.value) return null;
+  try {
+    return midiToLesson(importParsed.value, importFileName.value, {
+      instrument: importInstrument.value,
+    });
+  } catch {
+    return null;
+  }
+});
+const importAnalysis = computed(() => importResult.value?.analysis ?? null);
 
 function openImport() {
   fileInput.value?.click();
@@ -51,14 +65,12 @@ async function onImportFile(e: Event) {
 
   importFileName.value = file.name;
   importError.value = null;
-  importAnalysis.value = null;
-  importDraft = null;
+  importParsed.value = null;
   try {
-    const buf = await file.arrayBuffer();
-    const parsed = parseMidiFile(buf);
-    const { lesson, analysis } = midiToLesson(parsed, file.name);
-    importDraft = lesson;
-    importAnalysis.value = analysis;
+    const parsed = parseMidiFile(await file.arrayBuffer());
+    // Seed the instrument toggle from auto-detection; the user can override.
+    importInstrument.value = midiToLesson(parsed, file.name).analysis.instrument;
+    importParsed.value = parsed;
   } catch (err) {
     importError.value = err instanceof Error ? err.message : String(err);
   }
@@ -66,16 +78,14 @@ async function onImportFile(e: Event) {
 }
 
 function confirmImport(payload: { name: string; bpm: number }) {
-  if (importDraft) {
-    lessons.addLesson({ ...importDraft, name: payload.name, bpm: payload.bpm });
-  }
+  const built = importResult.value;
+  if (built) lessons.addLesson({ ...built.lesson, name: payload.name, bpm: payload.bpm });
   closeImport();
 }
 
 function closeImport() {
   importOpen.value = false;
-  importDraft = null;
-  importAnalysis.value = null;
+  importParsed.value = null;
   importError.value = null;
 }
 
@@ -100,6 +110,8 @@ const {
   toast,
   pops,
   lanes,
+  isPiano,
+  pianoRange,
   play,
   stop,
   setBpm,
@@ -187,7 +199,12 @@ async function triggerPad(
   strike(index, hitTime);
 }
 
-async function noteOn(midi: number, velocity = 100, source: LogRow["source"] = "click") {
+async function noteOn(
+  midi: number,
+  velocity = 100,
+  source: LogRow["source"] = "click",
+  hitTime?: number,
+) {
   await ensureAudio();
   if (settings.soundOutput === "internal") {
     audio.playNote(midi, undefined, Math.max(0.25, velocity / 127));
@@ -196,6 +213,8 @@ async function noteOn(midi: number, velocity = 100, source: LogRow["source"] = "
   next.set(midi, velocity);
   activeNotes.value = next;
   if (source !== "hardware") pushLog("noteon", midi, velocity, 0, source);
+  // For a piano lesson the lane is the pitch; a no-op otherwise.
+  strike(midi, hitTime);
 }
 
 function noteOff(midi: number) {
@@ -212,13 +231,13 @@ function onMidiMessage(m: MidiMessage) {
   pushLog(m.kind, m.note, m.velocity, m.channel, "hardware");
 
   if (m.kind === "noteon") {
+    const hitTime = hardwareHitTime(m.timestampMicros);
     const pad = noteToPad(m.note);
     // Drum notes light the grid; everything else is treated as pitched.
     if (pad !== null && settings.instrument === "pads") {
-      const hitTime = hardwareHitTime(m.timestampMicros);
       void triggerPad(pad, m.velocity, "hardware", hitTime);
     } else {
-      void noteOn(m.note, m.velocity, "hardware");
+      void noteOn(m.note, m.velocity, "hardware", hitTime);
     }
   } else if (m.kind === "noteoff") {
     noteOff(m.note);
@@ -289,12 +308,27 @@ const modes: Array<{ id: InstrumentType; label: string }> = [
   { id: "piano", label: "Piano" },
 ];
 
+/**
+ * The view follows the *lesson's* instrument. Switching mode jumps to the
+ * first lesson of that instrument; the watch below then syncs the view.
+ */
 function setMode(m: InstrumentType) {
-  if (m !== "pads" && playing.value) stop();
-  settings.setInstrument(m);
-  activePads.value = new Map();
-  activeNotes.value = new Map();
+  if (lessons.current.instrument === m) return;
+  const idx = lessons.lessons.findIndex((l) => l.instrument === m);
+  if (idx >= 0) lessons.selectIndex(idx);
 }
+
+// Keep the active view in step with the current lesson's instrument, and clear
+// any lit pads/keys when it changes.
+watch(
+  () => lessons.current.instrument,
+  (inst) => {
+    if (settings.instrument !== inst) settings.setInstrument(inst);
+    activePads.value = new Map();
+    activeNotes.value = new Map();
+  },
+  { immediate: true },
+);
 
 function onVolume(e: Event) {
   const v = Number((e.target as HTMLInputElement).value) / 100;
@@ -317,7 +351,7 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
         </span>
         <div>
           <div class="title">RHYTHM TRAINER</div>
-          <div class="sub">M3 · adaptive + library</div>
+          <div class="sub">M5 · pads + piano</div>
         </div>
       </div>
 
@@ -400,77 +434,78 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
     <!-- ============================= body ============================= -->
     <main class="body">
       <section class="stage">
-        <template v-if="settings.instrument === 'pads'">
-          <div class="trainhead">
-            <div class="lessoninfo">
-              <button class="lname" title="Open the lesson library" @click="libraryOpen = true">
-                {{ lesson.name }}
-                <span class="lprog">{{ lessons.currentIndex + 1 }}/{{ lessons.lessons.length }}</span>
-                <span class="chev">▾</span>
-              </button>
-              <div class="lhint">{{ lesson.hint }}</div>
-            </div>
-            <Hud
-              :bpm="bpm"
-              :accuracy="accuracy"
-              :combo="combo"
-              :best-combo="bestCombo"
-              :phase="phase"
-              :loop-acc="loopAcc"
-            />
-          </div>
-
-          <div class="lane-wrap">
-            <canvas ref="laneCanvas" class="lane-canvas" />
-            <div v-if="toast" class="toast">{{ toast }}</div>
-          </div>
-
-          <div class="controls">
-            <button v-if="!playing" class="btn primary" @click="onPlay">▶ Play</button>
-            <button v-else class="btn stopbtn" @click="stop">■ Stop</button>
-
-            <label class="slider">
-              <span>TEMPO · {{ bpm }} BPM</span>
-              <input type="range" min="50" max="160" :value="bpm" @input="onTempo" />
-            </label>
-
-            <button class="toggle" :class="{ on: autoAdapt }" @click="autoAdapt = !autoAdapt">
-              <i class="dot" />Adapt tempo
+        <div class="trainhead">
+          <div class="lessoninfo">
+            <button class="lname" title="Open the lesson library" @click="libraryOpen = true">
+              {{ lesson.name }}
+              <span class="lprog">{{ lessons.currentIndex + 1 }}/{{ lessons.lessons.length }}</span>
+              <span class="chev">▾</span>
             </button>
-            <button class="toggle" :class="{ on: guide }" @click="guide = !guide">
-              <i class="dot" />Guide sound
-            </button>
-            <button
-              class="toggle"
-              :class="{ on: settings.metronome }"
-              title="Metronome click, count-in included — turn off when Ableton provides the click"
-              @click="settings.metronome = !settings.metronome"
-            >
-              <i class="dot" />Click
-            </button>
+            <div class="lhint">{{ lesson.hint }}</div>
           </div>
-
-          <PadGrid
-            :active="activePads"
-            :emphasis="lanes"
-            :pops="pops"
-            @trigger="(i, v) => triggerPad(i, v, 'click')"
+          <Hud
+            :bpm="bpm"
+            :accuracy="accuracy"
+            :combo="combo"
+            :best-combo="bestCombo"
+            :phase="phase"
+            :loop-acc="loopAcc"
           />
-        </template>
+        </div>
 
-        <template v-else>
+        <!-- Pads: falling-note lane over the 4x4 grid -->
+        <div v-if="!isPiano" class="lane-wrap">
+          <canvas ref="laneCanvas" class="lane-canvas" />
+          <div v-if="toast" class="toast">{{ toast }}</div>
+        </div>
+
+        <!-- Piano: falling notes land on the keyboard directly below (aligned) -->
+        <div v-else class="piano-stage">
+          <canvas ref="laneCanvas" class="lane-canvas piano-canvas" />
           <PianoKeyboard
             :active="activeNotes"
-            :low-note="settings.pianoLow"
-            :high-note="settings.pianoHigh"
+            :low-note="pianoRange[0]"
+            :high-note="pianoRange[1]"
+            :pops="pops"
+            :show-legend="false"
             @note-on="(n, v) => noteOn(n, v, 'click')"
             @note-off="noteOff"
           />
-          <div class="next">
-            <b>Piano lessons land in M5</b> — the falling-note piano roll reuses this same
-            engine; for now the keyboard is free-play.
-          </div>
-        </template>
+          <div v-if="toast" class="toast">{{ toast }}</div>
+        </div>
+
+        <div class="controls">
+          <button v-if="!playing" class="btn primary" @click="onPlay">▶ Play</button>
+          <button v-else class="btn stopbtn" @click="stop">■ Stop</button>
+
+          <label class="slider">
+            <span>TEMPO · {{ bpm }} BPM</span>
+            <input type="range" min="50" max="160" :value="bpm" @input="onTempo" />
+          </label>
+
+          <button class="toggle" :class="{ on: autoAdapt }" @click="autoAdapt = !autoAdapt">
+            <i class="dot" />Adapt tempo
+          </button>
+          <button class="toggle" :class="{ on: guide }" @click="guide = !guide">
+            <i class="dot" />Guide sound
+          </button>
+          <button
+            class="toggle"
+            :class="{ on: settings.metronome }"
+            title="Metronome click, count-in included — turn off when Ableton provides the click"
+            @click="settings.metronome = !settings.metronome"
+          >
+            <i class="dot" />Click
+          </button>
+        </div>
+
+        <PadGrid
+          v-if="!isPiano"
+          :active="activePads"
+          :emphasis="lanes"
+          :pops="pops"
+          @trigger="(i, v) => triggerPad(i, v, 'click')"
+        />
       </section>
 
       <aside class="side">
@@ -491,6 +526,8 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
       :file-name="importFileName"
       :analysis="importAnalysis"
       :error="importError"
+      :instrument="importInstrument"
+      @instrument="(i: InstrumentType) => (importInstrument = i)"
       @confirm="confirmImport"
       @close="closeImport"
     />
@@ -682,6 +719,23 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
   background: #111318;
   touch-action: none;
 }
+
+/* Piano: falling-note canvas and keyboard as one flush, aligned unit. */
+.piano-stage {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  flex: none;
+}
+.piano-canvas {
+  display: block;
+  width: 100%;
+  height: 210px;
+  background: #0b0d11;
+  touch-action: none;
+}
+
 .toast {
   position: absolute;
   top: 10px;
@@ -747,16 +801,6 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
 .toggle .dot { width: 8px; height: 8px; border-radius: 8px; background: #404750; }
 .toggle.on { color: var(--ink); border-color: #37d0c455; }
 .toggle.on .dot { background: var(--teal); box-shadow: 0 0 8px var(--teal); }
-
-.next {
-  margin-top: auto;
-  padding-top: 18px;
-  font-size: 12.5px;
-  color: var(--faint);
-  line-height: 1.55;
-  max-width: 560px;
-}
-.next b { color: var(--amber); font-family: var(--mono); font-size: 11px; letter-spacing: 0.5px; }
 
 @media (max-width: 900px) {
   .body { grid-template-columns: 1fr; }

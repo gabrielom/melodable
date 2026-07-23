@@ -17,7 +17,10 @@ import { nextTempo, AdvanceTracker, PUSH_ACC } from "@/engine/adaptive";
 import { MidiClock } from "@/engine/midi-clock";
 import { noteToPad, PADS } from "@/engine/gm";
 import type { AudioEngine } from "@/engine/audio";
+import type { LaneRenderer } from "@/views/lane-frame";
 import { PadLanes } from "@/views/pads/PadLanes";
+import { PianoRoll } from "@/views/piano/PianoRoll";
+import { normalizeRange } from "@/views/piano/mapping";
 
 export interface RatingPop {
   id: number;
@@ -49,9 +52,28 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
 
   const midiClock = new MidiClock();
 
-  const targets = computed(() => lessonTargets(lesson.value, noteToPad));
-  /** Pad indices this lesson uses, in display order — the visible lanes. */
+  const isPiano = computed(() => lesson.value.instrument === "piano");
+
+  /**
+   * Pitch → lane, the one thing that differs between the two views. For pads
+   * a lane is a pad index; for piano it's the pitch itself (invariant 4 — the
+   * scorer never knows which instrument it's grading).
+   */
+  function laneOf(pitch: number): number | null {
+    return isPiano.value ? pitch : noteToPad(pitch);
+  }
+
+  const targets = computed(() => lessonTargets(lesson.value, laneOf));
+
+  /** Pads: the pad indices this lesson uses, left-to-right. */
   const lanes = computed(() => [...new Set(targets.value.map((t) => t.lane))].sort((a, b) => a - b));
+
+  /** Piano: the visible key range covering the lesson's pitches, padded + snapped. */
+  const pianoRange = computed<[number, number]>(() => {
+    const pitches = targets.value.map((t) => t.lane);
+    if (pitches.length === 0) return normalizeRange(settings.pianoLow, settings.pianoHigh);
+    return normalizeRange(Math.min(...pitches) - 2, Math.max(...pitches) + 2);
+  });
 
   let transport = new Transport({
     bpm: bpm.value,
@@ -61,7 +83,7 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
   let scorer = new Scorer(targets.value);
   const advanceTracker = new AdvanceTracker();
 
-  let renderer: PadLanes | null = null;
+  let renderer: LaneRenderer | null = null;
   let raf = 0;
   let lastLoop = -1;
   let popId = 0;
@@ -70,6 +92,36 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
     typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const timeOf = (loopIndex: number, beat: number) => transport.timeOf(loopIndex, beat);
+
+  /** Build the renderer matching the current lesson's instrument. */
+  function buildRenderer(): void {
+    const el = canvasEl.value;
+    if (!el) {
+      renderer = null;
+      return;
+    }
+    renderer = isPiano.value ? new PianoRoll(el) : new PadLanes(el);
+    renderer.resize();
+  }
+
+  /** The frame handed to whichever renderer is active this tick. */
+  function drawFrame(now: number, pos: { countIn: boolean; countInBeat: number } | null): void {
+    if (!renderer) return;
+    renderer.resize();
+    renderer.draw({
+      now,
+      secPerBeat: transport.secPerBeat,
+      playing: pos !== null,
+      countIn: pos?.countIn ?? false,
+      countInBeat: pos?.countInBeat ?? 0,
+      countInBeats: transport.countInBeats,
+      instances: pos ? scorer.instances : [],
+      reducedMotion,
+      padLanes: lanes.value,
+      lowNote: pianoRange.value[0],
+      highNote: pianoRange.value[1],
+    });
+  }
 
   // ----------------------------------------------------------------- control
 
@@ -136,17 +188,18 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
   // ------------------------------------------------------------------ input
 
   /**
-   * Grade a strike on a pad. `time` is the hit's audio-clock time; defaults
-   * to now (mouse/keyboard). Hardware callers pass the converted midir
-   * timestamp. Returns the rating, or null for strays/count-in/stopped.
+   * Grade a strike on a lane — a pad index for pads, a MIDI pitch for piano.
+   * `time` is the hit's audio-clock time; defaults to now (mouse/keyboard).
+   * Hardware callers pass the converted midir timestamp. Returns the rating,
+   * or null for strays/count-in/stopped.
    */
-  function strike(pad: number, time?: number): Rating | null {
+  function strike(lane: number, time?: number): Rating | null {
     if (!playing.value) return null;
     const now = audio.now;
     if (transport.position(now).countIn) return null;
-    const res = scorer.hit(pad, time ?? now);
+    const res = scorer.hit(lane, time ?? now);
     if (!res) return null;
-    addPop(pad, res.rating);
+    addPop(lane, res.rating);
     syncStats();
     return res.rating;
   }
@@ -199,36 +252,18 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
         syncStats();
       }
 
-      if (renderer) {
-        renderer.resize();
-        renderer.draw({
-          now,
-          secPerBeat: transport.secPerBeat,
-          playing: true,
-          countIn: pos.countIn,
-          countInBeat: pos.countInBeat,
-          countInBeats: transport.countInBeats,
-          lanes: lanes.value,
-          instances: scorer.instances,
-          reducedMotion,
-        });
-      }
-    } else if (renderer) {
-      renderer.resize();
-      renderer.draw({
-        now,
-        secPerBeat: transport.secPerBeat,
-        playing: false,
-        countIn: false,
-        countInBeat: 0,
-        countInBeats: transport.countInBeats,
-        lanes: lanes.value,
-        instances: [],
-        reducedMotion,
-      });
+      drawFrame(now, pos);
+    } else {
+      drawFrame(now, null);
     }
 
     raf = requestAnimationFrame(frame);
+  }
+
+  /** A guide note for a lane: the drum voice for pads, the pitch for piano. */
+  function guideVoice(lane: number, at: number): void {
+    if (isPiano.value) audio.playNote(lane, at, 0.4);
+    else audio.playDrum(PADS[lane].type, at, 0.45);
   }
 
   /** Play the target part quietly so the player can hear what to aim for. */
@@ -240,7 +275,7 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
       for (const t of targets.value) {
         const ab = L * lb + t.beat;
         if (ab >= Math.max(fromBeat, 0) && ab < toBeat) {
-          audio.playDrum(PADS[t.lane].type, transport.timeOfAbsBeat(ab), 0.45);
+          guideVoice(t.lane, transport.timeOfAbsBeat(ab));
         }
       }
     }
@@ -305,10 +340,9 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
     () => resetForLesson(),
   );
 
-  watch(canvasEl, (el) => {
-    renderer = el ? new PadLanes(el) : null;
-    renderer?.resize();
-  });
+  // Rebuild the renderer when the canvas mounts/swaps or the instrument
+  // changes (pads ↔ piano use different canvases and renderers).
+  watch([canvasEl, isPiano], () => buildRenderer());
 
   onMounted(() => {
     raf = requestAnimationFrame(frame);
@@ -334,6 +368,8 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
     toast,
     pops,
     lanes,
+    isPiano,
+    pianoRange,
     play,
     stop,
     setBpm,

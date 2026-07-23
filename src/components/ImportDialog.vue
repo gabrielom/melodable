@@ -7,22 +7,44 @@
  * An error prop puts the dialog into a failure state (unreadable/empty file)
  * with just a Close action.
  */
-import { onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import type { MidiAnalysis } from "@/engine/midi-file";
+import type { InstrumentType } from "@/engine/types";
 
 const props = defineProps<{
   fileName: string;
   analysis: MidiAnalysis | null;
   error: string | null;
+  instrument: InstrumentType;
 }>();
 
 const emit = defineEmits<{
   (e: "confirm", payload: { name: string; bpm: number }): void;
+  (e: "instrument", value: InstrumentType): void;
   (e: "close"): void;
 }>();
 
 const name = ref(props.fileName.replace(/\.(mid|midi)$/i, "").slice(0, 40));
 const bpm = ref(props.analysis?.bpm ?? 120);
+
+/** Does the chosen instrument disagree with what the clip looks like? */
+const mismatch = computed(() =>
+  props.analysis
+    ? props.analysis.looksLikeDrums
+      ? props.instrument !== "pads"
+      : props.instrument !== "piano"
+    : false,
+);
+
+const detectMsg = computed(() => {
+  const a = props.analysis;
+  if (!a) return "";
+  const detected = a.looksLikeDrums ? "a drum clip" : "melodic";
+  const asWhat = props.instrument === "pads" ? "a pad" : "a piano";
+  return mismatch.value
+    ? `Reads as ${detected}, but you picked ${props.instrument}. That's fine — switch above if you'd rather.`
+    : `Reads as ${detected} — importing as ${asWhat} lesson.`;
+});
 
 function confirm() {
   if (!props.analysis) return;
@@ -65,6 +87,26 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
             <input v-model="name" class="input" maxlength="40" />
           </label>
 
+          <div class="field">
+            <span class="flabel">IMPORT AS</span>
+            <div class="seg">
+              <button
+                class="segbtn"
+                :class="{ on: instrument === 'pads' }"
+                @click="emit('instrument', 'pads')"
+              >
+                Pads
+              </button>
+              <button
+                class="segbtn"
+                :class="{ on: instrument === 'piano' }"
+                @click="emit('instrument', 'piano')"
+              >
+                Piano
+              </button>
+            </div>
+          </div>
+
           <div class="grid">
             <label class="field">
               <span class="flabel">TEMPO</span>
@@ -84,19 +126,13 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
           </div>
 
           <div class="field">
-            <span class="flabel">PADS USED</span>
+            <span class="flabel">{{ instrument === "pads" ? "PADS USED" : "KEYS USED" }}</span>
             <div class="lanes">{{ analysis.lanes.join(" · ") }}</div>
           </div>
 
-          <div class="detect" :class="{ warn: !analysis.looksLikeDrums }">
-            <span class="tag">{{ analysis.looksLikeDrums ? "DRUMS" : "MELODIC?" }}</span>
-            <span v-if="analysis.looksLikeDrums">
-              Reads as a drum clip — importing as a pad lesson.
-            </span>
-            <span v-else>
-              This doesn't look like a drum clip. It'll still import as pads (pitches mapped onto
-              the grid); piano lessons arrive in M5.
-            </span>
+          <div class="detect" :class="{ warn: mismatch }">
+            <span class="tag">{{ analysis.looksLikeDrums ? "DRUMS" : "MELODIC" }}</span>
+            <span>{{ detectMsg }}</span>
           </div>
         </div>
 
@@ -162,6 +198,27 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
   font-family: var(--sans);
 }
 .input:focus { outline: none; border-color: #37d0c455; }
+.seg {
+  display: inline-flex;
+  gap: 3px;
+  background: #0c0e12;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 3px;
+  width: max-content;
+}
+.segbtn {
+  background: none;
+  border: none;
+  color: var(--dim);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 5px 16px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.segbtn.on { background: var(--panel2); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
+
 .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
 .bpmrow { display: flex; align-items: center; gap: 7px; }
 .input.bpm { width: 74px; font-family: var(--mono); }

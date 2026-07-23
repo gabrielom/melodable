@@ -169,3 +169,37 @@ describe("scorer", () => {
     expect(s.instances).toHaveLength(3);
   });
 });
+
+describe("chord grading (piano)", () => {
+  // A C-major triad on beat 0: three lanes (pitches) sharing the same time.
+  const chord: TargetNote[] = [
+    { lane: 60, beat: 0 },
+    { lane: 64, beat: 0 },
+    { lane: 67, beat: 0 },
+  ];
+  const timeOf = (loop: number, beat: number) => 5 + loop + beat * 0.5;
+
+  it("grades each chord note independently, by its own pitch", () => {
+    const s = new Scorer(chord);
+    s.spawnLoop(0, timeOf); // all three at t=5
+
+    expect(s.hit(60, 5.0)?.rating).toBe("perfect");
+    expect(s.hit(64, 5.05)?.rating).toBe("great"); // 50ms late → great window
+    expect(s.hit(67, 5.0)?.rating).toBe("perfect");
+    expect(s.combo).toBe(3);
+    expect(s.accuracy).toBeGreaterThan(0.9);
+  });
+
+  it("counts a missing chord note as a miss, not the whole chord", () => {
+    const s = new Scorer(chord);
+    s.spawnLoop(0, timeOf);
+    s.hit(60, 5.0);
+    s.hit(64, 5.0);
+    // never play G; its window closes
+    const missed = s.sweepMisses(5.5);
+    expect(missed).toHaveLength(1);
+    expect(missed[0].lane).toBe(67);
+    // two of three landed
+    expect(s.accuracy).toBeCloseTo(2 / 3);
+  });
+});

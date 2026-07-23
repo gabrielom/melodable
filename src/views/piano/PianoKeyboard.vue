@@ -1,10 +1,14 @@
 <script setup lang="ts">
 /**
  * On-screen piano. Geometry comes from mapping.ts — the same function the
- * M5 piano-roll renderer will use to align falling notes to their keys.
+ * piano-roll renderer uses to align falling notes to their keys, so the
+ * keyboard must stay flush (no outer padding/margins) for the columns to line
+ * up with the canvas above it.
  */
 import { computed } from "vue";
 import { keyGeometry, isWhiteKey, noteName, normalizeRange } from "./mapping";
+import { RATING_COLOR } from "@/engine/types";
+import type { RatingPop } from "@/composables/useTrainer";
 
 const props = withDefaults(
   defineProps<{
@@ -12,8 +16,11 @@ const props = withDefaults(
     highNote?: number;
     /** midi note -> velocity (0-127) for currently-held notes */
     active: Map<number, number>;
+    /** transient rating flashes from the scorer (lane === pitch) */
+    pops?: RatingPop[];
+    showLegend?: boolean;
   }>(),
-  { lowNote: 48, highNote: 72 },
+  { lowNote: 48, highNote: 72, showLegend: true },
 );
 
 const emit = defineEmits<{
@@ -31,7 +38,7 @@ const allNotes = computed(() => {
 const whiteNotes = computed(() => allNotes.value.filter(isWhiteKey));
 const blackNotes = computed(() => allNotes.value.filter((n) => !isWhiteKey(n)));
 
-/** Percentage-based widths keep the keyboard responsive. */
+/** Percentage-based widths keep the keyboard responsive and canvas-aligned. */
 const whiteWidth = computed(() => 100 / whiteNotes.value.length);
 
 function blackStyle(n: number) {
@@ -39,6 +46,11 @@ function blackStyle(n: number) {
   const g = keyGeometry(n, lo, whiteWidth.value);
   return { left: `${g.x}%`, width: `${g.width}%` };
 }
+
+const flashColor = (n: number): string | null => {
+  const pop = props.pops?.find((p) => p.lane === n);
+  return pop ? RATING_COLOR[pop.rating] : null;
+};
 
 const isC = (n: number) => n % 12 === 0;
 </script>
@@ -52,6 +64,7 @@ const isC = (n: number) => n % 12 === 0;
         :key="n"
         class="white"
         :class="{ on: active.has(n) }"
+        :style="flashColor(n) ? { boxShadow: `inset 0 0 0 2px ${flashColor(n)}, 0 0 16px ${flashColor(n)}` } : {}"
         @pointerdown.prevent="emit('noteOn', n, 100)"
         @pointerup="emit('noteOff', n)"
         @pointerleave="emit('noteOff', n)"
@@ -65,14 +78,14 @@ const isC = (n: number) => n % 12 === 0;
         :key="n"
         class="black"
         :class="{ on: active.has(n) }"
-        :style="blackStyle(n)"
+        :style="[blackStyle(n), flashColor(n) ? { boxShadow: `0 0 0 2px ${flashColor(n)}, 0 0 14px ${flashColor(n)}` } : {}]"
         @pointerdown.prevent="emit('noteOn', n, 100)"
         @pointerup="emit('noteOff', n)"
         @pointerleave="emit('noteOff', n)"
       />
     </div>
 
-    <p class="legend">
+    <p v-if="showLegend" class="legend">
       Home row plays white keys (<code>a s d f g h j k</code>), upper row the blacks
       (<code>w e t y u</code>). Or play your MIDI keyboard — every note lights up here.
     </p>
@@ -84,11 +97,8 @@ const isC = (n: number) => n % 12 === 0;
 .keyboard {
   position: relative;
   display: flex;
-  height: 190px;
+  height: 150px;
   background: #0b0d11;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 8px 8px 10px;
   overflow: hidden;
 }
 .white {
@@ -96,8 +106,7 @@ const isC = (n: number) => n % 12 === 0;
   flex: 1;
   background: linear-gradient(180deg, #f2f4f7 0%, #dfe3e9 92%, #c6ccd4 100%);
   border: 1px solid #0b0d11;
-  border-radius: 0 0 6px 6px;
-  margin-right: 1px;
+  border-radius: 0 0 5px 5px;
   cursor: pointer;
   display: flex;
   align-items: flex-end;
@@ -105,7 +114,6 @@ const isC = (n: number) => n % 12 === 0;
   padding-bottom: 7px;
   transition: background 0.06s, box-shadow 0.06s;
 }
-.white:last-of-type { margin-right: 0; }
 .white.on {
   background: linear-gradient(180deg, #ffd79a 0%, var(--amber) 100%);
   box-shadow: 0 0 18px rgba(255, 179, 64, 0.55) inset;
@@ -118,7 +126,7 @@ const isC = (n: number) => n % 12 === 0;
 }
 .black {
   position: absolute;
-  top: 8px;
+  top: 0;
   height: 62%;
   background: linear-gradient(180deg, #2b3038 0%, #14171c 88%, #0a0c0f 100%);
   border: 1px solid #05070a;
@@ -135,7 +143,7 @@ const isC = (n: number) => n % 12 === 0;
 .legend {
   font-size: 12px;
   color: var(--faint);
-  margin: 14px 0 0;
+  margin: 12px 0 0;
   line-height: 1.5;
 }
 .legend code {

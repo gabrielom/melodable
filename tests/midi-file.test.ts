@@ -217,7 +217,7 @@ describe("midiToLesson", () => {
         ],
       }),
     );
-    const { lesson } = midiToLesson(parsed, "weird.mid");
+    const { lesson } = midiToLesson(parsed, "weird.mid", { instrument: "pads" });
     for (const n of lesson.notes) {
       expect(noteToPad(n.pitch), `pitch ${n.pitch}`).not.toBeNull();
     }
@@ -227,10 +227,11 @@ describe("midiToLesson", () => {
     expect(noteToPad(lesson.notes[1].pitch)).not.toBe(noteToPad(lesson.notes[3].pitch));
   });
 
-  it("flags a melodic clip as not-drums but still imports it", () => {
+  it("auto-detects a melodic clip as a piano lesson, pitches untouched", () => {
     const parsed = parseMidiFile(
       buildSmf({
         ppq: 480,
+        tempoUs: 500000,
         notes: [
           { tick: 0, pitch: 60, vel: 100 },
           { tick: 480, pitch: 64, vel: 100 },
@@ -240,8 +241,36 @@ describe("midiToLesson", () => {
     );
     const { lesson, analysis } = midiToLesson(parsed, "melody.mid");
     expect(analysis.looksLikeDrums).toBe(false);
-    expect(lesson.notes).toHaveLength(3);
-    for (const n of lesson.notes) expect(noteToPad(n.pitch)).not.toBeNull();
+    expect(analysis.instrument).toBe("piano");
+    expect(lesson.instrument).toBe("piano");
+    // pitches pass straight through — no GM→pad remap
+    expect(lesson.notes.map((n) => n.pitch)).toEqual([60, 64, 67]);
+    expect(analysis.lanes).toEqual(["C4", "E4", "G4"]);
+  });
+
+  it("preserves simultaneous notes as a chord (same time, distinct pitches)", () => {
+    const parsed = parseMidiFile(
+      buildSmf({
+        ppq: 480,
+        notes: [
+          { tick: 0, pitch: 60, vel: 100 },
+          { tick: 0, pitch: 64, vel: 100 },
+          { tick: 0, pitch: 67, vel: 100 },
+        ],
+      }),
+    );
+    const { lesson } = midiToLesson(parsed, "triad.mid", { instrument: "piano" });
+    const atZero = lesson.notes.filter((n) => n.time === 0).map((n) => n.pitch);
+    expect(atZero).toEqual([60, 64, 67]);
+  });
+
+  it("honours an explicit instrument override (drums → piano)", () => {
+    const parsed = parseMidiFile(
+      buildSmf({ ppq: 480, notes: [{ tick: 0, pitch: 36, vel: 100 }] }),
+    );
+    const asPiano = midiToLesson(parsed, "kick.mid", { instrument: "piano" });
+    expect(asPiano.lesson.instrument).toBe("piano");
+    expect(asPiano.lesson.notes[0].pitch).toBe(36); // kept, not remapped
   });
 
   it("throws on an empty clip", () => {

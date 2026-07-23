@@ -11,8 +11,11 @@
  * routing to piano keys arrives with M5.
  */
 
-import type { Lesson, NoteEvent } from "./types";
+import type { InstrumentType, Lesson, NoteEvent } from "./types";
 import { PADS, PAD_TO_NOTE, looksLikeDrums, noteToPad } from "./gm";
+
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const noteName = (n: number) => `${NOTE_NAMES[((n % 12) + 12) % 12]}${Math.floor(n / 12) - 1}`;
 
 export interface RawMidiNote {
   tick: number;
@@ -162,13 +165,15 @@ export function parseMidiFile(buffer: ArrayBuffer): ParsedMidi {
 }
 
 export interface MidiAnalysis {
+  /** The instrument the lesson was built for (chosen or auto-detected). */
+  instrument: InstrumentType;
   bpm: number;
   bars: number;
   beatsPerBar: number;
   noteCount: number;
   /** True if the clip reads as a drum part (channel 10 or GM-drum majority). */
   looksLikeDrums: boolean;
-  /** Distinct pad names the generated lesson uses, for the import preview. */
+  /** Distinct pad or key names the generated lesson uses, for the preview. */
   lanes: string[];
 }
 
@@ -184,7 +189,7 @@ const SPARE_PADS = [6, 7, 9, 10, 4, 5, 11, 3, 2, 1, 0, 8, 15, 14, 13, 12];
 export function midiToLesson(
   parsed: ParsedMidi,
   name: string,
-  opts: { bpm?: number } = {},
+  opts: { bpm?: number; instrument?: InstrumentType } = {},
 ): { lesson: Lesson; analysis: MidiAnalysis } {
   if (parsed.notes.length === 0) throw new Error("No notes found in this MIDI clip");
 
@@ -195,6 +200,14 @@ export function midiToLesson(
   const minBeat = Math.min(...raw.map((n) => n.beat));
   const shift = Math.floor(minBeat / beatsPerBar) * beatsPerBar;
 
+  const isDrums = looksLikeDrums(
+    parsed.notes.map((n) => n.pitch),
+    parsed.notes.some((n) => n.channel === 9) ? 9 : undefined,
+  );
+  const instrument: InstrumentType = opts.instrument ?? (isDrums ? "pads" : "piano");
+
+  // For pads, route pitches to pad lanes and place unknown percussion on spare
+  // pads (consistent per pitch). For piano the pitch is used directly.
   const usedPads = new Set<number>();
   for (const n of raw) {
     const pad = noteToPad(n.pitch);
@@ -203,7 +216,7 @@ export function midiToLesson(
   const spares = SPARE_PADS.filter((p) => !usedPads.has(p));
   const remap = new Map<number, number>();
   let spareI = 0;
-  const pitchFor = (pitch: number): number => {
+  const padPitchFor = (pitch: number): number => {
     if (noteToPad(pitch) !== null) return pitch;
     if (!remap.has(pitch)) {
       const pad = spares.length ? spares[spareI++ % spares.length] : 12;
@@ -215,23 +228,21 @@ export function midiToLesson(
   const notes: NoteEvent[] = raw
     .map((n) => ({
       time: Number((n.beat - shift).toFixed(4)),
-      pitch: pitchFor(n.pitch),
+      pitch: instrument === "pads" ? padPitchFor(n.pitch) : n.pitch,
       velocity: n.velocity,
     }))
-    .sort((a, b) => a.time - b.time);
+    .sort((a, b) => a.time - b.time || a.pitch - b.pitch);
 
   const maxBeat = Math.max(...notes.map((n) => n.time));
   const bars = Math.max(1, Math.ceil((maxBeat + 1e-4) / beatsPerBar));
 
-  const isDrums = looksLikeDrums(
-    parsed.notes.map((n) => n.pitch),
-    parsed.notes.some((n) => n.channel === 9) ? 9 : undefined,
-  );
-
-  const lanes = [...new Set(notes.map((n) => noteToPad(n.pitch)))]
-    .filter((p): p is number => p !== null)
-    .sort((a, b) => a - b)
-    .map((p) => PADS[p].name);
+  const lanes =
+    instrument === "pads"
+      ? [...new Set(notes.map((n) => noteToPad(n.pitch)))]
+          .filter((p): p is number => p !== null)
+          .sort((a, b) => a - b)
+          .map((p) => PADS[p].name)
+      : [...new Set(notes.map((n) => n.pitch))].sort((a, b) => a - b).map(noteName);
 
   const cleanName = name.replace(/\.(mid|midi)$/i, "").slice(0, 40).trim() || "Imported clip";
   const bpm = Math.min(Math.max(Math.round(opts.bpm ?? parsed.bpm ?? 120), 40), 240);
@@ -239,16 +250,20 @@ export function midiToLesson(
   const lesson: Lesson = {
     id: `import-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
     name: cleanName,
-    instrument: "pads",
+    instrument,
     bpm,
     bars,
     beatsPerBar,
     notes,
     source: "midi-import",
-    hint: "Imported clip — play your own part in time.",
+    hint:
+      instrument === "piano"
+        ? "Imported clip — play the melody in time."
+        : "Imported clip — play your own part in time.",
   };
 
   const analysis: MidiAnalysis = {
+    instrument,
     bpm,
     bars,
     beatsPerBar,

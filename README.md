@@ -17,21 +17,22 @@ A Melodics-style timing trainer for **MPC-style pads** and **piano**, where less
 | **M2 — Engine + pad view** | ✅ done |
 | **M3 — Adaptive difficulty + library** | ✅ done |
 | **M4 — Ableton MIDI import** | ✅ done |
-| M5 — Piano mode (falling notes) | ⬜ next |
-| M6 — Ableton Link play-along | ⬜ |
+| **M5 — Piano mode (falling notes)** | ✅ done |
+| M6 — Ableton Link play-along | ⬜ next |
 | M7 — Polish & package | ⬜ |
 
 ### What works right now
 
 - Native MIDI input through Rust — device enumeration, connect/disconnect, live streaming.
 - **Pads mode:** 4×4 MPC-style grid, synthesized drum kit, hit glow scaled by velocity.
-- **Piano mode:** on-screen keyboard built on the real `keyGeometry()` mapping M5 will reuse.
+- **Piano mode:** Synthesia-style falling notes aligned to an on-screen keyboard, poly synth, chord grading — same transport/scorer/adaptive engine as pads.
 - Play from hardware, mouse, or computer keyboard.
 - **Falling-note trainer (pads):** transport with count-in, canvas lanes falling to a hit line, Perfect/Great/Good/Miss grading, accuracy + combo HUD, metronome, and an optional guide track.
 - **Adaptive tempo:** clean bars nudge the BPM up (capped at 135% of base), rough bars ease it off (floored at 60%) — Melodics' Auto-BPM idea.
 - **Lesson progression + library:** six built-in pad lessons (Four on the Floor → Tom Fill); clearing one (two strong bars at/above base tempo) advances to the next, and the lesson library (click the lesson name) switches to any lesson.
 - **Persistent settings:** volume, instrument, sound source, metronome, and last lesson are saved via the Tauri store plugin (in-app only; browser dev stays in-memory).
-- **Ableton clip import:** drop in a `.mid` drum clip and it becomes a gradable lesson at its own tempo — native SMF parser (tempo/time-signature meta, running status), GM→pad routing, and a preview dialog.
+- **Ableton clip import:** drop in a `.mid` clip and it becomes a gradable lesson at its own tempo — native SMF parser (tempo/time-signature meta, running status), auto-detects drums→pads / melodic→piano (overridable), and a preview dialog.
+- **Two instruments, one engine:** pads and piano share the transport, scorer, and adaptive tempo; they differ only in a canvas renderer and a pitch→lane map. Switching the mode toggle jumps to that instrument's lesson.
 - Hardware hits are graded at their `midir` timestamp mapped onto the audio clock, not at event-delivery time.
 - **MIDI monitor** — live log of every message with note number, velocity, channel, and delta time.
 - Unit tests for the mapping layer and the engine (transport, scoring, adaptive, MIDI clock) — `npm test`.
@@ -113,6 +114,15 @@ npm run tauri icon app-icon.png
 
 **Acceptance (from the plan):** a drum clip exported from Ableton becomes a playable, gradable lesson at its own tempo.
 
+## Verifying M5
+
+1. `npm run tauri dev`; click **Piano** in the header — it loads the built-in *First Chords* lesson (falling notes over the keyboard).
+2. Hit **▶ Play**: notes fall to the hit line and land on their keys; play them (MIDI keyboard, or `a s d f g h j k` = C major) — keys flash by rating and the HUD tracks accuracy/combo. The lesson ends on a **C-major chord** (three notes at once); play all three to grade them independently.
+3. Import a **melodic** `.mid` (a bass line or riff from Ableton): the import dialog auto-selects **Piano** and lists the keys used. Add it and play it.
+4. Toggle **Pads** ↔ **Piano**: the view, keyboard/grid, and lesson switch together.
+
+**Acceptance (from the plan):** a melodic clip imports as a piano lesson; falling notes align to the correct keys; chords grade correctly.
+
 > Imported lessons live for the session. If a controller or Drum Rack sends note numbers the grid doesn't know, the importer places them on spare pads rather than dropping them; extend `GM_TO_PAD` in `src/engine/gm.ts` to place them deliberately.
 
 ### Playing along with Ableton (sound from Ableton, tracking in Melodable)
@@ -143,8 +153,9 @@ src/
 ├─ components/    # DevicePicker, MidiMonitor, Hud, LessonLibrary, ImportDialog
 ├─ data/lessons/  # built-in lesson JSON
 └─ views/
+   ├─ lane-frame.ts # shared LaneRenderer contract (pads + piano)
    ├─ pads/       # PadGrid.vue, PadLanes.ts (canvas lanes)
-   └─ piano/      # PianoKeyboard.vue, mapping.ts  (+ PianoRoll.ts in M5)
+   └─ piano/      # PianoKeyboard.vue, mapping.ts, PianoRoll.ts (falling notes)
 
 src-tauri/src/
 ├─ main.rs        # Tauri builder, state, command registration

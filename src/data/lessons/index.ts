@@ -12,6 +12,7 @@ import eighthNoteHats from "./eighth-note-hats.json";
 import offBeatHats from "./off-beat-hats.json";
 import syncopatedGroove from "./syncopated-groove.json";
 import tomFill from "./tom-fill.json";
+import firstChords from "./first-chords.json";
 
 export const BUILTIN_LESSONS: Lesson[] = [
   fourOnTheFloor as Lesson,
@@ -20,4 +21,5 @@ export const BUILTIN_LESSONS: Lesson[] = [
   offBeatHats as Lesson,
   syncopatedGroove as Lesson,
   tomFill as Lesson,
+  firstChords as Lesson,
 ];

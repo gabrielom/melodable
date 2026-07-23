@@ -9,31 +9,16 @@
  * horizontal hit line; resolved notes take their rating colour.
  */
 
-import type { NoteInstance } from "@/engine/scoring";
 import { RATING_COLOR } from "@/engine/types";
 import { PADS } from "@/engine/gm";
-
-export interface LaneFrame {
-  /** Audio-clock now, seconds. */
-  now: number;
-  secPerBeat: number;
-  playing: boolean;
-  countIn: boolean;
-  /** Beats elapsed within the count-in. */
-  countInBeat: number;
-  countInBeats: number;
-  /** Pad indices used by the lesson, in display order. */
-  lanes: number[];
-  instances: readonly NoteInstance[];
-  reducedMotion?: boolean;
-}
+import type { LaneFrame, LaneRenderer } from "@/views/lane-frame";
 
 const PX_PER_BEAT = 118;
 const HIT_FROM_BOTTOM = 54;
 
 const padColor = (i: number, a = 1) => `hsla(${(i * 47) % 360}, 55%, 60%, ${a})`;
 
-export class PadLanes {
+export class PadLanes implements LaneRenderer {
   private ctx: CanvasRenderingContext2D;
   private dpr = 1;
 
@@ -62,7 +47,7 @@ export class PadLanes {
     ctx.fillStyle = "#111318";
     ctx.fillRect(0, 0, W, H);
 
-    const lanes = f.lanes.length ? f.lanes : [12];
+    const lanes = f.padLanes.length ? f.padLanes : [12];
     const padL = 6;
     const laneGap = 6;
     const laneW = (W - padL * 2 - laneGap * (lanes.length - 1)) / lanes.length;
