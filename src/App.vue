@@ -112,6 +112,9 @@ function flashPad(index: number, velocity: number) {
  * A pad strike from any source: sound + flash, then the scorer grades it.
  * `hitTime` is the audio-clock hit time; omitted for mouse/keyboard, where
  * "now" is the best estimate we have.
+ *
+ * In external-sound mode the synth stays silent — the controller is routed
+ * through the DAW (Ableton), which makes the sound; we only track it.
  */
 async function triggerPad(
   index: number,
@@ -122,7 +125,9 @@ async function triggerPad(
   await ensureAudio();
   const pad = PADS[index];
   if (!pad) return;
-  audio.playDrum(pad.type, undefined, Math.max(0.25, velocity / 127));
+  if (settings.soundOutput === "internal") {
+    audio.playDrum(pad.type, undefined, Math.max(0.25, velocity / 127));
+  }
   flashPad(index, velocity);
   if (source !== "hardware") pushLog("noteon", pad.outNote, velocity, 9, source);
   strike(index, hitTime);
@@ -130,7 +135,9 @@ async function triggerPad(
 
 async function noteOn(midi: number, velocity = 100, source: LogRow["source"] = "click") {
   await ensureAudio();
-  audio.playNote(midi, undefined, Math.max(0.25, velocity / 127));
+  if (settings.soundOutput === "internal") {
+    audio.playNote(midi, undefined, Math.max(0.25, velocity / 127));
+  }
   const next = new Map(activeNotes.value);
   next.set(midi, velocity);
   activeNotes.value = next;
@@ -303,6 +310,26 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
         ▶ Enable audio
       </button>
       <span v-else class="armed">audio running · {{ latencyMs }}ms out</span>
+
+      <div class="sndsel" role="group" aria-label="Instrument sound source">
+        <span class="sndlbl">SOUND</span>
+        <button
+          class="snd"
+          :class="{ on: settings.soundOutput === 'internal' }"
+          title="Melodable's built-in synth plays your hits"
+          @click="settings.soundOutput = 'internal'"
+        >
+          Synth
+        </button>
+        <button
+          class="snd"
+          :class="{ on: settings.soundOutput === 'external' }"
+          title="Silent mode: your DAW (Ableton) makes the sound while Melodable tracks timing and accuracy"
+          @click="settings.soundOutput = 'external'"
+        >
+          Ableton / DAW
+        </button>
+      </div>
     </div>
 
     <!-- ============================= body ============================= -->
@@ -343,6 +370,14 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
             </button>
             <button class="toggle" :class="{ on: guide }" @click="guide = !guide">
               <i class="dot" />Guide sound
+            </button>
+            <button
+              class="toggle"
+              :class="{ on: settings.metronome }"
+              title="Metronome click, count-in included — turn off when Ableton provides the click"
+              @click="settings.metronome = !settings.metronome"
+            >
+              <i class="dot" />Click
             </button>
           </div>
 
@@ -457,6 +492,35 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
   cursor: pointer;
 }
 .armed { font-family: var(--mono); font-size: 11px; color: var(--teal); }
+
+.sndsel {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: #0c0e12;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 3px;
+  margin-left: auto;
+}
+.sndlbl {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--faint);
+  letter-spacing: 1px;
+  padding: 0 7px;
+}
+.snd {
+  background: none;
+  border: none;
+  color: var(--dim);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.snd.on { background: var(--panel2); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
 
 /* body */
 .body {

@@ -91,6 +91,14 @@ npm run tauri icon app-icon.png
 
 **Acceptance (from the plan):** falling notes hit the line in time; ratings and combo update; `npm test` passes.
 
+### Playing along with Ableton (sound from Ableton, tracking in Melodable)
+
+Set the toolbar's **SOUND** switch to **Ableton / DAW** and Melodable mutes its
+own synth while still grading every hit — your controller plays Ableton's
+instruments, Melodable shows the falling notes and scores your timing. The MIDI
+routing (macOS) and current limits are written up in
+[`docs/ableton-playalong.md`](./docs/ableton-playalong.md).
+
 ---
 
 ## Layout

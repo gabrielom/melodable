@@ -8,6 +8,7 @@
  */
 
 import { computed, onMounted, onUnmounted, ref, watch, type Ref } from "vue";
+import { useSettings } from "@/stores/settings";
 import type { Rating } from "@/engine/types";
 import { Transport } from "@/engine/transport";
 import { Scorer, lessonTargets } from "@/engine/scoring";
@@ -28,6 +29,7 @@ export interface RatingPop {
 const LOOKAHEAD = 1.0;
 
 export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement | null>) {
+  const settings = useSettings();
   const lesson = ref(BUILTIN_LESSONS[0]);
 
   const playing = ref(false);
@@ -136,11 +138,15 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
     if (playing.value && transport.isPlaying) {
       const pos = transport.position(now);
 
-      // schedule metronome clicks (count-in included) and the guide part
+      // schedule metronome clicks (count-in included) and the guide part.
+      // The window always advances so toggling the click mid-run doesn't
+      // replay beats that were skipped while it was off.
       const win = transport.advanceScheduler(now, LOOKAHEAD);
       if (win) {
-        for (const c of transport.clicksIn(win.from, win.to)) {
-          audio.click(transport.timeOfAbsBeat(c.absBeat), c.accent);
+        if (settings.metronome) {
+          for (const c of transport.clicksIn(win.from, win.to)) {
+            audio.click(transport.timeOfAbsBeat(c.absBeat), c.accent);
+          }
         }
         if (guide.value) scheduleGuide(win.from, win.to);
       }
