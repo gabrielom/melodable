@@ -1,0 +1,45 @@
+/* Design tokens — shared with build_plan.html so the docs and the app match. */
+:root {
+  --bg: #0e1013;
+  --panel: #16191f;
+  --panel2: #1c2027;
+  --line: #262b33;
+  --ink: #eef1f5;
+  --dim: #8a929e;
+  --faint: #5a626d;
+
+  --amber: #ffb340;   /* perfect */
+  --teal: #37d0c4;    /* great   */
+  --blue: #6ea8ff;    /* good    */
+  --red: #e2564d;     /* miss    */
+  --green: #57c777;
+
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #app { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+
+button { font-family: inherit; color: inherit; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2a303a; border-radius: 6px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

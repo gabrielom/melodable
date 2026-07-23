@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rhythm Trainer — Build Plan</title>
+<style>
+  :root{
+    --bg:#0e1013; --panel:#16191f; --panel2:#1c2027; --line:#262b33;
+    --ink:#eef1f5; --dim:#8a929e; --faint:#5a626d;
+    --amber:#ffb340; --teal:#37d0c4; --blue:#6ea8ff; --red:#e2564d; --green:#57c777;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6;
+    font-size:15.5px;-webkit-font-smoothing:antialiased}
+  a{color:var(--teal);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{font-family:var(--mono);font-size:.9em;background:#0a0c0f;border:1px solid var(--line);
+    border-radius:5px;padding:.08em .38em;color:#cdd6e0}
+  pre{margin:0}
+  pre code{display:block;background:#0a0c0f;border:1px solid var(--line);border-radius:10px;
+    padding:14px 16px;overflow:auto;font-size:12.8px;line-height:1.6;color:#cfd8e2;white-space:pre}
+
+  /* layout */
+  .app{display:grid;grid-template-columns:264px minmax(0,1fr);gap:0;max-width:1180px;margin:0 auto}
+  .toc{border-right:1px solid var(--line);background:#0c0e12}
+  .toc-inner{position:sticky;top:0;max-height:100vh;overflow:auto;padding:22px 16px 40px}
+  .brand{display:flex;flex-direction:column;gap:2px;padding:6px 8px 16px;border-bottom:1px solid var(--line);margin-bottom:12px}
+  .brand .dot{display:inline-flex;gap:5px;align-items:center}
+  .brand .dot i{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .brand b{font-size:14px;letter-spacing:.5px;margin-top:8px}
+  .brand span{font-size:11px;color:var(--faint);font-family:var(--mono)}
+  .toc nav{display:flex;flex-direction:column;gap:1px;margin-top:8px}
+  .toc nav a{color:var(--dim);font-size:13px;padding:6px 9px;border-radius:7px;border-left:2px solid transparent}
+  .toc nav a .n{font-family:var(--mono);color:var(--faint);font-size:11px;margin-right:8px}
+  .toc nav a:hover{background:var(--panel);color:var(--ink);text-decoration:none}
+  .toc nav a.active{background:var(--panel2);color:var(--ink);border-left-color:var(--amber)}
+
+  .doc{padding:36px clamp(18px,4vw,52px) 90px;min-width:0}
+  main{max-width:880px}
+
+  /* hero */
+  .faceplate{border:1px solid var(--line);border-radius:16px;background:
+    radial-gradient(120% 140% at 0% 0%, #1a1e26 0%, #121519 55%, #0f1216 100%);
+    padding:26px 26px 22px;margin-bottom:30px;position:relative;overflow:hidden}
+  .faceplate:before{content:"";position:absolute;inset:0;background:
+    repeating-linear-gradient(90deg,transparent 0 6px,#ffffff05 6px 7px);pointer-events:none;opacity:.5}
+  .kicker{font-family:var(--mono);font-size:11px;letter-spacing:3px;color:var(--teal)}
+  h1{font-size:clamp(26px,4.4vw,38px);line-height:1.08;margin:8px 0 6px;letter-spacing:-.5px}
+  .sub{color:var(--dim);max-width:620px;font-size:15px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+  .chip{font-family:var(--mono);font-size:11px;color:var(--dim);background:#0c0e12;
+    border:1px solid var(--line);border-radius:20px;padding:5px 11px}
+  .chip b{color:var(--ink);font-weight:600}
+  .chip.amber{border-color:#ffb34055;color:var(--amber)}
+  .chip.teal{border-color:#37d0c455;color:var(--teal)}
+
+  section{margin:44px 0;scroll-margin-top:18px}
+  h2{font-size:22px;letter-spacing:-.3px;margin:0 0 4px;display:flex;align-items:baseline;gap:12px}
+  h2 .num{font-family:var(--mono);font-size:13px;color:var(--amber);border:1px solid #ffb34040;
+    border-radius:6px;padding:2px 7px}
+  h3{font-size:16px;margin:22px 0 8px;color:var(--ink)}
+  h4{font-size:13px;text-transform:uppercase;letter-spacing:1.2px;color:var(--teal);margin:16px 0 6px;font-family:var(--mono)}
+  p{margin:10px 0}
+  ul,ol{margin:10px 0;padding-left:22px}
+  li{margin:5px 0}
+  .lead{color:var(--dim);border-left:2px solid var(--line);padding-left:14px;margin:14px 0}
+
+  /* tables */
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--faint);font-family:var(--mono);font-size:11px;letter-spacing:.6px;text-transform:uppercase}
+  td b{color:var(--ink)}
+  .swatch{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:7px;vertical-align:middle;border:1px solid #ffffff22}
+
+  /* callouts */
+  .note,.warn,.ok{border:1px solid var(--line);border-radius:10px;padding:12px 15px;margin:16px 0;font-size:14px;background:var(--panel)}
+  .note{border-left:3px solid var(--blue)}
+  .warn{border-left:3px solid var(--amber)}
+  .ok{border-left:3px solid var(--green)}
+  .note b,.warn b,.ok b{font-family:var(--mono);font-size:11px;letter-spacing:1px;text-transform:uppercase;display:block;margin-bottom:4px}
+  .note b{color:var(--blue)} .warn b{color:var(--amber)} .ok b{color:var(--green)}
+
+  /* architecture diagram */
+  .diagram{border:1px solid var(--line);border-radius:12px;background:#0b0d11;padding:18px;margin:16px 0}
+  .layer{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0;background:linear-gradient(180deg,#15181e,#101318)}
+  .layer .lbl{font-family:var(--mono);font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--faint);margin-bottom:8px}
+  .layer.back .lbl{color:var(--amber)} .layer.front .lbl{color:var(--teal)}
+  .nodes{display:flex;flex-wrap:wrap;gap:8px}
+  .node{font-family:var(--mono);font-size:12px;background:#0c0e12;border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:#cdd6e0}
+  .node.k{border-color:#ffb34040;color:var(--amber)} .node.t{border-color:#37d0c440;color:var(--teal)}
+  .flow{text-align:center;color:var(--faint);font-family:var(--mono);font-size:16px;margin:2px 0}
+
+  /* design study gallery */
+  .gallery{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:18px 0}
+  @media(max-width:680px){.gallery{grid-template-columns:1fr}}
+  figure.shot{margin:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel)}
+  figure.shot img{display:block;width:100%;height:auto;background:#0a0c0f;min-height:120px}
+  figure.shot figcaption{padding:11px 13px;font-size:12.5px;color:var(--dim)}
+  figure.shot .tag{display:inline-block;font-family:var(--mono);font-size:10px;letter-spacing:1px;
+    padding:3px 8px;border-radius:20px;margin-bottom:7px;text-transform:uppercase}
+  .tag.cur{background:#37d0c418;color:var(--teal);border:1px solid #37d0c440}
+  .tag.old{background:#ffb34018;color:var(--amber);border:1px solid #ffb34040}
+  figure.shot.broken img{display:none}
+  figure.shot.broken:after{content:"Image blocked by host — open the source link ↓";display:block;
+    padding:26px 13px;color:var(--faint);font-family:var(--mono);font-size:12px;text-align:center;background:#0a0c0f}
+  .adv{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:16px 0}
+  @media(max-width:680px){.adv{grid-template-columns:1fr}}
+  .adv .card{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--panel)}
+  .adv .card.cur{border-top:2px solid var(--teal)} .adv .card.old{border-top:2px solid var(--amber)}
+  .adv .card h4{margin-top:0}
+
+  /* milestones */
+  .track{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin:16px 0 22px}
+  .track .seg{border:1px solid var(--line);border-radius:7px;padding:9px 6px;text-align:center;background:#0c0e12}
+  .track .seg .m{font-family:var(--mono);font-size:12px;color:var(--amber);font-weight:700}
+  .track .seg .t{font-size:9.5px;color:var(--faint);margin-top:3px;line-height:1.25}
+  .ms{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:12px 0;background:var(--panel)}
+  .ms .head{display:flex;align-items:center;gap:11px;margin-bottom:6px}
+  .ms .badge{font-family:var(--mono);font-weight:700;font-size:13px;color:#0a0c0f;background:var(--amber);
+    border-radius:7px;padding:3px 9px}
+  .ms .title{font-weight:600;font-size:15px}
+  .ms .acc{border-left:2px solid var(--green);padding-left:11px;margin-top:8px;color:var(--dim);font-size:13.5px}
+  .ms .acc b{color:var(--green);font-family:var(--mono);font-size:11px;letter-spacing:.5px}
+
+  footer{border-top:1px solid var(--line);margin-top:60px;padding-top:20px;color:var(--faint);font-size:12.5px;font-family:var(--mono)}
+
+  @media(max-width:900px){
+    .app{grid-template-columns:1fr}
+    .toc{border-right:none;border-bottom:1px solid var(--line)}
+    .toc-inner{position:static;max-height:none;padding:16px}
+    .toc nav{max-height:210px;overflow:auto;display:grid;grid-template-columns:1fr 1fr}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="toc">
+    <div class="toc-inner">
+      <div class="brand">
+        <span class="dot"><i style="background:var(--amber)"></i><i style="background:var(--teal)"></i><i style="background:var(--blue)"></i></span>
+        <b>RHYTHM TRAINER</b>
+        <span>build plan · v1</span>
+      </div>
+      <nav>
+        <a href="#how"><span class="n">—</span>How to use this</a>
+        <a href="#vision"><span class="n">01</span>Vision</a>
+        <a href="#goals"><span class="n">02</span>Goals / Non-goals</a>
+        <a href="#study"><span class="n">03</span>Design study: Melodics</a>
+        <a href="#stack"><span class="n">04</span>Tech stack</a>
+        <a href="#arch"><span class="n">05</span>Architecture</a>
+        <a href="#models"><span class="n">06</span>Data models</a>
+        <a href="#midi"><span class="n">07</span>MIDI input layer</a>
+        <a href="#engine"><span class="n">08</span>Timing &amp; scoring</a>
+        <a href="#pads"><span class="n">09</span>Mode: Pads</a>
+        <a href="#piano"><span class="n">10</span>Mode: Piano</a>
+        <a href="#ableton"><span class="n">11</span>Ableton integration</a>
+        <a href="#audio"><span class="n">12</span>Audio</a>
+        <a href="#render"><span class="n">13</span>Rendering</a>
+        <a href="#structure"><span class="n">14</span>Project structure</a>
+        <a href="#roadmap"><span class="n">15</span>Milestone roadmap</a>
+        <a href="#setup"><span class="n">16</span>Dev setup</a>
+        <a href="#risks"><span class="n">17</span>Risks &amp; gotchas</a>
+        <a href="#claudecode"><span class="n">18</span>Driving with Claude Code</a>
+      </nav>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <div class="doc">
+  <main>
+
+    <div class="faceplate">
+      <div class="kicker">MELODICS-STYLE TIMING TRAINER · WORKING TITLE</div>
+      <h1>Rhythm Trainer — Build Plan</h1>
+      <p class="sub">A timing trainer for MPC-style pads <b>and</b> piano, where lessons come from your own Ableton clips, difficulty adapts to you, and you can play along locked to a live Ableton set via Ableton Link.</p>
+      <div class="chips">
+        <span class="chip teal"><b>Vue 3</b> + Tauri 2</span>
+        <span class="chip amber"><b>Rust MIDI</b> · midir</span>
+        <span class="chip"><b>Ableton</b> import + Link</span>
+        <span class="chip">Pads + Piano</span>
+        <span class="chip">macOS · Windows · Linux</span>
+        <span class="chip">Private build</span>
+      </div>
+    </div>
+
+    <section id="how">
+      <h2><span class="num">i</span> How to use this document</h2>
+      <p>Two audiences, one file. For <b>you</b>, it's a visual reference and design brief. For <b>Claude Code</b>, it's the spec — build it <b>milestone by milestone</b> (§15), commit after each, and keep the timing/scoring engine as a pure, tested module decoupled from the UI. Upload this HTML to Claude Code and work down the roadmap.</p>
+    </section>
+
+    <section id="vision">
+      <h2><span class="num">01</span> Vision</h2>
+      <p>One app, two instruments, one shared engine. A player connects a MIDI controller (an Akai-style 4×4 pad grid <b>or</b> a piano/keyboard — both are just MIDI), picks a lesson, and plays along as notes fall to a hit line. The app grades timing in real time (Perfect / Great / Good / Miss), tracks accuracy and combo, and adapts tempo — easing off when the player struggles and pushing up (then advancing lessons) when they're clean.</p>
+      <p>The two differentiators:</p>
+      <ol>
+        <li><b>Lessons come from the user's own Ableton sets</b> — export a MIDI clip, import it, drill your own part.</li>
+        <li><b>Live play-along via Ableton Link</b> — the trainer locks its tempo and beat phase to a running Ableton session, so practice happens in time with the actual track.</li>
+      </ol>
+    </section>
+
+    <section id="goals">
+      <h2><span class="num">02</span> Goals / Non-goals</h2>
+      <h4>Goals</h4>
+      <ul>
+        <li>Native-grade MIDI input with low, consistent latency (drum pads + piano).</li>
+        <li>Two instrument views (Pads, Piano) sharing one timing/scoring engine and one lesson format.</li>
+        <li>Import MIDI clips exported from Ableton and turn them into lessons.</li>
+        <li>Adaptive difficulty (tempo scaling + lesson progression).</li>
+        <li>Ableton Link play-along (tempo + phase sync).</li>
+        <li>Cross-platform desktop (macOS, Windows, Linux) from a single codebase.</li>
+      </ul>
+      <h4>Non-goals (v1)</h4>
+      <ul>
+        <li>Mobile/iOS — Web MIDI is blocked in all iOS browsers; revisit natively later.</li>
+        <li>Reading raw <code>.als</code> project files — MIDI-clip export covers 95% of the need.</li>
+        <li>Note-hold/sustain grading for piano — v1 grades note-on timing; add hold grading later.</li>
+        <li>Accounts / cloud sync — local-first for v1.</li>
+      </ul>
+    </section>
+
+    <!-- ============ DESIGN STUDY ============ -->
+    <section id="study">
+      <h2><span class="num">03</span> Design study — Melodics, old vs new</h2>
+      <p class="lead">Melodics has shipped two visually distinct eras. Each is good at something different. The goal here is to steal the best of both and land on an optimal approach for our timing-first tool.</p>
+
+      <h3>The current interface — Rive-animated (≈2024–2026)</h3>
+      <p>Melodics rebuilt the app for iOS with React and adopted <a href="https://rive.app/blog/melodics-reinvents-music-learning-with-interactive-design" target="_blank" rel="noopener">Rive</a> for its animation layer. MIDI data is fed straight into a Rive <b>State Machine</b>, so animations react instantly to what you play — a rhythm-game feel with beat-synced motion, playful onboarding, motion-based technique tutorials (posture, hand position, stick grip), and heavy gamification (streaks, stars, a Guided Path). Rive Layouts make it responsive across phone, tablet, and desktop.</p>
+      <div class="gallery">
+        <figure class="shot">
+          <img class="shot-img" referrerpolicy="no-referrer" loading="lazy" alt="Current Melodics interface, Rive-animated"
+               src="https://framerusercontent.com/images/IJbPQdkPQHBhp2t6XcRkqLo9mf8.jpg?width=1920&amp;height=1080">
+          <figcaption><span class="tag cur">Current · Rive era</span><br>The high-energy, animated direction — visuals synced to the beat via Rive's State Machine. <a href="https://rive.app/blog/melodics-reinvents-music-learning-with-interactive-design" target="_blank" rel="noopener">Source: Rive</a></figcaption>
+        </figure>
+        <figure class="shot">
+          <img class="shot-img" referrerpolicy="no-referrer" loading="lazy" alt="Melodics MIDI-to-animation feedback screen"
+               src="https://framerusercontent.com/images/zTId0KKuPCPUDr9msV96bTfIs.png?width=1920&amp;height=1080">
+          <figcaption><span class="tag cur">Current · Rive era</span><br>The MIDI → animation feedback loop: user input drives visual response in real time. <a href="https://rive.app/blog/melodics-reinvents-music-learning-with-interactive-design" target="_blank" rel="noopener">Source: Rive</a></figcaption>
+        </figure>
+      </div>
+
+      <h3>The previous interface — desktop performance mode (2015–2019)</h3>
+      <p>The original desktop app (Windows/Mac, C++ visuals) was information-first. Its <b>performance mode</b> shows a clean falling-notes lane with an explicit <b>color language</b>: green = perfect timing and length, orange/purple = early/late, red = missed, and blue/yellow to indicate left/right hand. It pairs with a <b>practice/loop mode</b> (set loops, change BPM) and an <b>Auto-BPM</b> ramp that starts slow, measures your accuracy, and steps the tempo up in +10 BPM increments to the natural tempo — essentially the adaptive-difficulty pattern we're building.</p>
+      <div class="gallery">
+        <figure class="shot">
+          <img class="shot-img" referrerpolicy="no-referrer" loading="lazy" alt="Older Melodics app interface"
+               src="https://promusicianhub.com/wp-content/uploads/2019/04/melodics_app.png">
+          <figcaption><span class="tag old">Previous · desktop</span><br>Information-first layout — the practice tool feel, low visual noise. <a href="https://promusicianhub.com/melodics-review/" target="_blank" rel="noopener">Source: Pro Musician Hub</a></figcaption>
+        </figure>
+        <figure class="shot">
+          <img class="shot-img" referrerpolicy="no-referrer" loading="lazy" alt="Older Melodics performance mode with color-coded notes"
+               src="https://promusicianhub.com/wp-content/uploads/2019/04/melodics_app2.png">
+          <figcaption><span class="tag old">Previous · desktop</span><br>Performance mode: falling notes with the green/orange/purple/red timing color language. <a href="https://promusicianhub.com/melodics-review/" target="_blank" rel="noopener">Source: Pro Musician Hub</a></figcaption>
+        </figure>
+      </div>
+      <div class="note"><b>Tip</b>If a host blocks hotlinking and an image doesn't load, use the source link under it — or drop your own screenshots (from running Melodics) into this file for the most accurate study, since you know the app first-hand.</div>
+
+      <h3>What each era does better</h3>
+      <div class="adv">
+        <div class="card cur">
+          <h4>Current wins</h4>
+          <ul>
+            <li>Beat-synced, celebratory motion makes practice feel like play (streaks, stars, level-ups).</li>
+            <li>Motion tutorials teach technique (posture, hand/stick position) and are cheap to update.</li>
+            <li>Responsive across device sizes; clean, modern, approachable for beginners.</li>
+          </ul>
+        </div>
+        <div class="card old">
+          <h4>Previous wins</h4>
+          <ul>
+            <li>Timing-first: dense falling-notes lane, explicit color language, minimal distraction.</li>
+            <li>Practical tooling: loop/practice mode, manual BPM, Auto-BPM ramp, arrangement preview.</li>
+            <li>Reads like a serious practice instrument, not a game skin over the content.</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>Optimal approach for our app</h3>
+      <ul>
+        <li><b>Foundation = the old app's timing-first lane.</b> The falling-notes lane and an explicit color language are the core; accuracy is the point.</li>
+        <li><b>Layer = the new app's restrained celebration.</b> Add beat-synced micro-animations for combos/streaks/level-ups — but keep them <i>out of the hit zone</i> so they never compete with reading timing.</li>
+        <li><b>Adopt Auto-BPM + a real practice/loop mode.</b> We already plan adaptive tempo (§08); also expose manual BPM + loop points like the old practice mode.</li>
+        <li><b>Add arrangement preview + count-in</b>, and light up the controller pad/key if the device supports it.</li>
+        <li><b>Hand cues for piano</b> (left/right color), borrowed from Melodics' blue/yellow.</li>
+        <li><b>Go beyond Melodics:</b> our lessons come from your own Ableton clips and can lock to a live set via Link — practice against your actual track, not a fixed curriculum.</li>
+        <li><b>Rendering:</b> canvas-first for the lane (control + performance); optional Rive/Lottie later for hero/onboarding/celebration animations (§13).</li>
+      </ul>
+
+      <h4>Timing color language — Melodics vs ours</h4>
+      <table>
+        <tr><th>Meaning</th><th>Melodics (old)</th><th>Our app</th></tr>
+        <tr><td>Perfect timing</td><td>Green</td><td><span class="swatch" style="background:#ffb340"></span>Amber — <code>perfect</code></td></tr>
+        <tr><td>Slightly early / late</td><td>Orange / Purple</td><td><span class="swatch" style="background:#37d0c4"></span>Teal <code>great</code> · <span class="swatch" style="background:#6ea8ff"></span>Blue <code>good</code></td></tr>
+        <tr><td>Missed</td><td>Red</td><td><span class="swatch" style="background:#e2564d"></span>Red — <code>miss</code></td></tr>
+        <tr><td>Left / right hand (piano)</td><td>Blue / Yellow</td><td>Adopt as hand-cue tints</td></tr>
+      </table>
+      <div class="note"><b>Design note</b>We use amber for <code>perfect</code> to match the hardware/DAW theme. If you prefer Melodics' convention, swap <code>perfect</code> to green — it's one token change.</div>
+    </section>
+
+    <!-- ============ TECH STACK ============ -->
+    <section id="stack">
+      <h2><span class="num">04</span> Tech stack (with rationale)</h2>
+      <table>
+        <tr><th>Layer</th><th>Choice</th><th>Why</th></tr>
+        <tr><td>Desktop shell</td><td><b>Tauri 2</b> (Rust)</td><td>Tiny binary, low memory, native performance. Better fit than Electron for a real-time app.</td></tr>
+        <tr><td>MIDI I/O</td><td><b>midir</b> in Rust <br>(optionally <b>tauri-plugin-midi</b>)</td><td>Tauri uses the OS webview (WebKit on macOS/Linux), and <b>WebKit does not support the Web MIDI API</b> — so do MIDI natively in Rust and emit events to the frontend. <code>midir</code> is cross-platform realtime MIDI (CoreMIDI / WinMM / ALSA). <code>tauri-plugin-midi</code> wraps it with a Web-MIDI-shaped API if you want that ergonomics.</td></tr>
+        <tr><td>Frontend</td><td><b>Vue 3</b> (Composition API, <code>&lt;script setup&gt;</code>, TypeScript) + <b>Vite</b></td><td>Requested. Light, fast, great DX.</td></tr>
+        <tr><td>State</td><td><b>Pinia</b></td><td>Lessons, session, settings, device selection.</td></tr>
+        <tr><td>Audio</td><td><b>Web Audio API</b></td><td>Synth drum kit + poly synth for piano; optional sampled kits/pianos. Good timing via <code>AudioContext.currentTime</code>.</td></tr>
+        <tr><td>Falling-note render</td><td><b>Canvas</b> + <code>requestAnimationFrame</code></td><td>Smooth, cheap, avoids per-frame Vue re-render. Vue handles chrome/HUD.</td></tr>
+        <tr><td>Ableton sync</td><td><b>rusty_link</b></td><td>Actively maintained Rust bindings to Ableton's official <code>abl_link</code> C wrapper; works on all desktop platforms.</td></tr>
+        <tr><td>Persistence</td><td>Tauri store plugin or bundled SQLite</td><td>Lesson library, progress, calibration.</td></tr>
+      </table>
+      <div class="ok"><b>License — not an issue for you</b>Ableton Link (via <code>rusty_link</code>) is dual-licensed GPLv2+ / proprietary. Because this is a <b>private, personal build you won't distribute</b>, GPLv2+ is fine and no commercial license is needed. (Kept here for the record: a closed-source commercial release would require a proprietary Link license from Ableton — <a href="mailto:link-devs@ableton.com">link-devs@ableton.com</a>.) Keep Link behind a cargo feature flag anyway, so the app can build without it if desired.</div>
+    </section>
+
+    <!-- ============ ARCHITECTURE ============ -->
+    <section id="arch">
+      <h2><span class="num">05</span> Architecture overview</h2>
+      <div class="diagram">
+        <div class="layer back">
+          <div class="lbl">Tauri — Rust backend</div>
+          <div class="nodes">
+            <span class="node k">midir → MIDI input thread → parse → emit "midi://message"</span>
+            <span class="node k">rusty_link → Link session → poll → emit "link://state"</span>
+            <span class="node">commands: list_midi_ports · open_midi_port · link_enable · link_set_tempo</span>
+          </div>
+        </div>
+        <div class="flow">▲&nbsp;&nbsp;Tauri IPC — events + commands&nbsp;&nbsp;▼</div>
+        <div class="layer front">
+          <div class="lbl">Vue 3 frontend</div>
+          <div class="nodes">
+            <span class="node t">Engine core (pure TS): Transport · Scoring · Adaptive · Lesson model · MIDI-clip importer</span>
+          </div>
+          <div class="nodes" style="margin-top:8px">
+            <span class="node">View: PadGrid → canvas lanes + 4×4 pads</span>
+            <span class="node">View: Piano → canvas piano-roll + keyboard</span>
+          </div>
+          <div class="nodes" style="margin-top:8px">
+            <span class="node">HUD / Library / Settings (Vue + Pinia)</span>
+            <span class="node">Audio: Web Audio synth kit + poly piano</span>
+          </div>
+        </div>
+      </div>
+      <p><b>Key principle:</b> the engine is framework-agnostic TypeScript. Pads and Piano differ only in a <i>renderer</i> and a <i>pitch→position mapping</i>. Everything else (transport, timing, scoring, adaptation, lessons, import) is shared.</p>
+    </section>
+
+    <!-- ============ DATA MODELS ============ -->
+    <section id="models">
+      <h2><span class="num">06</span> Core data models</h2>
+      <p><code>src/engine/types.ts</code></p>
+<pre><code>export type InstrumentType = 'pads' | 'piano';
+
+// A single note the player must hit. `time` is in beats from the loop start.
+export interface NoteEvent {
+  time: number;        // beats (quarter = 1.0)
+  pitch: number;       // MIDI note number (0-127)
+  velocity?: number;   // 0-127 (optional target dynamics)
+  duration?: number;   // beats (for piano hold grading, v2)
+}
+
+export interface Lesson {
+  id: string;
+  name: string;
+  instrument: InstrumentType;
+  bpm: number;               // suggested starting tempo
+  bars: number;              // loop length in bars
+  beatsPerBar: number;       // e.g. 4
+  notes: NoteEvent[];
+  source: 'builtin' | 'midi-import';
+}
+
+// Raw MIDI event coming up from Rust
+export interface MidiMessage {
+  kind: 'noteon' | 'noteoff' | 'cc' | 'other';
+  note: number;
+  velocity: number;
+  channel: number;
+  timestampMicros: number;   // from midir
+}
+
+export type Rating = 'perfect' | 'great' | 'good' | 'miss';
+
+export const TIMING_WINDOWS = { perfect: 0.032, great: 0.06, good: 0.10 }; // seconds
+export const RATING_SCORE   = { perfect: 100, great: 75, good: 40, miss: 0 };
+
+// Ableton Link state pushed from Rust
+export interface LinkState {
+  enabled: boolean;
+  tempo: number;
+  beat: number;      // current beat position on the shared timeline
+  phase: number;     // position within the quantum (bar)
+  peers: number;
+}</code></pre>
+    </section>
+
+    <!-- ============ MIDI ============ -->
+    <section id="midi">
+      <h2><span class="num">07</span> MIDI input layer (Rust → Vue)</h2>
+      <p><b>Rust</b> (<code>src-tauri/src/midi.rs</code>), using <code>midir</code>. Enumerate ports, open a connection, and emit each message as a Tauri event with a high-res timestamp. Tauri 2 uses the <code>Emitter</code> trait.</p>
+<pre><code>use midir::{MidiInput, Ignore};
+use tauri::{AppHandle, Emitter};
+use serde::Serialize;
+
+#[derive(Serialize, Clone)]
+struct MidiMsg { kind: String, note: u8, velocity: u8, channel: u8, timestamp_micros: u64 }
+
+pub fn open_input(app: AppHandle, port_index: usize) -&gt; Result&lt;(), String&gt; {
+    let mut input = MidiInput::new("rhythm-trainer").map_err(|e| e.to_string())?;
+    input.ignore(Ignore::None);
+    let ports = input.ports();
+    let port = ports.get(port_index).ok_or("port not found")?;
+
+    // NOTE: keep the returned connection alive in Tauri state, or the port closes.
+    let _conn = input.connect(port, "rt-in", move |stamp, message, _| {
+        if message.len() &lt; 3 { return; }
+        let status  = message[0] &amp; 0xF0;
+        let channel = message[0] &amp; 0x0F;
+        let (kind, note, vel) = match status {
+            0x90 if message[2] &gt; 0 =&gt; ("noteon",  message[1], message[2]),
+            0x80 | 0x90            =&gt; ("noteoff", message[1], message[2]),
+            0xB0                   =&gt; ("cc",      message[1], message[2]),
+            _                      =&gt; ("other", 0, 0),
+        };
+        let _ = app.emit("midi://message", MidiMsg {
+            kind: kind.into(), note, velocity: vel, channel, timestamp_micros: stamp,
+        });
+    }, ()).map_err(|e| e.to_string())?;
+
+    // store `_conn` in app state so it isn't dropped
+    Ok(())
+}</code></pre>
+      <p>Also expose commands: <code>list_midi_ports() -&gt; Vec&lt;String&gt;</code> and <code>open_midi_port(index)</code>.</p>
+      <p><b>Vue</b> (<code>src/composables/useMidi.ts</code>):</p>
+<pre><code>import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
+import type { MidiMessage } from '@/engine/types';
+
+export function useMidi(onMessage: (m: MidiMessage) =&gt; void) {
+  const listPorts = () =&gt; invoke&lt;string[]&gt;('list_midi_ports');
+  const openPort  = (index: number) =&gt; invoke('open_midi_port', { index });
+  listen&lt;MidiMessage&gt;('midi://message', (e) =&gt; onMessage(e.payload));
+  return { listPorts, openPort };
+}</code></pre>
+      <p>Provide a <b>device picker</b> in Settings so the player selects their MPC / keyboard.</p>
+    </section>
+
+    <!-- ============ ENGINE ============ -->
+    <section id="engine">
+      <h2><span class="num">08</span> Timing &amp; scoring engine <span style="font-size:12px;color:var(--faint);font-family:var(--mono)">src/engine/* — pure TS, unit-tested</span></h2>
+      <ul>
+        <li><b>Transport:</b> clock from <code>AudioContext.currentTime</code>; fields <code>bpm</code>, <code>bars</code>, <code>beatsPerBar</code>; a 1-bar <b>count-in</b>; a looped playhead.</li>
+        <li><b>Scoring:</b> on each incoming note-on, take its timestamp, find the nearest unresolved <code>NoteEvent</code> of the same pitch (or same lane) within the <code>good</code> window, classify by offset → <code>perfect/great/good</code>, else it's a stray hit (ignored in v1, lightly penalized later). Notes whose window passes unhit become <code>miss</code>.</li>
+        <li><b>Stats:</b> running accuracy, current combo, best combo, per-bar accuracy.</li>
+        <li><b>Adaptive difficulty</b> (<code>src/engine/adaptive.ts</code>) — this is Melodics' Auto-BPM idea, generalized:</li>
+      </ul>
+<pre><code>// Called at each loop boundary with that bar's accuracy (0..1).
+export function nextTempo(base: number, current: number, barAcc: number) {
+  if (barAcc &gt;= 0.85) return Math.min(Math.round(base * 1.35), current + 4); // push up
+  if (barAcc &lt; 0.60)  return Math.max(Math.round(base * 0.60), current - 5); // ease off
+  return current;
+}
+// Advance to next lesson after N consecutive bars &gt;= 0.9 at/above base tempo.</code></pre>
+      <div class="note"><b>Reference</b>The React prototype (<code>PadTrainer.jsx</code>, provided separately) is the behavior reference for this engine + the pad view. Port its transport/scoring/adaptive logic into this TS module; do not copy its React specifics.</div>
+    </section>
+
+    <!-- ============ PADS ============ -->
+    <section id="pads">
+      <h2><span class="num">09</span> Instrument mode — Pads (4×4)</h2>
+      <ul>
+        <li>16 velocity-sensitive pads, General-MIDI drum mapping, key labels for on-screen play.</li>
+        <li>Falling notes in <b>per-pad lanes</b> to a horizontal hit line; only lanes used by the current lesson are shown.</li>
+        <li>Incoming MIDI notes map to pads via a GM drum table (36→kick, 38→snare, 42→closed hat, 46→open hat, 39→clap, toms, etc.); unknown notes round-robin to spare pads.</li>
+        <li>Canvas renderer: <code>src/views/pads/PadLanes.ts</code> (draw) + <code>PadGrid.vue</code> (interactive pads + hit flashes + rating popups).</li>
+      </ul>
+    </section>
+
+    <!-- ============ PIANO ============ -->
+    <section id="piano">
+      <h2><span class="num">10</span> Instrument mode — Piano <span style="font-size:12px;color:var(--teal);font-family:var(--mono)">NEW</span></h2>
+      <ul>
+        <li><b>On-screen keyboard</b>, configurable range (25 / 49 / 61 keys), white/black keys laid out correctly; keys light up for incoming notes and flash on hit with the rating color.</li>
+        <li><b>Piano-roll falling notes</b> (Synthesia-style): each <code>NoteEvent</code>'s <code>pitch</code> maps to an x-position aligned to its key; notes fall to the hit line at the top of the keyboard. Chords = multiple notes at the same <code>time</code>.</li>
+        <li><b>Scoring parity</b> with pads (per-note-on timing). <code>duration</code> is stored but hold-grading is deferred to v2.</li>
+        <li><b>Sound:</b> poly synth (Web Audio) by default; optional sampled piano.</li>
+        <li><b>Hand cues:</b> optional left/right-hand tint per note (borrowed from Melodics).</li>
+      </ul>
+      <p>Pitch→key mapping (<code>src/views/piano/mapping.ts</code>):</p>
+<pre><code>// Map a MIDI note to keyboard geometry. White keys advance x; black keys overlay.
+const WHITE = [0, 2, 4, 5, 7, 9, 11]; // semitone offsets in an octave that are white
+export function keyGeometry(note: number, lowNote: number, whiteWidth: number) {
+  let whiteIndex = 0;
+  for (let n = lowNote; n &lt; note; n++) if (WHITE.includes(n % 12)) whiteIndex++;
+  const isBlack = !WHITE.includes(note % 12);
+  const x = isBlack
+    ? whiteIndex * whiteWidth - whiteWidth * 0.3
+    : whiteIndex * whiteWidth;
+  return { x, isBlack, width: isBlack ? whiteWidth * 0.6 : whiteWidth };
+}</code></pre>
+      <p>Vue component sketch (<code>src/views/piano/PianoKeyboard.vue</code>):</p>
+<pre><code>&lt;script setup lang="ts"&gt;
+import { computed } from 'vue';
+const props = defineProps&lt;{ lowNote: number; highNote: number; active: Set&lt;number&gt;; flash: Map&lt;number, string&gt; }&gt;();
+const whiteNotes = computed(() =&gt;
+  Array.from({ length: props.highNote - props.lowNote + 1 }, (_, i) =&gt; props.lowNote + i)
+       .filter(n =&gt; [0,2,4,5,7,9,11].includes(n % 12)));
+&lt;/script&gt;
+&lt;template&gt;
+  &lt;div class="keyboard"&gt;
+    &lt;div v-for="n in whiteNotes" :key="n" class="white-key"
+         :class="{ on: active.has(n) }" :style="flash.has(n) ? { boxShadow: `0 0 16px ${flash.get(n)}` } : {}" /&gt;
+    &lt;!-- black keys rendered as an absolutely-positioned overlay using keyGeometry() --&gt;
+  &lt;/div&gt;
+&lt;/template&gt;</code></pre>
+    </section>
+
+    <!-- ============ ABLETON ============ -->
+    <section id="ableton">
+      <h2><span class="num">11</span> Ableton integration</h2>
+
+      <h3>11a · Lesson import from MIDI clips</h3>
+      <p>Workflow: in Ableton, <b>drag a MIDI clip out to the desktop</b> (or right-click → <i>Export MIDI Clip</i>) → import the <code>.mid</code>.</p>
+      <ul>
+        <li>SMF parser (<code>src/engine/midi-file.ts</code>): read header (PPQ), track chunks, delta times (VLQ), note-on/off, set-tempo meta, running status. Convert ticks→beats (<code>tick / ppq</code>). Round loop up to whole bars.</li>
+        <li><b>Instrument auto-detect:</b> channel 10 or a majority of GM drum notes → <code>pads</code>; otherwise → <code>piano</code>. Manual override in the import dialog.</li>
+        <li>Route pitches: drums → GM→pad map; melodic → piano keys (pitch used directly).</li>
+        <li>The prototype already contains a working SMF parser + GM mapping to copy from.</li>
+      </ul>
+
+      <h3>11b · Live play-along via Ableton Link</h3>
+      <p>Ableton Link synchronizes <b>beat, tempo, and phase</b> across apps on a local network — participants discover each other automatically, anyone can change tempo and the rest follow, and anyone can start/stop while staying in time. Link syncs the <b>clock only</b> — not audio or MIDI content. The trainer plays the lesson in time with the set; the set's audio still comes from Ableton.</p>
+      <p>Rust (<code>src-tauri/src/link.rs</code>), behind a <code>link</code> cargo feature, using <code>rusty_link</code>. Enable Link, poll session state on a timer, and emit <code>link://state</code>. Illustrative (verify exact method names against current <code>rusty_link</code> docs):</p>
+<pre><code>use rusty_link::{AblLink, SessionState};
+
+let link = AblLink::new(120.0);
+link.enable(true);
+let mut state = SessionState::new();
+link.capture_app_session_state(&amp;mut state);
+let quantum = 4.0; // one bar
+let now   = link.clock_micros();
+let tempo = state.tempo();
+let beat  = state.beat_at_time(now, quantum);
+let phase = state.phase_at_time(now, quantum);
+// emit LinkState { enabled: link.is_enabled(), tempo, beat, phase, peers: link.num_peers() }</code></pre>
+      <ul>
+        <li>Frontend: when Link is enabled, the transport <b>follows</b> Link — set <code>bpm</code> from Link tempo and align the loop's downbeat to Link phase, so falling notes and count-in lock to Ableton's grid. Add a "Follow Ableton (Link)" toggle and a peers indicator in the HUD.</li>
+        <li>Commands: <code>link_enable(bool)</code>, optional <code>link_set_tempo(f64)</code> (so the trainer can also drive tempo).</li>
+      </ul>
+    </section>
+
+    <!-- ============ AUDIO ============ -->
+    <section id="audio">
+      <h2><span class="num">12</span> Audio</h2>
+      <ul>
+        <li>Reuse the prototype's Web Audio synth drum kit; add a poly synth for piano. Optional bundled/downloadable sample packs (kits + a sampled piano) loaded as <code>AudioBuffer</code>s.</li>
+        <li>Metronome + count-in clicks (accent on beat 1).</li>
+        <li><b>Latency calibration:</b> a settings screen where the user taps to the click and the app measures/stores an audio+input offset applied to scoring. Essential for fair grading across audio interfaces.</li>
+      </ul>
+    </section>
+
+    <!-- ============ RENDERING ============ -->
+    <section id="render">
+      <h2><span class="num">13</span> Rendering</h2>
+      <ul>
+        <li>One canvas per view, driven by a single <code>requestAnimationFrame</code> loop that reads the transport clock (don't re-render Vue per frame).</li>
+        <li>Note count is small (tens), so redraw fully each frame.</li>
+        <li><b>Optional animation layer:</b> Rive or Lottie for hero/onboarding/celebration animations (as Melodics does) — the core lane stays canvas-first.</li>
+        <li>Respect <code>prefers-reduced-motion</code>; keyboard-focusable controls; responsive layout down to a small window.</li>
+      </ul>
+    </section>
+
+    <!-- ============ STRUCTURE ============ -->
+    <section id="structure">
+      <h2><span class="num">14</span> Suggested project structure</h2>
+<pre><code>rhythm-trainer/
+├─ src-tauri/
+│  ├─ src/
+│  │  ├─ main.rs            # Tauri builder, state (MidiConn, Link), command registration
+│  │  ├─ midi.rs            # midir input, list/open ports, emit midi://message
+│  │  ├─ link.rs            # rusty_link, emit link://state   (feature = "link")
+│  │  └─ commands.rs
+│  ├─ Cargo.toml            # midir, rusty_link (optional), serde, tauri
+│  └─ tauri.conf.json
+├─ src/
+│  ├─ engine/               # framework-agnostic TS core (unit-tested)
+│  │  ├─ types.ts  transport.ts  scoring.ts  adaptive.ts  midi-file.ts
+│  ├─ composables/          # useMidi.ts, useLink.ts, useTransport.ts
+│  ├─ stores/               # Pinia: lessons.ts, session.ts, settings.ts
+│  ├─ views/
+│  │  ├─ pads/   PadGrid.vue  PadLanes.ts
+│  │  └─ piano/  PianoKeyboard.vue  PianoRoll.ts  mapping.ts
+│  ├─ components/           # Hud.vue, LessonLibrary.vue, DevicePicker.vue, ImportDialog.vue, Calibration.vue
+│  ├─ data/lessons/         # built-in lesson JSON
+│  └─ App.vue  main.ts
+├─ tests/                   # engine unit tests (Vitest)
+└─ build_plan.html          # this document</code></pre>
+    </section>
+
+    <!-- ============ ROADMAP ============ -->
+    <section id="roadmap">
+      <h2><span class="num">15</span> Milestone roadmap</h2>
+      <p>Build in order; commit and smoke-test after each. Each milestone lists <b>acceptance criteria</b>.</p>
+      <div class="track">
+        <div class="seg"><div class="m">M0</div><div class="t">Scaffold</div></div>
+        <div class="seg"><div class="m">M1</div><div class="t">MIDI in</div></div>
+        <div class="seg"><div class="m">M2</div><div class="t">Engine + pads</div></div>
+        <div class="seg"><div class="m">M3</div><div class="t">Adaptive + library</div></div>
+        <div class="seg"><div class="m">M4</div><div class="t">MIDI import</div></div>
+        <div class="seg"><div class="m">M5</div><div class="t">Piano mode</div></div>
+        <div class="seg"><div class="m">M6</div><div class="t">Ableton Link</div></div>
+        <div class="seg"><div class="m">M7</div><div class="t">Polish + ship</div></div>
+      </div>
+
+      <div class="ms">
+        <div class="head"><span class="badge">M0</span><span class="title">Scaffold</span></div>
+        <div>Tasks: <code>create-tauri-app</code> (Vue + TS), add Pinia/Vite config, blank window, verify build on macOS/Windows/Linux.</div>
+        <div class="acc"><b>DONE WHEN</b> — App launches on all three platforms; hot reload works.</div>
+      </div>
+      <div class="ms">
+        <div class="head"><span class="badge">M1</span><span class="title">MIDI input</span></div>
+        <div>Tasks: <code>midi.rs</code> (list/open/emit), keep connection in Tauri state, <code>useMidi</code>, DevicePicker, on-screen + hardware trigger of synth sounds for both a pad grid and a keyboard.</div>
+        <div class="acc"><b>DONE WHEN</b> — Plugging in a controller and hitting a pad/key produces sound with no audible lag; device picker lists ports.</div>
+      </div>
+      <div class="ms">
+        <div class="head"><span class="badge">M2</span><span class="title">Engine + pad view</span></div>
+        <div>Tasks: transport (clock, loop, count-in), scoring, HUD (accuracy/combo), pad canvas lanes, one built-in pad lesson, Vitest tests for scoring/adaptive.</div>
+        <div class="acc"><b>DONE WHEN</b> — Falling notes hit the line in time; ratings and combo update; tests pass.</div>
+      </div>
+      <div class="ms">
+        <div class="head"><span class="badge">M3</span><span class="title">Adaptive difficulty + library</span></div>
+        <div>Tasks: adaptive tempo + lesson advancement, built-in pad lesson progression, LessonLibrary UI, settings persistence.</div>
+        <div class="acc"><b>DONE WHEN</b> — Tempo eases/pushes by bar accuracy; clearing a lesson advances; library switches lessons.</div>
+      </div>
+      <div class="ms">
+        <div class="head"><span class="badge">M4</span><span class="title">Ableton MIDI import (pads)</span></div>
+        <div>Tasks: SMF parser, import dialog, GM→pad mapping, generate a Lesson from a <code>.mid</code>.</div>
+        <div class="acc"><b>DONE WHEN</b> — A drum clip exported from Ableton becomes a playable, gradable lesson at its own tempo.</div>
+      </div>
+      <div class="ms">
+        <div class="head"><span class="badge">M5</span><span class="title">Piano mode</span></div>
+        <div>Tasks: keyboard component, piano-roll renderer, pitch→key mapping, chord support, import routing (melodic → piano), poly synth.</div>
+        <div class="acc"><b>DONE WHEN</b> — A melodic clip imports as a piano lesson; falling notes align to the correct keys; chords grade correctly.</div>
+      </div>
+      <div class="ms">
+        <div class="head"><span class="badge">M6</span><span class="title">Ableton Link play-along</span></div>
+        <div>Tasks: <code>link.rs</code> (rusty_link, feature-flagged), <code>useLink</code>, "Follow Ableton" toggle, transport follows Link tempo + phase, peers indicator.</div>
+        <div class="acc"><b>DONE WHEN</b> — With Ableton running Link, the trainer locks to its tempo and downbeat; changing tempo in Ableton moves the trainer.</div>
+      </div>
+      <div class="ms">
+        <div class="head"><span class="badge">M7</span><span class="title">Polish &amp; package</span></div>
+        <div>Tasks: latency calibration, settings, progress persistence (Tauri store/SQLite), reduced-motion/focus pass, icons, code signing, installers per platform.</div>
+        <div class="acc"><b>DONE WHEN</b> — Signed installers build; calibration works; state persists across launches.</div>
+      </div>
+    </section>
+
+    <!-- ============ SETUP ============ -->
+    <section id="setup">
+      <h2><span class="num">16</span> Dev setup &amp; commands</h2>
+      <p>Prereqs: Rust (stable), Node 18+, and <b>CMake 3.14+</b> (required to build Ableton Link). Linux also needs the usual WebKitGTK/build deps plus <code>libasound2-dev</code>/<code>pkg-config</code> for ALSA + Link.</p>
+<pre><code># scaffold
+npm create tauri-app@latest rhythm-trainer   # choose Vue + TypeScript
+cd rhythm-trainer
+
+# rust deps (src-tauri/Cargo.toml)
+#   midir = "0.10"
+#   serde = { version = "1", features = ["derive"] }
+#   rusty_link = "0.4"     # optional, behind [features] link = []
+# (or use the ready-made tauri-plugin-midi if you prefer a Web-MIDI-shaped API)
+
+# frontend deps
+npm i pinia @tauri-apps/api
+npm i -D vitest
+
+npm run tauri dev       # develop
+npm run tauri build     # package installers</code></pre>
+    </section>
+
+    <!-- ============ RISKS ============ -->
+    <section id="risks">
+      <h2><span class="num">17</span> Key risks &amp; gotchas</h2>
+      <ul>
+        <li><b>Web MIDI is unavailable in Tauri's WebKit webviews (macOS/Linux).</b> This plan avoids it by doing MIDI in Rust — do <b>not</b> reach for <code>navigator.requestMIDIAccess()</code> in the frontend.</li>
+        <li><b>MIDI timestamps &amp; latency:</b> grade against the <code>midir</code> timestamp and apply the user's calibration offset. Ship M7 calibration before judging timing quality.</li>
+        <li><b>Ableton Link license:</b> GPLv2+ unless a commercial license is obtained — a non-issue for this private build; keep it behind a cargo feature anyway.</li>
+        <li><b>SMF parsing edge cases:</b> running status, multiple tracks, tempo maps, PPQ vs SMPTE division. The prototype parser handles common cases; harden with a couple of real Ableton exports.</li>
+        <li><b>Connection lifetime:</b> a <code>midir</code> connection must be kept alive in Tauri state or the port silently closes.</li>
+        <li><b>Asset size:</b> sampled instruments inflate the bundle — make them optional/downloadable.</li>
+      </ul>
+    </section>
+
+    <!-- ============ CLAUDE CODE ============ -->
+    <section id="claudecode">
+      <h2><span class="num">18</span> Driving this with Claude Code</h2>
+      <ol>
+        <li>Put this file at the repo root (you can also keep a <code>CLAUDE.md</code> that points to it).</li>
+        <li>Ask Claude Code to execute <b>M0</b>, then stop and verify; commit; proceed to M1; and so on.</li>
+        <li>Insist the engine (<code>src/engine</code>) stays pure TypeScript with Vitest coverage — it's the heart of the app and the part most worth testing.</li>
+        <li>Use <code>PadTrainer.jsx</code> as the behavior reference for transport/scoring/adaptive and the pad view when implementing M2–M4.</li>
+      </ol>
+    </section>
+
+    <footer>
+      Rhythm Trainer · build plan v1 · Tauri 2 + Vue 3 + Rust (midir) + Ableton Link · private build<br>
+      Design study references: Rive (current UI) &amp; Pro Musician Hub (2019 UI). Screenshots are property of their respective owners, shown for design study.
+    </footer>
+
+  </main>
+  </div>
+</div>
+
+<script>
+  // TOC scroll-spy
+  (function(){
+    var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+    var map = {};
+    links.forEach(function(a){ map[a.getAttribute('href').slice(1)] = a; });
+    if ('IntersectionObserver' in window) {
+      var obs = new IntersectionObserver(function(entries){
+        entries.forEach(function(e){
+          if (e.isIntersecting) {
+            links.forEach(function(l){ l.classList.remove('active'); });
+            var a = map[e.target.id]; if (a) a.classList.add('active');
+          }
+        });
+      }, { rootMargin: '-45% 0px -50% 0px', threshold: 0 });
+      document.querySelectorAll('main section[id]').forEach(function(s){ obs.observe(s); });
+    }
+    // graceful image fallback for hotlink-blocked screenshots
+    document.querySelectorAll('img.shot-img').forEach(function(img){
+      img.addEventListener('error', function(){
+        var fig = img.closest('figure'); if (fig) fig.classList.add('broken');
+      });
+    });
+  })();
+</script>
+</body>
+</html>
