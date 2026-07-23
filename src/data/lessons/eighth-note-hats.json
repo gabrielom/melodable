@@ -1,0 +1,24 @@
+{
+  "id": "builtin-eighth-note-hats",
+  "name": "Eighth-Note Hats",
+  "instrument": "pads",
+  "bpm": 86,
+  "bars": 1,
+  "beatsPerBar": 4,
+  "source": "builtin",
+  "hint": "Closed hat drives the 8ths over the backbeat. Lock to the click.",
+  "notes": [
+    { "time": 0, "pitch": 36 },
+    { "time": 1, "pitch": 38 },
+    { "time": 2, "pitch": 36 },
+    { "time": 3, "pitch": 38 },
+    { "time": 0, "pitch": 42 },
+    { "time": 0.5, "pitch": 42 },
+    { "time": 1, "pitch": 42 },
+    { "time": 1.5, "pitch": 42 },
+    { "time": 2, "pitch": 42 },
+    { "time": 2.5, "pitch": 42 },
+    { "time": 3, "pitch": 42 },
+    { "time": 3.5, "pitch": 42 }
+  ]
+}

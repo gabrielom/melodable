@@ -8,7 +8,7 @@
 
 ## How to work
 
-- **One milestone at a time.** M0 and M1 are already complete. Start at **M2**. Build it, stop, let me verify, then commit before moving on.
+- **One milestone at a time.** M0–M2 are already complete. Start at **M3**. Build it, stop, let me verify, then commit before moving on.
 - Don't scaffold future milestones ahead of time. No placeholder files for M4–M7.
 - After each milestone, state plainly what to click to verify it against the plan's acceptance criteria.
 - Run `npm test` and `npm run build` before declaring a milestone done.
@@ -30,14 +30,17 @@
 - Rating colors: amber = perfect, teal = great, blue = good, red = miss (`RATING_COLOR` in `src/engine/types.ts`).
 - Respect `prefers-reduced-motion`; keep controls keyboard-focusable.
 
-## Next up: M2 — Engine + pad view
+## Next up: M3 — Adaptive difficulty + library
 
 From the plan:
 
-> Tasks: transport (clock, loop, count-in), scoring, HUD (accuracy/combo), pad canvas lanes, one built-in pad lesson, Vitest tests for scoring/adaptive.
+> Tasks: adaptive tempo + lesson advancement, built-in pad lesson progression, LessonLibrary UI, settings persistence.
 >
-> **Done when:** falling notes hit the line in time; ratings and combo update; tests pass.
+> **Done when:** tempo eases/pushes by bar accuracy; clearing a lesson advances; library switches lessons.
 
-Expected new files: `src/engine/transport.ts`, `src/engine/scoring.ts`, `src/engine/adaptive.ts`, `src/views/pads/PadLanes.ts`, `src/components/Hud.vue`, `src/data/lessons/*.json`, plus tests.
+Notes from M2, already in place — build on these rather than redefining:
 
-Note that `NoteEvent`, `Lesson`, `TIMING_WINDOWS`, `RATING_SCORE`, and `RATING_COLOR` already exist in `src/engine/types.ts` — build on them rather than redefining.
+- The engine lives in `src/engine/`: `transport.ts` (looped playhead + count-in + scheduler window), `scoring.ts` (lane-based `Scorer`, `lessonTargets`), `adaptive.ts` (`nextTempo`, `AdvanceTracker`), `midi-clock.ts` (midir→audio-clock mapping). All unit-tested in `tests/`.
+- `src/composables/useTrainer.ts` owns the session (RAF loop, scheduling, HUD refs) and already applies `nextTempo` per loop and fires `AdvanceTracker` — M3 wires advancement to an actual next lesson instead of a toast.
+- Built-in lessons live in `src/data/lessons/` (JSON matching the `Lesson` type) with a loader in `index.ts` — add the progression there.
+- Settings persistence must use the Tauri store plugin, not localStorage (invariant 7).

@@ -14,8 +14,8 @@ A Melodics-style timing trainer for **MPC-style pads** and **piano**, where less
 |---|---|
 | **M0 — Scaffold** | ✅ done |
 | **M1 — MIDI input** | ✅ done |
-| M2 — Engine + pad view | ⬜ next |
-| M3 — Adaptive difficulty + library | ⬜ |
+| **M2 — Engine + pad view** | ✅ done |
+| M3 — Adaptive difficulty + library | ⬜ next |
 | M4 — Ableton MIDI import | ⬜ |
 | M5 — Piano mode (falling notes) | ⬜ |
 | M6 — Ableton Link play-along | ⬜ |
@@ -27,8 +27,11 @@ A Melodics-style timing trainer for **MPC-style pads** and **piano**, where less
 - **Pads mode:** 4×4 MPC-style grid, synthesized drum kit, hit glow scaled by velocity.
 - **Piano mode:** on-screen keyboard built on the real `keyGeometry()` mapping M5 will reuse.
 - Play from hardware, mouse, or computer keyboard.
+- **Falling-note trainer (pads):** transport with count-in, canvas lanes falling to a hit line, Perfect/Great/Good/Miss grading, accuracy + combo HUD, metronome, and an optional guide track.
+- **Adaptive tempo:** clean bars nudge the BPM up (capped at 135% of base), rough bars ease it off (floored at 60%) — Melodics' Auto-BPM idea.
+- Hardware hits are graded at their `midir` timestamp mapped onto the audio clock, not at event-delivery time.
 - **MIDI monitor** — live log of every message with note number, velocity, channel, and delta time.
-- Unit tests for the mapping layer (`npm test`).
+- Unit tests for the mapping layer and the engine (transport, scoring, adaptive, MIDI clock) — `npm test`.
 
 ---
 
@@ -78,6 +81,16 @@ npm run tauri icon app-icon.png
 
 > If your controller's pads light the wrong cells, read the note numbers in the MIDI monitor and extend `GM_TO_PAD` in `src/engine/gm.ts`. That map is also what M4's Ableton import uses.
 
+## Verifying M2
+
+1. `npm run tauri dev`, stay in **Pads** mode.
+2. Hit **▶ Play** — you get a one-bar count-in (4·3·2·1 over the lanes), then notes fall to the hit line in the kick/snare/closed-hat lanes.
+3. Strike pads (hardware, keys `z`/`x`/`a`, or mouse) as notes land — notes recolor by rating (amber/teal/blue, red-ish for a miss), a rating pops on the pad, and the HUD's accuracy/combo update.
+4. Leave a bar unplayed — everything turns miss-red and the **BAR** readout drops; with **Adapt tempo** on, the BPM eases off (and pushes up when you play clean).
+5. Toggle **Guide sound** to hear the target part quietly; drag **Tempo** mid-run — the playhead stays continuous.
+
+**Acceptance (from the plan):** falling notes hit the line in time; ratings and combo update; `npm test` passes.
+
 ---
 
 ## Layout
@@ -87,12 +100,17 @@ src/
 ├─ engine/        # framework-agnostic core — never imports Vue
 │  ├─ types.ts    # Lesson, NoteEvent, MidiMessage, ratings, LinkState
 │  ├─ gm.ts       # pad layout, GM drum map, keyboard bindings
-│  └─ audio.ts    # Web Audio drum kit + piano voice + metronome
-├─ composables/   # useMidi.ts — the Rust bridge
+│  ├─ audio.ts    # Web Audio drum kit + piano voice + metronome
+│  ├─ transport.ts # looped playhead: clock math, count-in, scheduler window
+│  ├─ scoring.ts  # lane-based hit grading, combo, per-loop accuracy
+│  ├─ adaptive.ts # Auto-BPM tempo steps + lesson-clear streak
+│  └─ midi-clock.ts # midir timestamps -> AudioContext clock
+├─ composables/   # useMidi.ts (Rust bridge), useTrainer.ts (session loop)
 ├─ stores/        # Pinia
-├─ components/    # DevicePicker, MidiMonitor
+├─ components/    # DevicePicker, MidiMonitor, Hud
+├─ data/lessons/  # built-in lesson JSON
 └─ views/
-   ├─ pads/       # PadGrid.vue        (+ PadLanes.ts in M2)
+   ├─ pads/       # PadGrid.vue, PadLanes.ts (canvas lanes)
    └─ piano/      # PianoKeyboard.vue, mapping.ts  (+ PianoRoll.ts in M5)
 
 src-tauri/src/

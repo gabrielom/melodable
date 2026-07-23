@@ -1,13 +1,19 @@
 <script setup lang="ts">
 /**
- * 4x4 MPC-style pad grid. M1 scope: trigger sound + visual feedback.
- * M2 adds the falling-note lane above this (see PadLanes.ts in the plan).
+ * 4x4 MPC-style pad grid: trigger sound + visual feedback. During a lesson
+ * the lanes in use are emphasized and ratings pop up on the struck pad.
  */
 import { PADS } from "@/engine/gm";
+import { RATING_COLOR } from "@/engine/types";
+import type { RatingPop } from "@/composables/useTrainer";
 
 const props = defineProps<{
   /** pad index -> velocity (0-127) for currently-lit pads */
   active: Map<number, number>;
+  /** Pad indices used by the current lesson (emphasized). */
+  emphasis?: number[];
+  /** Transient rating popups from the scorer. */
+  pops?: RatingPop[];
 }>();
 
 const emit = defineEmits<{ (e: "trigger", padIndex: number, velocity: number): void }>();
@@ -16,9 +22,16 @@ const emit = defineEmits<{ (e: "trigger", padIndex: number, velocity: number): v
 const hue = (i: number) => (i * 47) % 360;
 const padColor = (i: number, a = 1) => `hsla(${hue(i)}, 55%, 60%, ${a})`;
 
+const popFor = (i: number) => props.pops?.find((p) => p.lane === i);
+const emphasized = (i: number) => props.emphasis?.includes(i) ?? false;
+
 function glow(i: number): Record<string, string> {
   const vel = props.active.get(i);
-  if (vel === undefined) return {};
+  if (vel === undefined) {
+    return emphasized(i)
+      ? { borderColor: padColor(i, 0.7), boxShadow: `0 0 12px ${padColor(i, 0.22)}, inset 0 1px 0 #ffffff10` }
+      : {};
+  }
   const strength = 0.35 + (vel / 127) * 0.65;
   return {
     background: `radial-gradient(circle at 50% 40%, ${padColor(i, 0.55 * strength)}, #20252d)`,
@@ -42,6 +55,11 @@ function glow(i: number): Record<string, string> {
         <span class="key" :style="{ color: padColor(i) }">{{ pad.key.toUpperCase() }}</span>
         <span class="name">{{ pad.name }}</span>
         <span class="note">{{ pad.outNote }}</span>
+        <span
+          v-if="popFor(i)"
+          class="pop"
+          :style="{ color: RATING_COLOR[popFor(i)!.rating] }"
+        >{{ popFor(i)!.rating.toUpperCase() }}</span>
       </button>
     </div>
     <p class="legend">
@@ -95,6 +113,22 @@ function glow(i: number): Record<string, string> {
   font-family: var(--mono);
   font-size: 9.5px;
   color: var(--faint);
+}
+.pop {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  animation: rise 0.5s ease-out forwards;
+  pointer-events: none;
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  20% { opacity: 1; }
+  to { opacity: 0; transform: translateY(-12px); }
 }
 .legend {
   font-size: 12px;

@@ -1,22 +1,23 @@
 <script setup lang="ts">
 /**
- * M0 + M1 shell.
+ * M2 shell: the shared engine (transport, scoring, adaptive tempo) drives a
+ * falling-note canvas above the pad grid. Hardware, computer-keyboard, and
+ * mouse hits all route through the same scorer; hardware hits are graded at
+ * their midir timestamp mapped onto the audio clock.
  *
- * What works here: MIDI device discovery + connection (via Rust), hardware and
- * computer-keyboard input, synthesized drum kit and piano, live MIDI monitor.
- *
- * What comes next (see build_plan.html §15): M2 adds the transport, scoring
- * engine and falling-note canvas above the instrument.
+ * Next (see build_plan.html §15): M3 adds the lesson library + persistence.
  */
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useSettings } from "@/stores/settings";
 import { useMidi, isTauri } from "@/composables/useMidi";
+import { useTrainer } from "@/composables/useTrainer";
 import { AudioEngine } from "@/engine/audio";
 import { PADS, PAD_KEY_MAP, PIANO_KEY_MAP, noteToPad } from "@/engine/gm";
 import type { MidiMessage, InstrumentType } from "@/engine/types";
 
 import DevicePicker from "@/components/DevicePicker.vue";
 import MidiMonitor from "@/components/MidiMonitor.vue";
+import Hud from "@/components/Hud.vue";
 import type { LogRow } from "@/components/midi-log";
 import PadGrid from "@/views/pads/PadGrid.vue";
 import PianoKeyboard from "@/views/piano/PianoKeyboard.vue";
@@ -29,6 +30,28 @@ const latencyMs = ref(0);
 const activePads = ref<Map<number, number>>(new Map());
 const activeNotes = ref<Map<number, number>>(new Map());
 const log = ref<LogRow[]>([]);
+
+const laneCanvas = ref<HTMLCanvasElement | null>(null);
+const {
+  lesson,
+  playing,
+  bpm,
+  autoAdapt,
+  guide,
+  accuracy,
+  combo,
+  bestCombo,
+  phase,
+  loopAcc,
+  toast,
+  pops,
+  lanes,
+  play,
+  stop,
+  setBpm,
+  strike,
+  hardwareHitTime,
+} = useTrainer(audio, laneCanvas);
 
 let logId = 0;
 let lastLogTime = 0;
@@ -43,6 +66,15 @@ async function ensureAudio() {
   audio.setVolume(settings.volume);
   audioReady.value = audio.ready;
   latencyMs.value = Math.round(audio.outputLatency * 1000);
+}
+
+async function onPlay() {
+  await ensureAudio();
+  play();
+}
+
+function onTempo(e: Event) {
+  setBpm(Number((e.target as HTMLInputElement).value));
 }
 
 // ------------------------------------------------------------------ logging
@@ -76,13 +108,24 @@ function flashPad(index: number, velocity: number) {
   }, 110);
 }
 
-async function triggerPad(index: number, velocity = 110, source: LogRow["source"] = "click") {
+/**
+ * A pad strike from any source: sound + flash, then the scorer grades it.
+ * `hitTime` is the audio-clock hit time; omitted for mouse/keyboard, where
+ * "now" is the best estimate we have.
+ */
+async function triggerPad(
+  index: number,
+  velocity = 110,
+  source: LogRow["source"] = "click",
+  hitTime?: number,
+) {
   await ensureAudio();
   const pad = PADS[index];
   if (!pad) return;
   audio.playDrum(pad.type, undefined, Math.max(0.25, velocity / 127));
   flashPad(index, velocity);
   if (source !== "hardware") pushLog("noteon", pad.outNote, velocity, 9, source);
+  strike(index, hitTime);
 }
 
 async function noteOn(midi: number, velocity = 100, source: LogRow["source"] = "click") {
@@ -103,10 +146,7 @@ function noteOff(midi: number) {
 
 // -------------------------------------------------------------- MIDI bridge
 
-/**
- * Hardware input. Note the timestamp: in M2, scoring must grade against
- * `m.timestampMicros`, not the moment this handler runs.
- */
+/** Hardware input. Scoring uses `m.timestampMicros`, not handler time. */
 function onMidiMessage(m: MidiMessage) {
   pushLog(m.kind, m.note, m.velocity, m.channel, "hardware");
 
@@ -114,7 +154,8 @@ function onMidiMessage(m: MidiMessage) {
     const pad = noteToPad(m.note);
     // Drum notes light the grid; everything else is treated as pitched.
     if (pad !== null && settings.instrument === "pads") {
-      void triggerPad(pad, m.velocity, "hardware");
+      const hitTime = hardwareHitTime(m.timestampMicros);
+      void triggerPad(pad, m.velocity, "hardware", hitTime);
     } else {
       void noteOn(m.note, m.velocity, "hardware");
     }
@@ -172,7 +213,7 @@ function onKeyUp(e: KeyboardEvent) {
 onMounted(() => {
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
-  void midi.refreshPorts();
+  void refreshPorts();
 });
 
 onUnmounted(() => {
@@ -188,6 +229,7 @@ const modes: Array<{ id: InstrumentType; label: string }> = [
 ];
 
 function setMode(m: InstrumentType) {
+  if (m !== "pads" && playing.value) stop();
   settings.setInstrument(m);
   activePads.value = new Map();
   activeNotes.value = new Map();
@@ -214,7 +256,7 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
         </span>
         <div>
           <div class="title">RHYTHM TRAINER</div>
-          <div class="sub">M1 · MIDI input scaffold</div>
+          <div class="sub">M2 · engine + pad view</div>
         </div>
       </div>
 
@@ -266,25 +308,65 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
     <!-- ============================= body ============================= -->
     <main class="body">
       <section class="stage">
-        <PadGrid
-          v-if="settings.instrument === 'pads'"
-          :active="activePads"
-          @trigger="(i, v) => triggerPad(i, v, 'click')"
-        />
-        <PianoKeyboard
-          v-else
-          :active="activeNotes"
-          :low-note="settings.pianoLow"
-          :high-note="settings.pianoHigh"
-          @note-on="(n, v) => noteOn(n, v, 'click')"
-          @note-off="noteOff"
-        />
+        <template v-if="settings.instrument === 'pads'">
+          <div class="trainhead">
+            <div class="lessoninfo">
+              <div class="lname">{{ lesson.name }}</div>
+              <div class="lhint">{{ lesson.hint }}</div>
+            </div>
+            <Hud
+              :bpm="bpm"
+              :accuracy="accuracy"
+              :combo="combo"
+              :best-combo="bestCombo"
+              :phase="phase"
+              :loop-acc="loopAcc"
+            />
+          </div>
 
-        <div class="next">
-          <b>Next: M2</b> — transport, scoring engine, and the falling-note canvas mount above
-          this instrument. Both modes share one engine; see
-          <code>build_plan.html</code> §15.
-        </div>
+          <div class="lane-wrap">
+            <canvas ref="laneCanvas" class="lane-canvas" />
+            <div v-if="toast" class="toast">{{ toast }}</div>
+          </div>
+
+          <div class="controls">
+            <button v-if="!playing" class="btn primary" @click="onPlay">▶ Play</button>
+            <button v-else class="btn stopbtn" @click="stop">■ Stop</button>
+
+            <label class="slider">
+              <span>TEMPO · {{ bpm }} BPM</span>
+              <input type="range" min="50" max="160" :value="bpm" @input="onTempo" />
+            </label>
+
+            <button class="toggle" :class="{ on: autoAdapt }" @click="autoAdapt = !autoAdapt">
+              <i class="dot" />Adapt tempo
+            </button>
+            <button class="toggle" :class="{ on: guide }" @click="guide = !guide">
+              <i class="dot" />Guide sound
+            </button>
+          </div>
+
+          <PadGrid
+            :active="activePads"
+            :emphasis="lanes"
+            :pops="pops"
+            @trigger="(i, v) => triggerPad(i, v, 'click')"
+          />
+        </template>
+
+        <template v-else>
+          <PianoKeyboard
+            :active="activeNotes"
+            :low-note="settings.pianoLow"
+            :high-note="settings.pianoHigh"
+            @note-on="(n, v) => noteOn(n, v, 'click')"
+            @note-off="noteOff"
+          />
+          <div class="next">
+            <b>Piano lessons land in M5</b> — the falling-note piano roll reuses this same
+            engine; for now the keyboard is free-play.
+          </div>
+        </template>
       </section>
 
       <aside class="side">
@@ -384,10 +466,103 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
   grid-template-columns: minmax(0, 1fr) 330px;
   gap: 18px;
   padding: 20px 18px;
+  overflow: auto;
 }
 .stage { min-width: 0; display: flex; flex-direction: column; }
 .side { min-height: 0; display: flex; }
 .side > * { flex: 1; }
+
+/* trainer chrome */
+.trainhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.lname { font-size: 20px; font-weight: 700; }
+.lhint { font-size: 12.5px; color: var(--dim); margin-top: 2px; max-width: 380px; }
+
+.lane-wrap {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  flex: none;
+}
+.lane-canvas {
+  display: block;
+  width: 100%;
+  height: 250px;
+  background: #111318;
+  touch-action: none;
+}
+.toast {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1c2026ee;
+  border: 1px solid #37d0c455;
+  color: #dfe4ea;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+.btn {
+  border: 1px solid var(--line);
+  background: #1a1e24;
+  border-radius: 10px;
+  padding: 9px 18px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn.primary {
+  background: linear-gradient(180deg, #37d0c4, #20b3a8);
+  color: #04201d;
+  border: none;
+}
+.btn.stopbtn { background: #2a1c1c; border-color: #e2564d55; color: #f0a8a2; }
+
+.slider {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--faint);
+  letter-spacing: 0.5px;
+}
+.slider input { accent-color: var(--teal); width: 130px; }
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: #1a1e24;
+  border: 1px solid var(--line);
+  color: var(--dim);
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.toggle .dot { width: 8px; height: 8px; border-radius: 8px; background: #404750; }
+.toggle.on { color: var(--ink); border-color: #37d0c455; }
+.toggle.on .dot { background: var(--teal); box-shadow: 0 0 8px var(--teal); }
 
 .next {
   margin-top: auto;
@@ -398,7 +573,6 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
   max-width: 560px;
 }
 .next b { color: var(--amber); font-family: var(--mono); font-size: 11px; letter-spacing: 0.5px; }
-.next code { font-family: var(--mono); font-size: 11px; color: var(--dim); }
 
 @media (max-width: 900px) {
   .body { grid-template-columns: 1fr; }
