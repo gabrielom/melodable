@@ -1,11 +1,8 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import type { InstrumentType } from "@/engine/types";
+import { persistGet, persistSet } from "./persist";
 
-/**
- * Session settings. M3 will persist these via the Tauri store plugin;
- * for now they live in memory.
- */
 /**
  * Where the instrument sound comes from when you strike a pad/key.
  * - "internal": Melodable's own Web Audio synth.
@@ -13,6 +10,16 @@ import type { InstrumentType } from "@/engine/types";
  *   which makes the sound; Melodable only tracks visuals and accuracy.
  */
 export type SoundOutput = "internal" | "external";
+
+/** The subset of settings we persist across launches (Tauri store, M3). */
+interface SettingsSnapshot {
+  instrument: InstrumentType;
+  volume: number;
+  soundOutput: SoundOutput;
+  metronome: boolean;
+  pianoLow: number;
+  pianoHigh: number;
+}
 
 export const useSettings = defineStore("settings", () => {
   const instrument = ref<InstrumentType>("pads");
@@ -26,9 +33,39 @@ export const useSettings = defineStore("settings", () => {
   const pianoLow = ref(48);
   const pianoHigh = ref(72);
 
+  /** True once persisted values have been loaded (or confirmed absent). */
+  const hydrated = ref(false);
+
   function setInstrument(i: InstrumentType) {
     instrument.value = i;
   }
+
+  // Hydrate from the Tauri store (no-op / undefined in the browser).
+  void persistGet<SettingsSnapshot>("settings").then((saved) => {
+    if (saved) {
+      if (saved.instrument) instrument.value = saved.instrument;
+      if (typeof saved.volume === "number") volume.value = saved.volume;
+      if (saved.soundOutput) soundOutput.value = saved.soundOutput;
+      if (typeof saved.metronome === "boolean") metronome.value = saved.metronome;
+      if (typeof saved.pianoLow === "number") pianoLow.value = saved.pianoLow;
+      if (typeof saved.pianoHigh === "number") pianoHigh.value = saved.pianoHigh;
+    }
+    hydrated.value = true;
+  });
+
+  // Persist on change. Guarded so the async hydrate above doesn't get
+  // clobbered by an initial write before it lands.
+  watch([instrument, volume, soundOutput, metronome, pianoLow, pianoHigh], () => {
+    if (!hydrated.value) return;
+    void persistSet("settings", {
+      instrument: instrument.value,
+      volume: volume.value,
+      soundOutput: soundOutput.value,
+      metronome: metronome.value,
+      pianoLow: pianoLow.value,
+      pianoHigh: pianoHigh.value,
+    } satisfies SettingsSnapshot);
+  });
 
   return {
     instrument,
@@ -38,6 +75,7 @@ export const useSettings = defineStore("settings", () => {
     metronome,
     pianoLow,
     pianoHigh,
+    hydrated,
     setInstrument,
   };
 });

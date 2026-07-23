@@ -9,6 +9,7 @@
 
 import { computed, onMounted, onUnmounted, ref, watch, type Ref } from "vue";
 import { useSettings } from "@/stores/settings";
+import { useLessons } from "@/stores/lessons";
 import type { Rating } from "@/engine/types";
 import { Transport } from "@/engine/transport";
 import { Scorer, lessonTargets } from "@/engine/scoring";
@@ -17,7 +18,6 @@ import { MidiClock } from "@/engine/midi-clock";
 import { noteToPad, PADS } from "@/engine/gm";
 import type { AudioEngine } from "@/engine/audio";
 import { PadLanes } from "@/views/pads/PadLanes";
-import { BUILTIN_LESSONS } from "@/data/lessons";
 
 export interface RatingPop {
   id: number;
@@ -30,7 +30,9 @@ const LOOKAHEAD = 1.0;
 
 export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement | null>) {
   const settings = useSettings();
-  const lesson = ref(BUILTIN_LESSONS[0]);
+  const lessons = useLessons();
+  /** The active lesson comes from the library store — one source of truth. */
+  const lesson = computed(() => lessons.current);
 
   const playing = ref(false);
   const bpm = ref(lesson.value.bpm);
@@ -57,7 +59,7 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
     beatsPerBar: lesson.value.beatsPerBar,
   });
   let scorer = new Scorer(targets.value);
-  const advance = new AdvanceTracker();
+  const advanceTracker = new AdvanceTracker();
 
   let renderer: PadLanes | null = null;
   let raf = 0;
@@ -74,7 +76,7 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
   /** Start a run. The caller must have initialized audio (user gesture). */
   function play(): void {
     scorer = new Scorer(targets.value);
-    advance.reset();
+    advanceTracker.reset();
     transport = new Transport({
       bpm: bpm.value,
       bars: lesson.value.bars,
@@ -94,6 +96,31 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
   function stop(): void {
     transport.stop();
     playing.value = false;
+    phase.value = "Ready";
+  }
+
+  /**
+   * Return to an idle, ready state for the current lesson. Called when the
+   * lesson changes — from the library or from clearing one — so the tempo,
+   * lanes, and HUD all reflect the new lesson before the next Play.
+   */
+  function resetForLesson(): void {
+    transport.stop();
+    playing.value = false;
+    transport = new Transport({
+      bpm: lesson.value.bpm,
+      bars: lesson.value.bars,
+      beatsPerBar: lesson.value.beatsPerBar,
+    });
+    scorer = new Scorer(targets.value);
+    advanceTracker.reset();
+    lastLoop = -1;
+    bpm.value = lesson.value.bpm;
+    accuracy.value = 100;
+    combo.value = 0;
+    bestCombo.value = 0;
+    loopAcc.value = null;
+    pops.value = [];
     phase.value = "Ready";
   }
 
@@ -230,8 +257,15 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
       bpm.value = nb;
       showToast(acc >= PUSH_ACC ? `Nice — nudging up to ${nb} BPM` : `Easing back to ${nb} BPM`);
     }
-    if (advance.update(acc, transport.bpm, base)) {
-      showToast("Lesson cleared! More lessons and the library land in M3.");
+    if (advanceTracker.update(acc, transport.bpm, base)) {
+      // Clearing the lesson advances the library; the lesson-change watcher
+      // resets the transport and HUD for the new lesson (stopped, ready).
+      const next = lessons.advance();
+      showToast(
+        next
+          ? `Lesson cleared! → ${next.name}`
+          : "Lesson cleared — that was the last one. Nice.",
+      );
     }
   }
 
@@ -263,6 +297,13 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
   }
 
   // ------------------------------------------------------------- lifecycle
+
+  // Switching lessons (library pick or a cleared-lesson advance) returns the
+  // trainer to a ready state for the new lesson.
+  watch(
+    () => lesson.value.id,
+    () => resetForLesson(),
+  );
 
   watch(canvasEl, (el) => {
     renderer = el ? new PadLanes(el) : null;

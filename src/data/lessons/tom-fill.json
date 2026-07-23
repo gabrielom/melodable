@@ -1,0 +1,22 @@
+{
+  "id": "builtin-tom-fill",
+  "name": "Tom Fill",
+  "instrument": "pads",
+  "bpm": 98,
+  "bars": 1,
+  "beatsPerBar": 4,
+  "source": "builtin",
+  "hint": "Groove for three beats, then roll the toms into the turn.",
+  "notes": [
+    { "time": 0, "pitch": 36 },
+    { "time": 1, "pitch": 38 },
+    { "time": 2, "pitch": 36 },
+    { "time": 0.5, "pitch": 42 },
+    { "time": 1.5, "pitch": 42 },
+    { "time": 2.5, "pitch": 42 },
+    { "time": 3, "pitch": 50 },
+    { "time": 3.25, "pitch": 47 },
+    { "time": 3.5, "pitch": 43 },
+    { "time": 3.75, "pitch": 38 }
+  ]
+}

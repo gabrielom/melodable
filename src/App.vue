@@ -9,6 +9,7 @@
  */
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useSettings } from "@/stores/settings";
+import { useLessons } from "@/stores/lessons";
 import { useMidi, isTauri } from "@/composables/useMidi";
 import { useTrainer } from "@/composables/useTrainer";
 import { AudioEngine } from "@/engine/audio";
@@ -18,12 +19,15 @@ import type { MidiMessage, InstrumentType } from "@/engine/types";
 import DevicePicker from "@/components/DevicePicker.vue";
 import MidiMonitor from "@/components/MidiMonitor.vue";
 import Hud from "@/components/Hud.vue";
+import LessonLibrary from "@/components/LessonLibrary.vue";
 import type { LogRow } from "@/components/midi-log";
 import PadGrid from "@/views/pads/PadGrid.vue";
 import PianoKeyboard from "@/views/piano/PianoKeyboard.vue";
 
 const settings = useSettings();
+const lessons = useLessons();
 const audio = new AudioEngine();
+const libraryOpen = ref(false);
 
 const audioReady = ref(false);
 const latencyMs = ref(0);
@@ -263,7 +267,7 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
         </span>
         <div>
           <div class="title">RHYTHM TRAINER</div>
-          <div class="sub">M2 · engine + pad view</div>
+          <div class="sub">M3 · adaptive + library</div>
         </div>
       </div>
 
@@ -338,7 +342,11 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
         <template v-if="settings.instrument === 'pads'">
           <div class="trainhead">
             <div class="lessoninfo">
-              <div class="lname">{{ lesson.name }}</div>
+              <button class="lname" title="Open the lesson library" @click="libraryOpen = true">
+                {{ lesson.name }}
+                <span class="lprog">{{ lessons.currentIndex + 1 }}/{{ lessons.lessons.length }}</span>
+                <span class="chev">▾</span>
+              </button>
               <div class="lhint">{{ lesson.hint }}</div>
             </div>
             <Hud
@@ -408,6 +416,14 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
         <MidiMonitor :rows="log" @clear="log = []" />
       </aside>
     </main>
+
+    <LessonLibrary
+      v-if="libraryOpen"
+      :lessons="lessons.lessons"
+      :current-index="lessons.currentIndex"
+      @select="(i: number) => lessons.selectIndex(i)"
+      @close="libraryOpen = false"
+    />
   </div>
 </template>
 
@@ -545,7 +561,29 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
   flex-wrap: wrap;
   margin-bottom: 10px;
 }
-.lname { font-size: 20px; font-weight: 700; }
+.lname {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+}
+.lname:hover .chev { color: var(--teal); }
+.lprog {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--faint);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 2px 9px;
+}
+.chev { font-size: 12px; color: var(--dim); }
 .lhint { font-size: 12.5px; color: var(--dim); margin-top: 2px; max-width: 380px; }
 
 .lane-wrap {

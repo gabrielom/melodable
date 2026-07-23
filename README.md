@@ -15,8 +15,8 @@ A Melodics-style timing trainer for **MPC-style pads** and **piano**, where less
 | **M0 — Scaffold** | ✅ done |
 | **M1 — MIDI input** | ✅ done |
 | **M2 — Engine + pad view** | ✅ done |
-| M3 — Adaptive difficulty + library | ⬜ next |
-| M4 — Ableton MIDI import | ⬜ |
+| **M3 — Adaptive difficulty + library** | ✅ done |
+| M4 — Ableton MIDI import | ⬜ next |
 | M5 — Piano mode (falling notes) | ⬜ |
 | M6 — Ableton Link play-along | ⬜ |
 | M7 — Polish & package | ⬜ |
@@ -29,6 +29,8 @@ A Melodics-style timing trainer for **MPC-style pads** and **piano**, where less
 - Play from hardware, mouse, or computer keyboard.
 - **Falling-note trainer (pads):** transport with count-in, canvas lanes falling to a hit line, Perfect/Great/Good/Miss grading, accuracy + combo HUD, metronome, and an optional guide track.
 - **Adaptive tempo:** clean bars nudge the BPM up (capped at 135% of base), rough bars ease it off (floored at 60%) — Melodics' Auto-BPM idea.
+- **Lesson progression + library:** six built-in pad lessons (Four on the Floor → Tom Fill); clearing one (two strong bars at/above base tempo) advances to the next, and the lesson library (click the lesson name) switches to any lesson.
+- **Persistent settings:** volume, instrument, sound source, metronome, and last lesson are saved via the Tauri store plugin (in-app only; browser dev stays in-memory).
 - Hardware hits are graded at their `midir` timestamp mapped onto the audio clock, not at event-delivery time.
 - **MIDI monitor** — live log of every message with note number, velocity, channel, and delta time.
 - Unit tests for the mapping layer and the engine (transport, scoring, adaptive, MIDI clock) — `npm test`.
@@ -90,6 +92,16 @@ npm run tauri icon app-icon.png
 5. Toggle **Guide sound** to hear the target part quietly; drag **Tempo** mid-run — the playhead stays continuous.
 
 **Acceptance (from the plan):** falling notes hit the line in time; ratings and combo update; `npm test` passes.
+
+## Verifying M3
+
+1. `npm run tauri dev`, Pads mode.
+2. Click the **lesson name** (top-left, e.g. *Four on the Floor 1/6*) — the **library** opens listing all six lessons. Pick one; the trainer switches to it (tempo, hint, and lanes update). ↑/↓ + Enter and Esc also work.
+3. Hit **▶ Play** and play well — a clean bar pushes the tempo up; two strong bars at/above the base tempo **clear the lesson and advance** to the next one (a toast names it).
+4. Play badly and watch the tempo **ease back down**.
+5. Change the volume or the SOUND switch, quit, relaunch — your choice (and the last lesson) is **restored**. (Persistence only applies in the Tauri app, not `npm run dev`.)
+
+**Acceptance (from the plan):** tempo eases/pushes by bar accuracy; clearing a lesson advances; library switches lessons.
 
 ### Playing along with Ableton (sound from Ableton, tracking in Melodable)
 
