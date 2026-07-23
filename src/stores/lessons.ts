@@ -35,6 +35,16 @@ export const useLessons = defineStore("lessons", () => {
     return current.value;
   }
 
+  /**
+   * Append a lesson (e.g. a MIDI import) and select it. Imported lessons live
+   * for the session — the persisted `lastLessonId` falls back to the first
+   * built-in on relaunch if the import isn't present.
+   */
+  function addLesson(lesson: Lesson): void {
+    lessons.value = [...lessons.value, lesson];
+    currentIndex.value = lessons.value.length - 1;
+  }
+
   // Remember the last lesson across launches (Tauri store; no-op in browser).
   void persistGet<string>("lastLessonId").then((id) => {
     if (id) selectId(id);
@@ -55,5 +65,6 @@ export const useLessons = defineStore("lessons", () => {
     selectIndex,
     selectId,
     advance,
+    addLesson,
   };
 });

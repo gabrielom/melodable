@@ -14,12 +14,14 @@ import { useMidi, isTauri } from "@/composables/useMidi";
 import { useTrainer } from "@/composables/useTrainer";
 import { AudioEngine } from "@/engine/audio";
 import { PADS, PAD_KEY_MAP, PIANO_KEY_MAP, noteToPad } from "@/engine/gm";
-import type { MidiMessage, InstrumentType } from "@/engine/types";
+import { parseMidiFile, midiToLesson, type MidiAnalysis } from "@/engine/midi-file";
+import type { MidiMessage, InstrumentType, Lesson } from "@/engine/types";
 
 import DevicePicker from "@/components/DevicePicker.vue";
 import MidiMonitor from "@/components/MidiMonitor.vue";
 import Hud from "@/components/Hud.vue";
 import LessonLibrary from "@/components/LessonLibrary.vue";
+import ImportDialog from "@/components/ImportDialog.vue";
 import type { LogRow } from "@/components/midi-log";
 import PadGrid from "@/views/pads/PadGrid.vue";
 import PianoKeyboard from "@/views/piano/PianoKeyboard.vue";
@@ -28,6 +30,54 @@ const settings = useSettings();
 const lessons = useLessons();
 const audio = new AudioEngine();
 const libraryOpen = ref(false);
+
+// ------------------------------------------------------------- MIDI import
+const fileInput = ref<HTMLInputElement | null>(null);
+const importOpen = ref(false);
+const importFileName = ref("");
+const importAnalysis = ref<MidiAnalysis | null>(null);
+const importError = ref<string | null>(null);
+let importDraft: Lesson | null = null;
+
+function openImport() {
+  fileInput.value?.click();
+}
+
+async function onImportFile(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = ""; // allow re-picking the same file
+  if (!file) return;
+
+  importFileName.value = file.name;
+  importError.value = null;
+  importAnalysis.value = null;
+  importDraft = null;
+  try {
+    const buf = await file.arrayBuffer();
+    const parsed = parseMidiFile(buf);
+    const { lesson, analysis } = midiToLesson(parsed, file.name);
+    importDraft = lesson;
+    importAnalysis.value = analysis;
+  } catch (err) {
+    importError.value = err instanceof Error ? err.message : String(err);
+  }
+  importOpen.value = true;
+}
+
+function confirmImport(payload: { name: string; bpm: number }) {
+  if (importDraft) {
+    lessons.addLesson({ ...importDraft, name: payload.name, bpm: payload.bpm });
+  }
+  closeImport();
+}
+
+function closeImport() {
+  importOpen.value = false;
+  importDraft = null;
+  importAnalysis.value = null;
+  importError.value = null;
+}
 
 const audioReady = ref(false);
 const latencyMs = ref(0);
@@ -315,6 +365,17 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
       </button>
       <span v-else class="armed">audio running · {{ latencyMs }}ms out</span>
 
+      <button class="importbtn" title="Import a MIDI clip from Ableton" @click="openImport">
+        ⇪ Import MIDI
+      </button>
+      <input
+        ref="fileInput"
+        type="file"
+        accept=".mid,.midi,audio/midi"
+        hidden
+        @change="onImportFile"
+      />
+
       <div class="sndsel" role="group" aria-label="Instrument sound source">
         <span class="sndlbl">SOUND</span>
         <button
@@ -424,6 +485,15 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
       @select="(i: number) => lessons.selectIndex(i)"
       @close="libraryOpen = false"
     />
+
+    <ImportDialog
+      v-if="importOpen"
+      :file-name="importFileName"
+      :analysis="importAnalysis"
+      :error="importError"
+      @confirm="confirmImport"
+      @close="closeImport"
+    />
   </div>
 </template>
 
@@ -508,6 +578,18 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
   cursor: pointer;
 }
 .armed { font-family: var(--mono); font-size: 11px; color: var(--teal); }
+
+.importbtn {
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 7px 13px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dim);
+  cursor: pointer;
+}
+.importbtn:hover { color: var(--ink); border-color: #39414d; }
 
 .sndsel {
   display: flex;

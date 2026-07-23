@@ -102,6 +102,23 @@ export function noteToPad(note: number): number | null {
 }
 
 /**
+ * Inverse of `GM_TO_PAD`: a canonical GM note that routes *back* to each pad.
+ * Prefers the pad's own `outNote` when that round-trips through `GM_TO_PAD`,
+ * otherwise the first GM note that maps to the pad. Used by the MIDI importer
+ * to place unmapped percussion on spare pads without dropping notes.
+ */
+export const PAD_TO_NOTE: Record<number, number> = (() => {
+  const map: Record<number, number> = {};
+  for (let i = 0; i < PADS.length; i++) {
+    if (GM_TO_PAD[PADS[i].outNote] === i) map[i] = PADS[i].outNote;
+  }
+  for (const [noteStr, pad] of Object.entries(GM_TO_PAD)) {
+    if (map[pad] === undefined) map[pad] = Number(noteStr);
+  }
+  return map;
+})();
+
+/**
  * Computer keyboard -> piano note, one octave starting at C4 (60).
  * Home row = white keys, upper row = black keys, like most soft-synths.
  */

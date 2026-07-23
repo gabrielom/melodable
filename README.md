@@ -16,8 +16,8 @@ A Melodics-style timing trainer for **MPC-style pads** and **piano**, where less
 | **M1 — MIDI input** | ✅ done |
 | **M2 — Engine + pad view** | ✅ done |
 | **M3 — Adaptive difficulty + library** | ✅ done |
-| M4 — Ableton MIDI import | ⬜ next |
-| M5 — Piano mode (falling notes) | ⬜ |
+| **M4 — Ableton MIDI import** | ✅ done |
+| M5 — Piano mode (falling notes) | ⬜ next |
 | M6 — Ableton Link play-along | ⬜ |
 | M7 — Polish & package | ⬜ |
 
@@ -31,6 +31,7 @@ A Melodics-style timing trainer for **MPC-style pads** and **piano**, where less
 - **Adaptive tempo:** clean bars nudge the BPM up (capped at 135% of base), rough bars ease it off (floored at 60%) — Melodics' Auto-BPM idea.
 - **Lesson progression + library:** six built-in pad lessons (Four on the Floor → Tom Fill); clearing one (two strong bars at/above base tempo) advances to the next, and the lesson library (click the lesson name) switches to any lesson.
 - **Persistent settings:** volume, instrument, sound source, metronome, and last lesson are saved via the Tauri store plugin (in-app only; browser dev stays in-memory).
+- **Ableton clip import:** drop in a `.mid` drum clip and it becomes a gradable lesson at its own tempo — native SMF parser (tempo/time-signature meta, running status), GM→pad routing, and a preview dialog.
 - Hardware hits are graded at their `midir` timestamp mapped onto the audio clock, not at event-delivery time.
 - **MIDI monitor** — live log of every message with note number, velocity, channel, and delta time.
 - Unit tests for the mapping layer and the engine (transport, scoring, adaptive, MIDI clock) — `npm test`.
@@ -103,6 +104,17 @@ npm run tauri icon app-icon.png
 
 **Acceptance (from the plan):** tempo eases/pushes by bar accuracy; clearing a lesson advances; library switches lessons.
 
+## Verifying M4
+
+1. In Ableton, drag a **MIDI drum clip** out to the desktop (or right-click → *Export MIDI Clip*).
+2. `npm run tauri dev`, Pads mode, click **⇪ Import MIDI** in the toolbar and pick the `.mid`.
+3. The **import preview** shows the detected tempo, length, hit count, and which pads it uses, and flags whether it reads as a drum clip. Adjust the name/tempo if you like, then **Add to library**.
+4. The clip becomes the current lesson (marked *imported* in the library) — hit **▶ Play** and drill it at its own tempo, graded like any built-in.
+
+**Acceptance (from the plan):** a drum clip exported from Ableton becomes a playable, gradable lesson at its own tempo.
+
+> Imported lessons live for the session. If a controller or Drum Rack sends note numbers the grid doesn't know, the importer places them on spare pads rather than dropping them; extend `GM_TO_PAD` in `src/engine/gm.ts` to place them deliberately.
+
 ### Playing along with Ableton (sound from Ableton, tracking in Melodable)
 
 Set the toolbar's **SOUND** switch to **Ableton / DAW** and Melodable mutes its
@@ -124,10 +136,11 @@ src/
 │  ├─ transport.ts # looped playhead: clock math, count-in, scheduler window
 │  ├─ scoring.ts  # lane-based hit grading, combo, per-loop accuracy
 │  ├─ adaptive.ts # Auto-BPM tempo steps + lesson-clear streak
-│  └─ midi-clock.ts # midir timestamps -> AudioContext clock
+│  ├─ midi-clock.ts # midir timestamps -> AudioContext clock
+│  └─ midi-file.ts  # SMF parser + .mid → Lesson (Ableton import)
 ├─ composables/   # useMidi.ts (Rust bridge), useTrainer.ts (session loop)
-├─ stores/        # Pinia
-├─ components/    # DevicePicker, MidiMonitor, Hud
+├─ stores/        # Pinia: settings, lessons, persist (Tauri store)
+├─ components/    # DevicePicker, MidiMonitor, Hud, LessonLibrary, ImportDialog
 ├─ data/lessons/  # built-in lesson JSON
 └─ views/
    ├─ pads/       # PadGrid.vue, PadLanes.ts (canvas lanes)
