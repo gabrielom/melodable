@@ -64,7 +64,10 @@ npm run build     # type-check + build frontend
 npm run tauri build   # package installers (see icons note below)
 ```
 
-**Icons:** an `app-icon.png` is included. Generate the platform icon set once before `tauri build`:
+**Icons:** the generated platform icon set is committed in `src-tauri/icons/`, so
+`tauri dev` and `tauri build` work out of the box. (Tauri reads these at *compile*
+time — without them the Rust build fails in `generate_context!`, not just at
+packaging.) To regenerate from a new source image:
 
 ```bash
 npm run tauri icon app-icon.png
