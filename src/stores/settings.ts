@@ -20,6 +20,7 @@ interface SettingsSnapshot {
   volume: number;
   soundOutput: SoundOutput;
   metronome: boolean;
+  monitorOpen: boolean;
   pianoLow: number;
   pianoHigh: number;
 }
@@ -31,10 +32,12 @@ export const useSettings = defineStore("settings", () => {
   const soundOutput = ref<SoundOutput>("internal");
   /** Metronome click, count-in included. Off when the DAW provides the click. */
   const metronome = ref(true);
+  /** Side panel with the live MIDI log. Collapsed gives the stage full width. */
+  const monitorOpen = ref(true);
 
-  /** Piano view range — 25 keys (C3..C5) by default. */
+  /** Fallback piano range (C3..C6) when a lesson has no notes to frame. */
   const pianoLow = ref(48);
-  const pianoHigh = ref(72);
+  const pianoHigh = ref(84);
 
   /** True once persisted values have been loaded (or confirmed absent). */
   const hydrated = ref(false);
@@ -49,6 +52,7 @@ export const useSettings = defineStore("settings", () => {
       if (typeof saved.volume === "number") volume.value = saved.volume;
       if (saved.soundOutput) soundOutput.value = saved.soundOutput;
       if (typeof saved.metronome === "boolean") metronome.value = saved.metronome;
+      if (typeof saved.monitorOpen === "boolean") monitorOpen.value = saved.monitorOpen;
       if (typeof saved.pianoLow === "number") pianoLow.value = saved.pianoLow;
       if (typeof saved.pianoHigh === "number") pianoHigh.value = saved.pianoHigh;
     }
@@ -57,12 +61,13 @@ export const useSettings = defineStore("settings", () => {
 
   // Persist on change. Guarded so the async hydrate above doesn't get
   // clobbered by an initial write before it lands.
-  watch([volume, soundOutput, metronome, pianoLow, pianoHigh], () => {
+  watch([volume, soundOutput, metronome, monitorOpen, pianoLow, pianoHigh], () => {
     if (!hydrated.value) return;
     void persistSet("settings", {
       volume: volume.value,
       soundOutput: soundOutput.value,
       metronome: metronome.value,
+      monitorOpen: monitorOpen.value,
       pianoLow: pianoLow.value,
       pianoHigh: pianoHigh.value,
     } satisfies SettingsSnapshot);
@@ -74,6 +79,7 @@ export const useSettings = defineStore("settings", () => {
     lastPortName,
     soundOutput,
     metronome,
+    monitorOpen,
     pianoLow,
     pianoHigh,
     hydrated,

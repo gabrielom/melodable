@@ -453,27 +453,6 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
           />
         </div>
 
-        <!-- Pads: falling-note lane over the 4x4 grid -->
-        <div v-if="!isPiano" class="lane-wrap">
-          <canvas ref="laneCanvas" class="lane-canvas" />
-          <div v-if="toast" class="toast">{{ toast }}</div>
-        </div>
-
-        <!-- Piano: falling notes land on the keyboard directly below (aligned) -->
-        <div v-else class="piano-stage">
-          <canvas ref="laneCanvas" class="lane-canvas piano-canvas" />
-          <PianoKeyboard
-            :active="activeNotes"
-            :low-note="pianoRange[0]"
-            :high-note="pianoRange[1]"
-            :pops="pops"
-            :show-legend="false"
-            @note-on="(n, v) => noteOn(n, v, 'click')"
-            @note-off="noteOff"
-          />
-          <div v-if="toast" class="toast">{{ toast }}</div>
-        </div>
-
         <div class="controls">
           <button v-if="!playing" class="btn primary" @click="onPlay">▶ Play</button>
           <button v-else class="btn stopbtn" @click="stop">■ Stop</button>
@@ -499,18 +478,47 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
           </button>
         </div>
 
-        <PadGrid
-          v-if="!isPiano"
-          :active="activePads"
-          :emphasis="lanes"
-          :pops="pops"
-          @trigger="(i, v) => triggerPad(i, v, 'click')"
-        />
+        <!-- Pads: falling-note lane fills the space, grid sits under it -->
+        <template v-if="!isPiano">
+          <div class="lane-wrap">
+            <canvas ref="laneCanvas" class="lane-canvas" />
+            <div v-if="toast" class="toast">{{ toast }}</div>
+          </div>
+          <PadGrid
+            :active="activePads"
+            :emphasis="lanes"
+            :pops="pops"
+            @trigger="(i, v) => triggerPad(i, v, 'click')"
+          />
+        </template>
+
+        <!-- Piano: notes fall the full height onto a keyboard pinned to the bottom -->
+        <div v-else class="piano-stage">
+          <canvas ref="laneCanvas" class="lane-canvas piano-canvas" />
+          <PianoKeyboard
+            :active="activeNotes"
+            :low-note="pianoRange[0]"
+            :high-note="pianoRange[1]"
+            :pops="pops"
+            :show-legend="false"
+            @note-on="(n, v) => noteOn(n, v, 'click')"
+            @note-off="noteOff"
+          />
+          <div v-if="toast" class="toast">{{ toast }}</div>
+        </div>
       </section>
 
-      <aside class="side">
-        <MidiMonitor :rows="log" @clear="log = []" />
+      <aside v-if="settings.monitorOpen" class="side">
+        <MidiMonitor :rows="log" @clear="log = []" @collapse="settings.monitorOpen = false" />
       </aside>
+      <button
+        v-else
+        class="side-rail"
+        title="Show the MIDI monitor"
+        @click="settings.monitorOpen = true"
+      >
+        <span class="rail-label">MIDI MONITOR</span>
+      </button>
     </main>
 
     <LessonLibrary
@@ -665,11 +673,44 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
   grid-template-columns: minmax(0, 1fr) 330px;
   gap: 18px;
   padding: 20px 18px;
-  overflow: auto;
 }
-.stage { min-width: 0; display: flex; flex-direction: column; }
+/* Collapsed monitor: the stage takes the width, a slim rail brings it back. */
+.body:has(.side-rail) { grid-template-columns: minmax(0, 1fr) 34px; }
+
+.stage {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* Safety valve: on a short window the stage scrolls rather than clipping
+     the pad grid. At normal sizes the flex children absorb the height. */
+  overflow-y: auto;
+}
+/* The pad grid keeps its intrinsic height; the lane above it takes the rest. */
+.stage > .wrap { flex: none; }
 .side { min-height: 0; display: flex; }
 .side > * { flex: 1; }
+
+.side-rail {
+  align-self: stretch;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.side-rail:hover { border-color: #39414d; }
+.rail-label {
+  writing-mode: vertical-rl;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 1.6px;
+  color: var(--faint);
+}
+.side-rail:hover .rail-label { color: var(--teal); }
 
 /* trainer chrome */
 .trainhead {
@@ -705,36 +746,43 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
 .chev { font-size: 12px; color: var(--dim); }
 .lhint { font-size: 12.5px; color: var(--dim); margin-top: 2px; max-width: 380px; }
 
+/* Pads: the lane takes the leftover height; the grid sits beneath it. */
 .lane-wrap {
   position: relative;
   border: 1px solid var(--line);
   border-radius: 12px;
   overflow: hidden;
-  flex: none;
+  flex: 1 1 auto;
+  min-height: 170px;
+  margin-bottom: 14px;
 }
 .lane-canvas {
   display: block;
   width: 100%;
-  height: 250px;
+  height: 100%;
   background: #111318;
   touch-action: none;
 }
 
-/* Piano: falling-note canvas and keyboard as one flush, aligned unit. */
+/* Piano: canvas + keyboard as one flush unit that fills the remaining height,
+   so the keys always sit at the bottom of the window. */
 .piano-stage {
   position: relative;
   border: 1px solid var(--line);
   border-radius: 12px;
   overflow: hidden;
-  flex: none;
+  flex: 1 1 auto;
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
 }
 .piano-canvas {
-  display: block;
-  width: 100%;
-  height: 210px;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
   background: #0b0d11;
-  touch-action: none;
 }
+.piano-stage :deep(.wrap) { flex: none; }
 
 .toast {
   position: absolute;

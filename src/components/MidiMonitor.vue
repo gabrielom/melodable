@@ -8,14 +8,17 @@ import { noteName } from "@/views/piano/mapping";
 import type { LogRow } from "@/components/midi-log";
 
 defineProps<{ rows: LogRow[] }>();
-const emit = defineEmits<{ (e: "clear"): void }>();
+const emit = defineEmits<{ (e: "clear"): void; (e: "collapse"): void }>();
 </script>
 
 <template>
   <section class="monitor">
     <header>
       <span class="ttl">MIDI MONITOR</span>
-      <button class="clear" @click="emit('clear')">clear</button>
+      <span class="acts">
+        <button class="clear" @click="emit('clear')">clear</button>
+        <button class="collapse" title="Hide the monitor" @click="emit('collapse')">›</button>
+      </span>
     </header>
 
     <div class="head">
@@ -62,6 +65,7 @@ header {
   letter-spacing: 1.6px;
   color: var(--teal);
 }
+.acts { display: inline-flex; align-items: center; gap: 4px; }
 .clear {
   background: none;
   border: none;
@@ -71,6 +75,17 @@ header {
   font-family: var(--mono);
 }
 .clear:hover { color: var(--ink); }
+.collapse {
+  background: none;
+  border: none;
+  color: var(--faint);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.collapse:hover { color: var(--ink); background: var(--panel2); }
 
 .head,
 .row {

@@ -68,11 +68,44 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
   /** Pads: the pad indices this lesson uses, left-to-right. */
   const lanes = computed(() => [...new Set(targets.value.map((t) => t.lane))].sort((a, b) => a - b));
 
-  /** Piano: the visible key range covering the lesson's pitches, padded + snapped. */
+  /**
+   * Piano: the visible key range. Covers the lesson's pitches with a little
+   * padding, then widens symmetrically to at least three octaves so the
+   * keyboard always reads as a real instrument rather than a few stray keys.
+   */
+  const MIN_PIANO_SPAN = 36; // semitones = 3 octaves
+  const LOWEST_KEY = 21; // A0
+  const HIGHEST_KEY = 108; // C8
+
   const pianoRange = computed<[number, number]>(() => {
     const pitches = targets.value.map((t) => t.lane);
-    if (pitches.length === 0) return normalizeRange(settings.pianoLow, settings.pianoHigh);
-    return normalizeRange(Math.min(...pitches) - 2, Math.max(...pitches) + 2);
+    let lo: number;
+    let hi: number;
+    if (pitches.length === 0) {
+      lo = settings.pianoLow;
+      hi = settings.pianoHigh;
+    } else {
+      lo = Math.min(...pitches) - 2;
+      hi = Math.max(...pitches) + 2;
+    }
+
+    const shortfall = MIN_PIANO_SPAN - (hi - lo);
+    if (shortfall > 0) {
+      lo -= Math.floor(shortfall / 2);
+      hi += Math.ceil(shortfall / 2);
+    }
+
+    // Slide (don't shrink) the window back inside the playable range.
+    if (lo < LOWEST_KEY) {
+      hi += LOWEST_KEY - lo;
+      lo = LOWEST_KEY;
+    }
+    if (hi > HIGHEST_KEY) {
+      lo -= hi - HIGHEST_KEY;
+      hi = HIGHEST_KEY;
+    }
+
+    return normalizeRange(Math.max(LOWEST_KEY, lo), Math.min(HIGHEST_KEY, hi));
   });
 
   let transport = new Transport({
