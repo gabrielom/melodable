@@ -20,7 +20,7 @@ import type { MidiMessage, InstrumentType } from "@/engine/types";
 import DeviceMenu from "@/components/DeviceMenu.vue";
 import MidiMonitor from "@/components/MidiMonitor.vue";
 import Hud from "@/components/Hud.vue";
-import LessonLibrary from "@/components/LessonLibrary.vue";
+import HomeScreen from "@/components/HomeScreen.vue";
 import ImportDialog from "@/components/ImportDialog.vue";
 import type { LogRow } from "@/components/midi-log";
 import PadGrid from "@/views/pads/PadGrid.vue";
@@ -29,7 +29,22 @@ import PianoKeyboard from "@/views/piano/PianoKeyboard.vue";
 const settings = useSettings();
 const lessons = useLessons();
 const audio = new AudioEngine();
-const libraryOpen = ref(false);
+
+/**
+ * Two screens: pick a lesson, or practise it. The trainer has no lesson
+ * header of its own — the X in the transport bar comes back here.
+ */
+const view = ref<"home" | "trainer">("home");
+
+function openLesson(index: number) {
+  lessons.selectIndex(index);
+  view.value = "trainer";
+}
+
+function goHome() {
+  if (playing.value) stop();
+  view.value = "home";
+}
 
 // ------------------------------------------------------------- MIDI import
 // The parsed clip is kept and re-projected whenever the chosen instrument
@@ -96,7 +111,6 @@ const log = ref<LogRow[]>([]);
 
 const laneCanvas = ref<HTMLCanvasElement | null>(null);
 const {
-  lesson,
   playing,
   bpm,
   autoAdapt,
@@ -364,6 +378,11 @@ function onVolume(e: Event) {
     <!-- ===================== transport (window titlebar) ===================== -->
     <!-- Left inset clears the macOS window controls, which sit on this bar. -->
     <header class="bar" data-tauri-drag-region>
+      <template v-if="view === 'trainer'">
+      <button class="iconbtn close" title="Back to lessons" aria-label="Back to lessons" @click="goHome">
+        ✕
+      </button>
+
       <button v-if="!playing" class="btn primary" @click="onPlay">▶ Play</button>
       <button v-else class="btn stopbtn" @click="stop">■ Stop</button>
 
@@ -398,6 +417,8 @@ function onVolume(e: Event) {
           Click
         </button>
       </div>
+
+      </template>
 
       <div class="modes">
         <span ref="padMenuRoot" class="modewrap">
@@ -515,16 +536,16 @@ function onVolume(e: Event) {
 
     <!-- ============================= body ============================= -->
     <main class="body">
-      <section class="stage">
+      <section v-if="view === 'home'" class="stage">
+        <HomeScreen
+          :lessons="lessons.lessons"
+          :current-index="lessons.currentIndex"
+          @open="openLesson"
+        />
+      </section>
+
+      <section v-else class="stage">
         <div class="trainhead">
-          <div class="lessoninfo">
-            <button class="lname" title="Open the lesson library" @click="libraryOpen = true">
-              {{ lesson.name }}
-              <span class="lprog">{{ lessons.currentIndex + 1 }}/{{ lessons.lessons.length }}</span>
-              <span class="chev">▾</span>
-            </button>
-            <div class="lhint">{{ lesson.hint }}</div>
-          </div>
           <Hud
             :bpm="bpm"
             :accuracy="accuracy"
@@ -570,14 +591,6 @@ function onVolume(e: Event) {
         <MidiMonitor :rows="log" @clear="log = []" @collapse="settings.monitorOpen = false" />
       </aside>
     </main>
-
-    <LessonLibrary
-      v-if="libraryOpen"
-      :lessons="lessons.lessons"
-      :current-index="lessons.currentIndex"
-      @select="(i: number) => lessons.selectIndex(i)"
-      @close="libraryOpen = false"
-    />
 
     <ImportDialog
       v-if="importOpen"
@@ -712,6 +725,8 @@ function onVolume(e: Event) {
 }
 .iconbtn:hover { color: var(--ink); border-color: #39414d; }
 .iconbtn.on { color: var(--teal); border-color: #37d0c455; background: #16211f; }
+.iconbtn.close { font-size: 13px; }
+.iconbtn.close:hover { color: #f0a8a2; border-color: #e2564d55; }
 
 /* body */
 .body {
@@ -741,38 +756,8 @@ function onVolume(e: Event) {
 
 
 /* trainer chrome */
-.trainhead {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-}
-.lname {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ink);
-  background: none;
-  border: none;
-  padding: 2px 0;
-  cursor: pointer;
-}
-.lname:hover .chev { color: var(--teal); }
-.lprog {
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--faint);
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  padding: 2px 9px;
-}
-.chev { font-size: 12px; color: var(--dim); }
-.lhint { font-size: 12.5px; color: var(--dim); margin-top: 2px; max-width: 380px; }
+/* Just the live stats now — the lesson header moved to the Home screen. */
+.trainhead { display: flex; margin-bottom: 10px; }
 
 /* Pads: the lane takes the leftover height; the grid sits beneath it. */
 .lane-wrap {
