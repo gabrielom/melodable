@@ -29,7 +29,6 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (e: "trigger", padIndex: number, velocity: number): void;
-  (e: "layout", value: PadLayout): void;
 }>();
 
 /** Distinct hue per pad, matching the falling-note lane colours. */
@@ -73,24 +72,7 @@ function tileStyle(i: number): Record<string, string> {
   <div class="wrap">
     <div class="head">
       <span class="ttl">PADS IN THIS LESSON</span>
-      <div class="seg" role="group" aria-label="Controller pad layout">
-        <button
-          class="segbtn"
-          :class="{ on: layout === '4x4' }"
-          title="MPC-style 4x4 grid"
-          @click="emit('layout', '4x4')"
-        >
-          4×4
-        </button>
-        <button
-          class="segbtn"
-          :class="{ on: layout === '2x8' }"
-          title="Two rows of eight — Launchkey and similar"
-          @click="emit('layout', '2x8')"
-        >
-          2×8
-        </button>
-      </div>
+      <span class="lay">{{ layout === "2x8" ? "2×8" : "4×4" }}</span>
     </div>
 
     <div class="tiles">
@@ -142,25 +124,14 @@ function tileStyle(i: number): Record<string, string> {
   letter-spacing: 1.5px;
   color: var(--faint);
 }
-.seg {
-  display: inline-flex;
-  gap: 3px;
-  background: #0c0e12;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 2px;
-}
-.segbtn {
-  background: none;
-  border: none;
+.lay {
+  font-family: var(--mono);
+  font-size: 9.5px;
   color: var(--dim);
-  font-size: 11.5px;
-  font-weight: 600;
-  padding: 3px 9px;
-  border-radius: 6px;
-  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 1px 8px;
 }
-.segbtn.on { background: var(--panel2); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
 
 .tiles { display: flex; flex-wrap: wrap; gap: 8px; }
 

@@ -8,7 +8,7 @@
  * Next (see build_plan.html §15): M3 adds the lesson library + persistence.
  */
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
-import { useSettings } from "@/stores/settings";
+import { useSettings, type PadLayout } from "@/stores/settings";
 import { useLessons } from "@/stores/lessons";
 import { useMidi } from "@/composables/useMidi";
 import { useTrainer } from "@/composables/useTrainer";
@@ -258,6 +258,7 @@ const {
 const heldKeys = new Set<string>();
 
 function onKeyDown(e: KeyboardEvent) {
+  if (e.key === "Escape" && padMenuOpen.value) padMenuOpen.value = false;
   if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
   const key = e.key.toLowerCase();
   if (heldKeys.has(key)) return;
@@ -291,20 +292,42 @@ function onKeyUp(e: KeyboardEvent) {
 onMounted(() => {
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
+  document.addEventListener("pointerdown", onPadMenuPointer);
   void refreshPorts();
 });
 
 onUnmounted(() => {
   window.removeEventListener("keydown", onKeyDown);
   window.removeEventListener("keyup", onKeyUp);
+  document.removeEventListener("pointerdown", onPadMenuPointer);
 });
 
 // -------------------------------------------------------------------- misc
 
-const modes: Array<{ id: InstrumentType; label: string }> = [
-  { id: "pads", label: "Pads" },
-  { id: "piano", label: "Piano" },
+const padLayouts: Array<{ id: PadLayout; label: string; hint: string }> = [
+  { id: "4x4", label: "4×4", hint: "MPC-style grid" },
+  { id: "2x8", label: "2×8", hint: "Launchkey, two rows" },
 ];
+
+const padMenuOpen = ref(false);
+const padMenuRoot = ref<HTMLElement | null>(null);
+
+function togglePadMenu() {
+  padMenuOpen.value = !padMenuOpen.value;
+  // Opening the layout menu implies you're working with the pads.
+  if (padMenuOpen.value && settings.instrument !== "pads") setMode("pads");
+}
+
+function pickPadLayout(id: PadLayout) {
+  settings.padLayout = id;
+  padMenuOpen.value = false;
+}
+
+function onPadMenuPointer(e: PointerEvent) {
+  if (padMenuOpen.value && padMenuRoot.value && !padMenuRoot.value.contains(e.target as Node)) {
+    padMenuOpen.value = false;
+  }
+}
 
 /**
  * The view follows the *lesson's* instrument. Switching mode jumps to the
@@ -377,14 +400,49 @@ function onVolume(e: Event) {
       </div>
 
       <div class="modes">
+        <span ref="padMenuRoot" class="modewrap">
+          <button
+            class="mode"
+            :class="{ on: settings.instrument === 'pads' }"
+            @click="setMode('pads')"
+          >
+            Pads
+          </button>
+          <button
+            class="modechev"
+            :class="{ on: settings.instrument === 'pads' }"
+            title="Controller pad layout"
+            aria-label="Controller pad layout"
+            @click="togglePadMenu"
+          >
+            ▾
+          </button>
+
+          <div v-if="padMenuOpen" class="padmenu" role="menu">
+            <div class="pmhead">PAD LAYOUT</div>
+            <button
+              v-for="opt in padLayouts"
+              :key="opt.id"
+              class="pmitem"
+              :class="{ on: settings.padLayout === opt.id }"
+              role="menuitem"
+              @click="pickPadLayout(opt.id)"
+            >
+              <i class="tick">{{ settings.padLayout === opt.id ? "●" : "" }}</i>
+              <span>
+                <b>{{ opt.label }}</b>
+                <em>{{ opt.hint }}</em>
+              </span>
+            </button>
+          </div>
+        </span>
+
         <button
-          v-for="m in modes"
-          :key="m.id"
           class="mode"
-          :class="{ on: settings.instrument === m.id }"
-          @click="setMode(m.id)"
+          :class="{ on: settings.instrument === 'piano' }"
+          @click="setMode('piano')"
         >
-          {{ m.label }}
+          Piano
         </button>
       </div>
 
@@ -489,7 +547,6 @@ function onVolume(e: Event) {
             :pops="pops"
             :layout="settings.padLayout"
             @trigger="(i, v) => triggerPad(i, v, 'click')"
-            @layout="(l) => (settings.padLayout = l)"
           />
         </template>
 
@@ -578,6 +635,60 @@ function onVolume(e: Event) {
   cursor: pointer;
 }
 .mode.on { background: var(--panel2); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
+
+/* Pads button carries a chevron opening the controller-layout menu. */
+.modewrap { position: relative; display: inline-flex; align-items: center; }
+.modewrap .mode { padding-right: 4px; }
+.modechev {
+  background: none;
+  border: none;
+  color: var(--faint);
+  font-size: 9px;
+  padding: 5px 7px 5px 2px;
+  border-radius: 7px;
+  cursor: pointer;
+  align-self: stretch;
+}
+.modechev.on { background: var(--panel2); color: var(--dim); box-shadow: 0 0 0 1px var(--line); }
+.modechev:hover { color: var(--teal); }
+
+.padmenu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 208px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  box-shadow: 0 18px 50px #000000aa;
+  padding: 5px;
+  z-index: 60;
+}
+.pmhead {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 1.4px;
+  color: var(--faint);
+  padding: 6px 8px 8px;
+}
+.pmitem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--ink);
+  text-align: left;
+  padding: 7px 9px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.pmitem:hover { background: var(--panel2); }
+.pmitem.on { color: var(--teal); }
+.pmitem .tick { width: 10px; font-size: 9px; font-style: normal; flex: none; }
+.pmitem b { font-size: 13px; font-weight: 600; display: block; }
+.pmitem em { font-style: normal; font-size: 11px; color: var(--faint); display: block; }
 
 .vol { display: flex; align-items: center; }
 .vol input { accent-color: var(--teal); width: 58px; }
