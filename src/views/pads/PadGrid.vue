@@ -76,6 +76,7 @@ function tileStyle(i: number): Record<string, string> {
         :key="t.index"
         class="tile"
         :style="tileStyle(t.index)"
+        :title="`${t.pad.name} — pad ${t.pos.label}, key ${t.pad.key.toUpperCase()}, MIDI note ${t.pad.outNote}`"
         @pointerdown.prevent="emit('trigger', t.index, 110)"
       >
         <span
@@ -112,17 +113,25 @@ function tileStyle(i: number): Record<string, string> {
 <style scoped>
 .wrap { display: flex; flex-direction: column; padding-top: 10px; }
 
-.tiles { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Always a single row: tiles share the width rather than wrapping, so a
+   six-pad lesson costs the same height as a three-pad one. */
+.tiles {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 5px;
+}
 
 .tile {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
+  min-width: 0;
   background: #1a1e24;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 8px 12px 8px 9px;
+  border-radius: 9px;
+  padding: 6px 8px;
   cursor: pointer;
   transition: transform 0.05s, box-shadow 0.06s, background 0.08s;
 }
@@ -130,25 +139,38 @@ function tileStyle(i: number): Record<string, string> {
 
 .mini {
   display: grid;
-  gap: 2px;
+  gap: 1px;
   flex: none;
 }
 .mini i {
-  width: 5px;
-  height: 5px;
-  border-radius: 1.5px;
+  width: 3px;
+  height: 3px;
+  border-radius: 1px;
   background: #2b313a;
   display: block;
 }
 .mini i.on { box-shadow: 0 0 5px currentColor; }
 
-.text { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
-.name { font-size: 13px; font-weight: 600; color: #dfe4ea; line-height: 1.2; }
+.text { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; }
+.name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #dfe4ea;
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .meta {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 9px;
   color: var(--faint);
-  letter-spacing: 0.3px;
+  letter-spacing: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .meta b { font-weight: 700; }
 
