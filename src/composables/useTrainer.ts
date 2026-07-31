@@ -20,6 +20,7 @@ import type { AudioEngine } from "@/engine/audio";
 import type { LaneRenderer } from "@/views/lane-frame";
 import { PadLanes } from "@/views/pads/PadLanes";
 import { PianoRoll } from "@/views/piano/PianoRoll";
+import { Overview } from "@/views/Overview";
 import { normalizeRange } from "@/views/piano/mapping";
 
 export interface RatingPop {
@@ -31,7 +32,11 @@ export interface RatingPop {
 /** How far ahead (seconds) clicks and guide notes are scheduled. */
 const LOOKAHEAD = 1.0;
 
-export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement | null>) {
+export function useTrainer(
+  audio: AudioEngine,
+  canvasEl: Ref<HTMLCanvasElement | null>,
+  overviewEl?: Ref<HTMLCanvasElement | null>,
+) {
   const settings = useSettings();
   const lessons = useLessons();
   /** The active lesson comes from the library store — one source of truth. */
@@ -117,6 +122,9 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
   const advanceTracker = new AdvanceTracker();
 
   let renderer: LaneRenderer | null = null;
+  let overview: Overview | null = null;
+  /** Rating per target index for the loop in progress, for the overview. */
+  const loopRatings = new Map<number, Rating>();
   let raf = 0;
   let lastLoop = -1;
   let popId = 0;
@@ -129,12 +137,12 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
   /** Build the renderer matching the current lesson's instrument. */
   function buildRenderer(): void {
     const el = canvasEl.value;
-    if (!el) {
-      renderer = null;
-      return;
-    }
-    renderer = isPiano.value ? new PianoRoll(el) : new PadLanes(el);
-    renderer.resize();
+    renderer = el ? (isPiano.value ? new PianoRoll(el) : new PadLanes(el)) : null;
+    renderer?.resize();
+
+    const oel = overviewEl?.value ?? null;
+    overview = oel ? new Overview(oel) : null;
+    overview?.resize();
   }
 
   /** The frame handed to whichever renderer is active this tick. */
@@ -150,9 +158,26 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
       countInBeats: transport.countInBeats,
       instances: pos ? scorer.instances : [],
       reducedMotion,
+      orientation: settings.laneOrientation,
       padLanes: lanes.value,
       lowNote: pianoRange.value[0],
       highNote: pianoRange.value[1],
+    });
+  }
+
+  /** The strip above the lane: the whole loop, and where the playhead is. */
+  function drawOverview(beatInLoop: number | null): void {
+    if (!overview) return;
+    overview.resize();
+    overview.draw({
+      targets: targets.value,
+      instrument: lesson.value.instrument,
+      padLanes: lanes.value,
+      lowNote: pianoRange.value[0],
+      highNote: pianoRange.value[1],
+      loopBeats: transport.loopBeats,
+      beatInLoop,
+      ratings: loopRatings,
     });
   }
 
@@ -160,6 +185,7 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
 
   /** Start a run. The caller must have initialized audio (user gesture). */
   function play(): void {
+    loopRatings.clear();
     scorer = new Scorer(targets.value);
     advanceTracker.reset();
     transport = new Transport({
@@ -190,6 +216,7 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
    * lanes, and HUD all reflect the new lesson before the next Play.
    */
   function resetForLesson(): void {
+    loopRatings.clear();
     transport.stop();
     playing.value = false;
     transport = new Transport({
@@ -232,6 +259,7 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
     if (transport.position(now).countIn) return null;
     const res = scorer.hit(lane, time ?? now);
     if (!res) return null;
+    noteTargetIndex(res.instance.id, res.rating);
     addPop(lane, res.rating);
     syncStats();
     return res.rating;
@@ -272,6 +300,7 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
         if (phase.value === "Count-in") phase.value = "Playing";
         if (lastLoop >= 0 && pos.loopIndex > lastLoop) {
           const acc = scorer.endLoop();
+          loopRatings.clear();
           loopAcc.value = Math.round(acc * 100);
           onLoopEnd(acc, now);
           // Keep the previous loop's notes alive: they're still scrolling
@@ -283,13 +312,18 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
 
       const missed = scorer.sweepMisses(now);
       if (missed.length > 0) {
-        for (const m of missed) addPop(m.lane, "miss");
+        for (const m of missed) {
+          noteTargetIndex(m.id, "miss");
+          addPop(m.lane, "miss");
+        }
         syncStats();
       }
 
       drawFrame(now, pos);
+      drawOverview(pos.countIn ? null : pos.beatInLoop);
     } else {
       drawFrame(now, null);
+      drawOverview(null);
     }
 
     raf = requestAnimationFrame(frame);
@@ -341,6 +375,12 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
 
   // -------------------------------------------------------------- feedback
 
+  /** Instance ids are `loopIndex:targetIndex`, which the overview keys on. */
+  function noteTargetIndex(id: string, rating: Rating): void {
+    const idx = Number(id.split(":")[1]);
+    if (!Number.isNaN(idx)) loopRatings.set(idx, rating);
+  }
+
   function syncStats(): void {
     accuracy.value = Math.round(scorer.accuracy * 100);
     combo.value = scorer.combo;
@@ -377,7 +417,7 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
 
   // Rebuild the renderer when the canvas mounts/swaps or the instrument
   // changes (pads ↔ piano use different canvases and renderers).
-  watch([canvasEl, isPiano], () => buildRenderer());
+  watch([canvasEl, overviewEl ?? ref(null), isPiano], () => buildRenderer());
 
   onMounted(() => {
     raf = requestAnimationFrame(frame);

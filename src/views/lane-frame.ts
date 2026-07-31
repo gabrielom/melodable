@@ -10,6 +10,7 @@
  */
 
 import type { NoteInstance } from "@/engine/scoring";
+import type { LaneOrientation } from "@/stores/settings";
 
 export interface LaneFrame {
   /** Audio-clock now, seconds. */
@@ -22,6 +23,9 @@ export interface LaneFrame {
   countInBeats: number;
   instances: readonly NoteInstance[];
   reducedMotion: boolean;
+
+  /** Notes fall top-to-bottom, or scroll right-to-left onto a playhead. */
+  orientation: LaneOrientation;
 
   /** Pads: pad indices in use, left-to-right. */
   padLanes: number[];

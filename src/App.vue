@@ -110,6 +110,7 @@ const activeNotes = ref<Map<number, number>>(new Map());
 const log = ref<LogRow[]>([]);
 
 const laneCanvas = ref<HTMLCanvasElement | null>(null);
+const overviewCanvas = ref<HTMLCanvasElement | null>(null);
 const {
   playing,
   bpm,
@@ -130,7 +131,7 @@ const {
   setBpm,
   strike,
   hardwareHitTime,
-} = useTrainer(audio, laneCanvas);
+} = useTrainer(audio, laneCanvas, overviewCanvas);
 
 let logId = 0;
 let lastLogTime = 0;
@@ -420,6 +421,35 @@ function onVolume(e: Event) {
 
       </template>
 
+      <div class="modes" role="group" aria-label="Note direction">
+        <button
+          class="mode icon"
+          :class="{ on: settings.laneOrientation === 'vertical' }"
+          title="Notes fall top to bottom"
+          aria-label="Falling notes"
+          @click="settings.laneOrientation = 'vertical'"
+        >
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            <path d="M8 2v9M4.5 7.5 8 11.5l3.5-4" fill="none" stroke="currentColor"
+                  stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M2.5 14h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          </svg>
+        </button>
+        <button
+          class="mode icon"
+          :class="{ on: settings.laneOrientation === 'horizontal' }"
+          title="Notes scroll right to left"
+          aria-label="Scrolling notes"
+          @click="settings.laneOrientation = 'horizontal'"
+        >
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            <path d="M14 8H5M9.5 4.5 5.5 8l4 3.5" fill="none" stroke="currentColor"
+                  stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M2 2.5v11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+
       <div class="modes">
         <span ref="padMenuRoot" class="modewrap">
           <button
@@ -556,6 +586,8 @@ function onVolume(e: Event) {
           />
         </div>
 
+        <canvas ref="overviewCanvas" class="overview" />
+
         <!-- Pads: falling-note lane fills the space, grid sits under it -->
         <template v-if="!isPiano">
           <div class="lane-wrap">
@@ -619,8 +651,8 @@ function onVolume(e: Event) {
 .bar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 9px 12px 9px 78px;
+  gap: 5px;
+  padding: 9px 10px 9px 76px;
   border-bottom: 1px solid var(--line);
   background: linear-gradient(180deg, #15181e, #101318);
   flex: none;
@@ -643,11 +675,13 @@ function onVolume(e: Event) {
   color: var(--dim);
   font-size: 12.5px;
   font-weight: 600;
-  padding: 5px 10px;
+  padding: 5px 8px;
   border-radius: 7px;
   cursor: pointer;
 }
 .mode.on { background: var(--panel2); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
+.mode.icon { display: inline-flex; align-items: center; padding: 5px 7px; }
+.mode.icon.on { color: var(--teal); }
 
 /* Pads button carries a chevron opening the controller-layout menu. */
 .modewrap { position: relative; display: inline-flex; align-items: center; }
@@ -704,7 +738,7 @@ function onVolume(e: Event) {
 .pmitem em { font-style: normal; font-size: 11px; color: var(--faint); display: block; }
 
 .vol { display: flex; align-items: center; }
-.vol input { accent-color: var(--teal); width: 58px; }
+.vol input { accent-color: var(--teal); width: 52px; }
 
 .iconbtn.arm { background: linear-gradient(180deg, #37d0c4, #20b3a8); color: #04201d; border: none; }
 
@@ -713,8 +747,8 @@ function onVolume(e: Event) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   background: #1a1e24;
   border: 1px solid var(--line);
   border-radius: 9px;
@@ -758,6 +792,18 @@ function onVolume(e: Event) {
 /* trainer chrome */
 /* Just the live stats now — the lesson header moved to the Home screen. */
 .trainhead { display: flex; margin-bottom: 10px; }
+
+/* The whole loop at a glance, with the playhead sweeping it. */
+.overview {
+  display: block;
+  width: 100%;
+  height: 34px;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0c0e12;
+  margin-bottom: 8px;
+}
 
 /* Pads: the lane takes the leftover height; the grid sits beneath it. */
 .lane-wrap {
@@ -829,7 +875,7 @@ function onVolume(e: Event) {
 .btn.stopbtn { background: #2a1c1c; border-color: #e2564d55; color: #f0a8a2; }
 
 .tempo { display: flex; align-items: center; gap: 6px; }
-.tempo input { accent-color: var(--teal); width: 68px; }
+.tempo input { accent-color: var(--teal); width: 56px; }
 .bpm {
   font-family: var(--mono);
   font-size: 11.5px;

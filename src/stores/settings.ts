@@ -14,6 +14,9 @@ export type SoundOutput = "internal" | "external";
 /** Physical arrangement of the 16 pads on the player's controller. */
 export type PadLayout = "4x4" | "2x8";
 
+/** Which way the notes travel: down to a hit line, or right-to-left to it. */
+export type LaneOrientation = "vertical" | "horizontal";
+
 /**
  * The subset of settings we persist across launches (Tauri store, M3).
  * `instrument` is intentionally absent — from M5 the active view follows the
@@ -25,6 +28,7 @@ interface SettingsSnapshot {
   metronome: boolean;
   monitorOpen: boolean;
   padLayout: PadLayout;
+  laneOrientation: LaneOrientation;
   pianoLow: number;
   pianoHigh: number;
 }
@@ -40,6 +44,8 @@ export const useSettings = defineStore("settings", () => {
   const monitorOpen = ref(true);
   /** 4x4 (MPC style) or 2x8 (Launchkey and most 2-row controllers). */
   const padLayout = ref<PadLayout>("4x4");
+  /** Falling (top-to-bottom) or scrolling (right-to-left, Melodics style). */
+  const laneOrientation = ref<LaneOrientation>("vertical");
 
   /** Fallback piano range (C3..C6) when a lesson has no notes to frame. */
   const pianoLow = ref(48);
@@ -60,6 +66,7 @@ export const useSettings = defineStore("settings", () => {
       if (typeof saved.metronome === "boolean") metronome.value = saved.metronome;
       if (typeof saved.monitorOpen === "boolean") monitorOpen.value = saved.monitorOpen;
       if (saved.padLayout) padLayout.value = saved.padLayout;
+      if (saved.laneOrientation) laneOrientation.value = saved.laneOrientation;
       if (typeof saved.pianoLow === "number") pianoLow.value = saved.pianoLow;
       if (typeof saved.pianoHigh === "number") pianoHigh.value = saved.pianoHigh;
     }
@@ -68,7 +75,9 @@ export const useSettings = defineStore("settings", () => {
 
   // Persist on change. Guarded so the async hydrate above doesn't get
   // clobbered by an initial write before it lands.
-  watch([volume, soundOutput, metronome, monitorOpen, padLayout, pianoLow, pianoHigh], () => {
+  watch(
+    [volume, soundOutput, metronome, monitorOpen, padLayout, laneOrientation, pianoLow, pianoHigh],
+    () => {
     if (!hydrated.value) return;
     void persistSet("settings", {
       volume: volume.value,
@@ -76,10 +85,12 @@ export const useSettings = defineStore("settings", () => {
       metronome: metronome.value,
       monitorOpen: monitorOpen.value,
       padLayout: padLayout.value,
+      laneOrientation: laneOrientation.value,
       pianoLow: pianoLow.value,
       pianoHigh: pianoHigh.value,
     } satisfies SettingsSnapshot);
-  });
+    },
+  );
 
   return {
     instrument,
@@ -89,6 +100,7 @@ export const useSettings = defineStore("settings", () => {
     metronome,
     monitorOpen,
     padLayout,
+    laneOrientation,
     pianoLow,
     pianoHigh,
     hydrated,
