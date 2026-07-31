@@ -92,13 +92,7 @@ function tileStyle(i: number): Record<string, string> {
           />
         </span>
 
-        <span class="text">
-          <span class="name">{{ t.pad.name }}</span>
-          <span class="meta">
-            <b :style="{ color: padColor(t.index) }">{{ t.pos.label }}</b>
-            · {{ t.pad.key.toUpperCase() }} · {{ t.pad.outNote }}
-          </span>
-        </span>
+        <span class="name">{{ t.pad.name }}</span>
 
         <span
           v-if="popFor(t.index)"
@@ -151,28 +145,17 @@ function tileStyle(i: number): Record<string, string> {
 }
 .mini i.on { box-shadow: 0 0 5px currentColor; }
 
-.text { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; }
+/* The name wraps to a second line rather than truncating; position is
+   carried by the mini grid, and the tile's title has the full detail. */
 .name {
+  min-width: 0;
   font-size: 12.5px;
   font-weight: 600;
   color: #dfe4ea;
-  line-height: 1.2;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.15;
+  text-align: left;
+  overflow-wrap: break-word;
 }
-.meta {
-  font-family: var(--mono);
-  font-size: 9px;
-  color: var(--faint);
-  letter-spacing: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.meta b { font-weight: 700; }
 
 .pop {
   position: absolute;
