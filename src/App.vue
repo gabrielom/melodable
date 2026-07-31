@@ -10,14 +10,14 @@
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { useSettings } from "@/stores/settings";
 import { useLessons } from "@/stores/lessons";
-import { useMidi, isTauri } from "@/composables/useMidi";
+import { useMidi } from "@/composables/useMidi";
 import { useTrainer } from "@/composables/useTrainer";
 import { AudioEngine } from "@/engine/audio";
 import { PADS, PAD_KEY_MAP, PIANO_KEY_MAP, noteToPad } from "@/engine/gm";
 import { parseMidiFile, midiToLesson, type ParsedMidi } from "@/engine/midi-file";
 import type { MidiMessage, InstrumentType } from "@/engine/types";
 
-import DevicePicker from "@/components/DevicePicker.vue";
+import DeviceMenu from "@/components/DeviceMenu.vue";
 import MidiMonitor from "@/components/MidiMonitor.vue";
 import Hud from "@/components/Hud.vue";
 import LessonLibrary from "@/components/LessonLibrary.vue";
@@ -90,7 +90,6 @@ function closeImport() {
 }
 
 const audioReady = ref(false);
-const latencyMs = ref(0);
 const activePads = ref<Map<number, number>>(new Map());
 const activeNotes = ref<Map<number, number>>(new Map());
 const log = ref<LogRow[]>([]);
@@ -131,7 +130,6 @@ async function ensureAudio() {
   await audio.init();
   audio.setVolume(settings.volume);
   audioReady.value = audio.ready;
-  latencyMs.value = Math.round(audio.outputLatency * 1000);
 }
 
 async function onPlay() {
@@ -336,7 +334,6 @@ function onVolume(e: Event) {
   audio.setVolume(v);
 }
 
-const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
 </script>
 
 <template>
@@ -347,25 +344,37 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
       <button v-if="!playing" class="btn primary" @click="onPlay">▶ Play</button>
       <button v-else class="btn stopbtn" @click="stop">■ Stop</button>
 
-      <label class="slider">
-        <span>TEMPO · {{ bpm }} BPM</span>
+      <label class="tempo" :title="`Tempo — ${bpm} BPM`">
         <input type="range" min="50" max="160" :value="bpm" @input="onTempo" />
+        <span class="bpm">{{ bpm }}</span>
       </label>
 
-      <button class="toggle" :class="{ on: autoAdapt }" @click="autoAdapt = !autoAdapt">
-        <i class="dot" />Adapt
-      </button>
-      <button class="toggle" :class="{ on: guide }" @click="guide = !guide">
-        <i class="dot" />Guide
-      </button>
-      <button
-        class="toggle"
-        :class="{ on: settings.metronome }"
-        title="Metronome click, count-in included"
-        @click="settings.metronome = !settings.metronome"
-      >
-        <i class="dot" />Click
-      </button>
+      <div class="modes" role="group" aria-label="Practice options">
+        <button
+          class="mode"
+          :class="{ on: autoAdapt }"
+          title="Adaptive tempo: clean bars push the BPM up, rough bars ease it off"
+          @click="autoAdapt = !autoAdapt"
+        >
+          Adapt
+        </button>
+        <button
+          class="mode"
+          :class="{ on: guide }"
+          title="Play the target part quietly as a guide"
+          @click="guide = !guide"
+        >
+          Guide
+        </button>
+        <button
+          class="mode"
+          :class="{ on: settings.metronome }"
+          title="Metronome click, count-in included"
+          @click="settings.metronome = !settings.metronome"
+        >
+          Click
+        </button>
+      </div>
 
       <div class="modes">
         <button
@@ -381,22 +390,9 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
 
       <div class="spacer" />
 
-      <label class="vol">
-        <span>VOL</span>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          :value="Math.round(settings.volume * 100)"
-          @input="onVolume"
-        />
-      </label>
-      <span class="shell">{{ shellLabel }}</span>
-    </header>
+      <button v-if="!audioReady" class="iconbtn arm" title="Enable audio" @click="ensureAudio">▶</button>
 
-    <!-- ============================ toolbar =========================== -->
-    <div class="toolbar">
-      <DevicePicker
+      <DeviceMenu
         :ports="ports"
         :connected-index="connectedIndex"
         :connected-name="connectedName"
@@ -406,14 +402,27 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
         @connect="(i: number) => connect(i)"
         @disconnect="disconnect()"
       />
-      <button v-if="!audioReady" class="arm" @click="ensureAudio">
-        ▶ Enable audio
-      </button>
-      <span v-else class="armed">audio running · {{ latencyMs }}ms out</span>
 
-      <button class="importbtn" title="Import a MIDI clip from Ableton" @click="openImport">
-        ⇪ Import MIDI
-      </button>
+      <div class="modes" role="group" aria-label="Instrument sound source">
+        <button
+          class="mode"
+          :class="{ on: settings.soundOutput === 'internal' }"
+          title="Melodable's built-in synth plays your hits"
+          @click="settings.soundOutput = 'internal'"
+        >
+          Synth
+        </button>
+        <button
+          class="mode"
+          :class="{ on: settings.soundOutput === 'external' }"
+          title="Silent: your DAW (Ableton) makes the sound while Melodable tracks timing"
+          @click="settings.soundOutput = 'external'"
+        >
+          DAW
+        </button>
+      </div>
+
+      <button class="iconbtn" title="Import a MIDI clip from Ableton" @click="openImport">⇪</button>
       <input
         ref="fileInput"
         type="file"
@@ -422,26 +431,29 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
         @change="onImportFile"
       />
 
-      <div class="sndsel" role="group" aria-label="Instrument sound source">
-        <span class="sndlbl">SOUND</span>
-        <button
-          class="snd"
-          :class="{ on: settings.soundOutput === 'internal' }"
-          title="Melodable's built-in synth plays your hits"
-          @click="settings.soundOutput = 'internal'"
-        >
-          Synth
-        </button>
-        <button
-          class="snd"
-          :class="{ on: settings.soundOutput === 'external' }"
-          title="Silent mode: your DAW (Ableton) makes the sound while Melodable tracks timing and accuracy"
-          @click="settings.soundOutput = 'external'"
-        >
-          Ableton / DAW
-        </button>
-      </div>
-    </div>
+      <label class="vol">
+        <input
+          type="range"
+          min="0"
+          max="100"
+          :value="Math.round(settings.volume * 100)"
+          @input="onVolume"
+        />
+      </label>
+
+      <button
+        class="iconbtn panel"
+        :class="{ on: settings.monitorOpen }"
+        title="Show or hide the MIDI monitor"
+        aria-label="Toggle MIDI monitor"
+        @click="settings.monitorOpen = !settings.monitorOpen"
+      >
+        <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+          <rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor" />
+          <rect x="9.5" y="2.5" width="5" height="11" rx="2" fill="currentColor" stroke="none" />
+        </svg>
+      </button>
+    </header>
 
     <!-- ============================= body ============================= -->
     <main class="body">
@@ -498,14 +510,6 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
       <aside v-if="settings.monitorOpen" class="side">
         <MidiMonitor :rows="log" @clear="log = []" @collapse="settings.monitorOpen = false" />
       </aside>
-      <button
-        v-else
-        class="side-rail"
-        title="Show the MIDI monitor"
-        @click="settings.monitorOpen = true"
-      >
-        <span class="rail-label">MIDI MONITOR</span>
-      </button>
     </main>
 
     <LessonLibrary
@@ -543,8 +547,8 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
 .bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 18px 10px 92px;
+  gap: 6px;
+  padding: 9px 12px 9px 78px;
   border-bottom: 1px solid var(--line);
   background: linear-gradient(180deg, #15181e, #101318);
   flex: none;
@@ -565,90 +569,36 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
   background: none;
   border: none;
   color: var(--dim);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
-  padding: 6px 18px;
-  border-radius: 8px;
+  padding: 5px 10px;
+  border-radius: 7px;
   cursor: pointer;
 }
 .mode.on { background: var(--panel2); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
 
-.vol { display: flex; align-items: center; gap: 7px; }
-.vol span { font-family: var(--mono); font-size: 9.5px; color: var(--faint); letter-spacing: 1px; }
-.vol input { accent-color: var(--teal); width: 84px; }
-.shell {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 1.2px;
-  color: var(--faint);
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  padding: 3px 9px;
-}
+.vol { display: flex; align-items: center; }
+.vol input { accent-color: var(--teal); width: 58px; }
 
-/* toolbar */
-.toolbar {
-  display: flex;
+.iconbtn.arm { background: linear-gradient(180deg, #37d0c4, #20b3a8); color: #04201d; border: none; }
+
+/* square icon buttons: import, monitor toggle */
+.iconbtn {
+  display: inline-flex;
   align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-  padding: 11px 18px;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel);
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: #1a1e24;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--dim);
+  font-size: 14px;
+  cursor: pointer;
   flex: none;
 }
-.arm {
-  background: linear-gradient(180deg, #37d0c4, #20b3a8);
-  color: #04201d;
-  border: none;
-  border-radius: 9px;
-  padding: 7px 15px;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.armed { font-family: var(--mono); font-size: 11px; color: var(--teal); }
-
-.importbtn {
-  background: var(--panel2);
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  padding: 7px 13px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--dim);
-  cursor: pointer;
-}
-.importbtn:hover { color: var(--ink); border-color: #39414d; }
-
-.sndsel {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  background: #0c0e12;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 3px;
-  margin-left: auto;
-}
-.sndlbl {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  color: var(--faint);
-  letter-spacing: 1px;
-  padding: 0 7px;
-}
-.snd {
-  background: none;
-  border: none;
-  color: var(--dim);
-  font-size: 12.5px;
-  font-weight: 600;
-  padding: 5px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-}
-.snd.on { background: var(--panel2); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
+.iconbtn:hover { color: var(--ink); border-color: #39414d; }
+.iconbtn.on { color: var(--teal); border-color: #37d0c455; background: #16211f; }
 
 /* body */
 .body {
@@ -659,8 +609,8 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
   gap: 18px;
   padding: 20px 18px;
 }
-/* Collapsed monitor: the stage takes the width, a slim rail brings it back. */
-.body:has(.side-rail) { grid-template-columns: minmax(0, 1fr) 34px; }
+/* Monitor hidden: the stage takes the whole width. */
+.body:not(:has(.side)) { grid-template-columns: minmax(0, 1fr); }
 
 .stage {
   min-width: 0;
@@ -676,26 +626,6 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
 .side { min-height: 0; display: flex; }
 .side > * { flex: 1; }
 
-.side-rail {
-  align-self: stretch;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  cursor: pointer;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.side-rail:hover { border-color: #39414d; }
-.rail-label {
-  writing-mode: vertical-rl;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 1.6px;
-  color: var(--faint);
-}
-.side-rail:hover .rail-label { color: var(--teal); }
 
 /* trainer chrome */
 .trainhead {
@@ -788,8 +718,8 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
   border: 1px solid var(--line);
   background: #1a1e24;
   border-radius: 9px;
-  padding: 6px 15px;
-  font-size: 13px;
+  padding: 6px 12px;
+  font-size: 12.5px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -800,33 +730,15 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
 }
 .btn.stopbtn { background: #2a1c1c; border-color: #e2564d55; color: #f0a8a2; }
 
-.slider {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.tempo { display: flex; align-items: center; gap: 6px; }
+.tempo input { accent-color: var(--teal); width: 68px; }
+.bpm {
   font-family: var(--mono);
-  font-size: 9px;
-  color: var(--faint);
-  letter-spacing: 0.5px;
-}
-.slider input { accent-color: var(--teal); width: 116px; }
-
-.toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: #1a1e24;
-  border: 1px solid var(--line);
+  font-size: 11.5px;
   color: var(--dim);
-  padding: 6px 11px;
-  border-radius: 9px;
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
+  min-width: 22px;
+  font-variant-numeric: tabular-nums;
 }
-.toggle .dot { width: 8px; height: 8px; border-radius: 8px; background: #404750; }
-.toggle.on { color: var(--ink); border-color: #37d0c455; }
-.toggle.on .dot { background: var(--teal); box-shadow: 0 0 8px var(--teal); }
 
 @media (max-width: 900px) {
   .body { grid-template-columns: 1fr; }
