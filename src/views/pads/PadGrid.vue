@@ -72,7 +72,6 @@ function tileStyle(i: number): Record<string, string> {
   <div class="wrap">
     <div class="head">
       <span class="ttl">PADS IN THIS LESSON</span>
-      <span class="lay">{{ layout === "2x8" ? "2×8" : "4×4" }}</span>
     </div>
 
     <div class="tiles">
@@ -117,20 +116,12 @@ function tileStyle(i: number): Record<string, string> {
 <style scoped>
 .wrap { display: flex; flex-direction: column; gap: 9px; }
 
-.head { display: flex; align-items: center; gap: 12px; }
+.head { display: flex; align-items: center; }
 .ttl {
   font-family: var(--mono);
   font-size: 9.5px;
   letter-spacing: 1.5px;
   color: var(--faint);
-}
-.lay {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  color: var(--dim);
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  padding: 1px 8px;
 }
 
 .tiles { display: flex; flex-wrap: wrap; gap: 8px; }
