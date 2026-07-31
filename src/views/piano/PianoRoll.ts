@@ -108,7 +108,7 @@ export class PianoRoll implements LaneRenderer {
         const w = g.width - 2;
         const h = 18;
         let col = black ? BLACK_NOTE : WHITE_NOTE;
-        if (inst.resolved) col = inst.rating === "miss" ? "#4a2a2a" : RATING_COLOR[inst.rating!];
+        if (inst.resolved) col = RATING_COLOR[inst.rating!];
         this.roundRect(g.x + 1, y - h / 2, w, h, 4);
         ctx.fillStyle = col;
         ctx.globalAlpha = inst.resolved ? 0.85 : 1;

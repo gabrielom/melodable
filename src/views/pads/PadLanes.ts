@@ -104,7 +104,7 @@ export class PadLanes implements LaneRenderer {
       const w = laneW - 10;
       const h = 20;
       let col = padColor(inst.lane, 0.95);
-      if (inst.resolved) col = inst.rating === "miss" ? "#4a2a2a" : RATING_COLOR[inst.rating!];
+      if (inst.resolved) col = RATING_COLOR[inst.rating!];
       this.roundRect(x + 5, y - h / 2, w, h, 6);
       ctx.fillStyle = col;
       ctx.globalAlpha = inst.resolved ? 0.85 : 1;
