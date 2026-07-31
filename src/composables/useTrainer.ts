@@ -274,7 +274,9 @@ export function useTrainer(audio: AudioEngine, canvasEl: Ref<HTMLCanvasElement |
           const acc = scorer.endLoop();
           loopAcc.value = Math.round(acc * 100);
           onLoopEnd(acc, now);
-          scorer.pruneBefore(pos.loopIndex);
+          // Keep the previous loop's notes alive: they're still scrolling
+          // through the "already played" zone below the hit line.
+          scorer.pruneBefore(pos.loopIndex - 1);
         }
         lastLoop = pos.loopIndex;
       }

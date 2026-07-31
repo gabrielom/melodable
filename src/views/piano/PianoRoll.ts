@@ -15,7 +15,9 @@ import type { LaneFrame, LaneRenderer } from "@/views/lane-frame";
 import { countWhiteKeys, isWhiteKey, keyGeometry, pitchClass } from "./mapping";
 
 const PX_PER_BEAT = 118;
-const HIT_FROM_BOTTOM = 12;
+/** Fraction of the lane below the hit line — the "already played" zone, so a
+ *  note stays on screen after you strike it instead of vanishing instantly. */
+const PAST_FRACTION = 0.34;
 
 const WHITE_NOTE = "#37d0c4";
 const BLACK_NOTE = "#2aa7c8";
@@ -52,7 +54,7 @@ export class PianoRoll implements LaneRenderer {
     const high = f.highNote;
     const nWhite = Math.max(1, countWhiteKeys(low, high));
     const whiteWidth = W / nWhite;
-    const hitY = H - HIT_FROM_BOTTOM;
+    const hitY = Math.round(H * (1 - PAST_FRACTION));
     const pxPerSec = PX_PER_BEAT / f.secPerBeat;
 
     // black-key columns tinted darker, C boundaries marked — a lane backdrop
@@ -60,17 +62,21 @@ export class PianoRoll implements LaneRenderer {
       const g = keyGeometry(note, low, whiteWidth);
       if (!isWhiteKey(note)) {
         ctx.fillStyle = "#0f1319";
-        ctx.fillRect(g.x, 0, g.width, hitY);
+        ctx.fillRect(g.x, 0, g.width, H);
       }
       if (pitchClass(note) === 0) {
         ctx.strokeStyle = "#ffffff10";
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(g.x + 0.5, 0);
-        ctx.lineTo(g.x + 0.5, hitY);
+        ctx.lineTo(g.x + 0.5, H);
         ctx.stroke();
       }
     }
+
+    // the zone below the line is history — darken it so the eye stays above
+    ctx.fillStyle = "#00000055";
+    ctx.fillRect(0, hitY, W, H - hitY);
 
     // hit line
     ctx.strokeStyle = "#37d0c4";
@@ -105,7 +111,7 @@ export class PianoRoll implements LaneRenderer {
         if (inst.resolved) col = inst.rating === "miss" ? "#4a2a2a" : RATING_COLOR[inst.rating!];
         this.roundRect(g.x + 1, y - h / 2, w, h, 4);
         ctx.fillStyle = col;
-        ctx.globalAlpha = inst.resolved ? 0.55 : 1;
+        ctx.globalAlpha = inst.resolved ? 0.85 : 1;
         ctx.fill();
         ctx.globalAlpha = 1;
         if (!inst.resolved) {

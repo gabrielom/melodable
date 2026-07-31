@@ -341,19 +341,31 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
 
 <template>
   <div class="app">
-    <!-- ============================ header ============================ -->
-    <header class="bar">
-      <div class="brand">
-        <span class="dots">
-          <i style="background: var(--amber)" />
-          <i style="background: var(--teal)" />
-          <i style="background: var(--blue)" />
-        </span>
-        <div>
-          <div class="title">RHYTHM TRAINER</div>
-          <div class="sub">M5 · pads + piano</div>
-        </div>
-      </div>
+    <!-- ===================== transport (window titlebar) ===================== -->
+    <!-- Left inset clears the macOS window controls, which sit on this bar. -->
+    <header class="bar" data-tauri-drag-region>
+      <button v-if="!playing" class="btn primary" @click="onPlay">▶ Play</button>
+      <button v-else class="btn stopbtn" @click="stop">■ Stop</button>
+
+      <label class="slider">
+        <span>TEMPO · {{ bpm }} BPM</span>
+        <input type="range" min="50" max="160" :value="bpm" @input="onTempo" />
+      </label>
+
+      <button class="toggle" :class="{ on: autoAdapt }" @click="autoAdapt = !autoAdapt">
+        <i class="dot" />Adapt
+      </button>
+      <button class="toggle" :class="{ on: guide }" @click="guide = !guide">
+        <i class="dot" />Guide
+      </button>
+      <button
+        class="toggle"
+        :class="{ on: settings.metronome }"
+        title="Metronome click, count-in included"
+        @click="settings.metronome = !settings.metronome"
+      >
+        <i class="dot" />Click
+      </button>
 
       <div class="modes">
         <button
@@ -367,19 +379,19 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
         </button>
       </div>
 
-      <div class="right">
-        <label class="vol">
-          <span>VOL</span>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            :value="Math.round(settings.volume * 100)"
-            @input="onVolume"
-          />
-        </label>
-        <span class="shell">{{ shellLabel }}</span>
-      </div>
+      <div class="spacer" />
+
+      <label class="vol">
+        <span>VOL</span>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          :value="Math.round(settings.volume * 100)"
+          @input="onVolume"
+        />
+      </label>
+      <span class="shell">{{ shellLabel }}</span>
     </header>
 
     <!-- ============================ toolbar =========================== -->
@@ -451,31 +463,6 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
             :phase="phase"
             :loop-acc="loopAcc"
           />
-        </div>
-
-        <div class="controls">
-          <button v-if="!playing" class="btn primary" @click="onPlay">▶ Play</button>
-          <button v-else class="btn stopbtn" @click="stop">■ Stop</button>
-
-          <label class="slider">
-            <span>TEMPO · {{ bpm }} BPM</span>
-            <input type="range" min="50" max="160" :value="bpm" @input="onTempo" />
-          </label>
-
-          <button class="toggle" :class="{ on: autoAdapt }" @click="autoAdapt = !autoAdapt">
-            <i class="dot" />Adapt tempo
-          </button>
-          <button class="toggle" :class="{ on: guide }" @click="guide = !guide">
-            <i class="dot" />Guide sound
-          </button>
-          <button
-            class="toggle"
-            :class="{ on: settings.metronome }"
-            title="Metronome click, count-in included — turn off when Ableton provides the click"
-            @click="settings.metronome = !settings.metronome"
-          >
-            <i class="dot" />Click
-          </button>
         </div>
 
         <!-- Pads: falling-note lane fills the space, grid sits under it -->
@@ -550,22 +537,21 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
   min-height: 0;
 }
 
-/* header */
+/* Transport bar. Doubles as the window titlebar on macOS (the traffic lights
+   are overlaid on its left), so the whole strip is a drag region and the left
+   padding keeps the controls clear of them. */
 .bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 18px;
+  gap: 10px;
+  padding: 10px 18px 10px 92px;
   border-bottom: 1px solid var(--line);
   background: linear-gradient(180deg, #15181e, #101318);
   flex: none;
+  flex-wrap: wrap;
 }
-.brand { display: flex; align-items: center; gap: 11px; }
-.dots { display: inline-flex; gap: 4px; }
-.dots i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-.title { font-size: 13px; font-weight: 700; letter-spacing: 2px; }
-.sub { font-family: var(--mono); font-size: 10px; color: var(--faint); }
+.bar > * { -webkit-app-region: no-drag; }
+.spacer { flex: 1; min-width: 0; }
 
 .modes {
   display: flex;
@@ -587,7 +573,6 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
 }
 .mode.on { background: var(--panel2); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
 
-.right { display: flex; align-items: center; gap: 14px; }
 .vol { display: flex; align-items: center; gap: 7px; }
 .vol span { font-family: var(--mono); font-size: 9.5px; color: var(--faint); letter-spacing: 1px; }
 .vol input { accent-color: var(--teal); width: 84px; }
@@ -799,19 +784,12 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
   white-space: nowrap;
 }
 
-.controls {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-  margin: 12px 0;
-}
 .btn {
   border: 1px solid var(--line);
   background: #1a1e24;
-  border-radius: 10px;
-  padding: 9px 18px;
-  font-size: 14px;
+  border-radius: 9px;
+  padding: 6px 15px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -825,24 +803,24 @@ const shellLabel = computed(() => (isTauri() ? "TAURI" : "BROWSER"));
 .slider {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 9px;
   color: var(--faint);
   letter-spacing: 0.5px;
 }
-.slider input { accent-color: var(--teal); width: 130px; }
+.slider input { accent-color: var(--teal); width: 116px; }
 
 .toggle {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   background: #1a1e24;
   border: 1px solid var(--line);
   color: var(--dim);
-  padding: 9px 12px;
-  border-radius: 10px;
-  font-size: 13px;
+  padding: 6px 11px;
+  border-radius: 9px;
+  font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
 }

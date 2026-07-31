@@ -14,7 +14,9 @@ import { PADS } from "@/engine/gm";
 import type { LaneFrame, LaneRenderer } from "@/views/lane-frame";
 
 const PX_PER_BEAT = 118;
-const HIT_FROM_BOTTOM = 54;
+/** Fraction of the lane below the hit line — the "already played" zone, so a
+ *  note stays on screen after you strike it instead of vanishing instantly. */
+const PAST_FRACTION = 0.28;
 
 const padColor = (i: number, a = 1) => `hsla(${(i * 47) % 360}, 55%, 60%, ${a})`;
 
@@ -51,7 +53,7 @@ export class PadLanes implements LaneRenderer {
     const padL = 6;
     const laneGap = 6;
     const laneW = (W - padL * 2 - laneGap * (lanes.length - 1)) / lanes.length;
-    const hitY = H - HIT_FROM_BOTTOM;
+    const hitY = Math.round(H * (1 - PAST_FRACTION));
     const pxPerSec = PX_PER_BEAT / f.secPerBeat;
 
     // lane backgrounds, hit targets, labels
@@ -69,6 +71,10 @@ export class PadLanes implements LaneRenderer {
       ctx.textAlign = "center";
       ctx.fillText(PADS[pad].name.toUpperCase(), x + laneW / 2, 16);
     });
+
+    // the zone below the line is history — darken it so the eye stays above
+    ctx.fillStyle = "#00000055";
+    ctx.fillRect(0, hitY, W, H - hitY);
 
     // hit line
     ctx.strokeStyle = "#37d0c4";
@@ -101,7 +107,7 @@ export class PadLanes implements LaneRenderer {
       if (inst.resolved) col = inst.rating === "miss" ? "#4a2a2a" : RATING_COLOR[inst.rating!];
       this.roundRect(x + 5, y - h / 2, w, h, 6);
       ctx.fillStyle = col;
-      ctx.globalAlpha = inst.resolved ? 0.55 : 1;
+      ctx.globalAlpha = inst.resolved ? 0.85 : 1;
       ctx.fill();
       ctx.globalAlpha = 1;
       if (!inst.resolved) {
