@@ -487,7 +487,9 @@ function onVolume(e: Event) {
             :active="activePads"
             :emphasis="lanes"
             :pops="pops"
+            :layout="settings.padLayout"
             @trigger="(i, v) => triggerPad(i, v, 'click')"
+            @layout="(l) => (settings.padLayout = l)"
           />
         </template>
 

@@ -11,6 +11,9 @@ import { persistGet, persistSet } from "./persist";
  */
 export type SoundOutput = "internal" | "external";
 
+/** Physical arrangement of the 16 pads on the player's controller. */
+export type PadLayout = "4x4" | "2x8";
+
 /**
  * The subset of settings we persist across launches (Tauri store, M3).
  * `instrument` is intentionally absent — from M5 the active view follows the
@@ -21,6 +24,7 @@ interface SettingsSnapshot {
   soundOutput: SoundOutput;
   metronome: boolean;
   monitorOpen: boolean;
+  padLayout: PadLayout;
   pianoLow: number;
   pianoHigh: number;
 }
@@ -34,6 +38,8 @@ export const useSettings = defineStore("settings", () => {
   const metronome = ref(true);
   /** Side panel with the live MIDI log. Collapsed gives the stage full width. */
   const monitorOpen = ref(true);
+  /** 4x4 (MPC style) or 2x8 (Launchkey and most 2-row controllers). */
+  const padLayout = ref<PadLayout>("4x4");
 
   /** Fallback piano range (C3..C6) when a lesson has no notes to frame. */
   const pianoLow = ref(48);
@@ -53,6 +59,7 @@ export const useSettings = defineStore("settings", () => {
       if (saved.soundOutput) soundOutput.value = saved.soundOutput;
       if (typeof saved.metronome === "boolean") metronome.value = saved.metronome;
       if (typeof saved.monitorOpen === "boolean") monitorOpen.value = saved.monitorOpen;
+      if (saved.padLayout) padLayout.value = saved.padLayout;
       if (typeof saved.pianoLow === "number") pianoLow.value = saved.pianoLow;
       if (typeof saved.pianoHigh === "number") pianoHigh.value = saved.pianoHigh;
     }
@@ -61,13 +68,14 @@ export const useSettings = defineStore("settings", () => {
 
   // Persist on change. Guarded so the async hydrate above doesn't get
   // clobbered by an initial write before it lands.
-  watch([volume, soundOutput, metronome, monitorOpen, pianoLow, pianoHigh], () => {
+  watch([volume, soundOutput, metronome, monitorOpen, padLayout, pianoLow, pianoHigh], () => {
     if (!hydrated.value) return;
     void persistSet("settings", {
       volume: volume.value,
       soundOutput: soundOutput.value,
       metronome: metronome.value,
       monitorOpen: monitorOpen.value,
+      padLayout: padLayout.value,
       pianoLow: pianoLow.value,
       pianoHigh: pianoHigh.value,
     } satisfies SettingsSnapshot);
@@ -80,6 +88,7 @@ export const useSettings = defineStore("settings", () => {
     soundOutput,
     metronome,
     monitorOpen,
+    padLayout,
     pianoLow,
     pianoHigh,
     hydrated,

@@ -95,6 +95,38 @@ export const GM_TO_PAD: Record<number, number> = {
   82: 9, // Shaker             -> Shaker
 };
 
+/**
+ * Where a pad sits on the controller, for the chosen physical arrangement.
+ *
+ * "4x4" is the MPC-style grid this app's PADS order describes directly.
+ * "2x8" re-flows the same 16 pads onto two rows of eight (Launchkey and most
+ * two-row controllers): each half of the 4x4 collapses into one long row,
+ * with the 4x4's *lowest* row landing leftmost. That keeps the kit's anchors
+ * (kick, snare) in the bottom-left corner, where they sit on the hardware.
+ *
+ * `row` is 0 at the top. Labels count rows from the bottom (A = bottom row),
+ * matching how pad grids are described on hardware.
+ */
+export function padPosition(
+  index: number,
+  layout: "4x4" | "2x8",
+): { row: number; col: number; rows: number; cols: number; label: string } {
+  if (layout === "2x8") {
+    const r4 = Math.floor(index / 4);
+    const c4 = index % 4;
+    // 4x4 rows 2,3 (lower half) -> 2x8 bottom row; rows 0,1 -> top row.
+    // Within each row the lower 4x4 row takes the left half.
+    const row = r4 < 2 ? 0 : 1;
+    const col = (r4 % 2 === 1 ? 0 : 4) + c4;
+    const rows = 2;
+    const cols = 8;
+    return { row, col, rows, cols, label: `${"AB"[rows - 1 - row]}${col + 1}` };
+  }
+  const row = Math.floor(index / 4);
+  const col = index % 4;
+  return { row, col, rows: 4, cols: 4, label: `${"ABCD"[3 - row]}${col + 1}` };
+}
+
 /** Map an incoming MIDI note to a pad index, or null if unmapped. */
 export function noteToPad(note: number): number | null {
   const pad = GM_TO_PAD[note];
