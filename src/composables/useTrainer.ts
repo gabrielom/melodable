@@ -160,6 +160,7 @@ export function useTrainer(
       reducedMotion,
       orientation: settings.laneOrientation,
       padLanes: lanes.value,
+      padLayout: settings.padLayout,
       lowNote: pianoRange.value[0],
       highNote: pianoRange.value[1],
     });
@@ -263,6 +264,15 @@ export function useTrainer(
     addPop(lane, res.rating);
     syncStats();
     return res.rating;
+  }
+
+  /**
+   * Pad under a point on the lane canvas — the gutter rows in horizontal
+   * mode, where the lane headers double as playable pads. Null otherwise.
+   */
+  function padAtPoint(x: number, y: number): number | null {
+    if (isPiano.value || settings.laneOrientation !== "horizontal") return null;
+    return renderer instanceof PadLanes ? renderer.laneAt(x, y) : null;
   }
 
   /** Audio-clock time of a hardware hit, from its midir timestamp. */
@@ -449,6 +459,7 @@ export function useTrainer(
     stop,
     setBpm,
     strike,
+    padAtPoint,
     hardwareHitTime,
   };
 }

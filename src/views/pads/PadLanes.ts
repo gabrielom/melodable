@@ -13,7 +13,7 @@
  */
 
 import { RATING_COLOR } from "@/engine/types";
-import { PADS } from "@/engine/gm";
+import { PADS, padPosition } from "@/engine/gm";
 import type { LaneFrame, LaneRenderer } from "@/views/lane-frame";
 
 const PX_PER_BEAT = 118;
@@ -21,13 +21,15 @@ const PX_PER_BEAT = 118;
  *  note stays on screen after you strike it instead of vanishing instantly. */
 const PAST_FRACTION = 0.28;
 /** Width of the lane-name gutter in horizontal mode. */
-const GUTTER = 116;
+const GUTTER = 150;
 
 const padColor = (i: number, a = 1) => `hsla(${(i * 47) % 360}, 55%, 60%, ${a})`;
 
 export class PadLanes implements LaneRenderer {
   private ctx: CanvasRenderingContext2D;
   private dpr = 1;
+  /** Gutter hit boxes from the last horizontal draw, for mouse triggering. */
+  private gutterHits: Array<{ pad: number; y0: number; y1: number }> = [];
 
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext("2d")!;
@@ -127,8 +129,10 @@ export class PadLanes implements LaneRenderer {
     // Playhead sits a little in from the left; notes arrive from the right.
     const hitX = trackX + Math.round(trackW * PAST_FRACTION);
 
+    this.gutterHits = [];
     lanes.forEach((pad, li) => {
       const y = li * (laneH + gap);
+      this.gutterHits.push({ pad, y0: y, y1: y + laneH });
       // lane row
       ctx.fillStyle = "#15181e";
       ctx.fillRect(trackX, y, trackW, laneH);
@@ -139,16 +143,25 @@ export class PadLanes implements LaneRenderer {
       ctx.lineWidth = 1;
       ctx.strokeRect(hitX - 12.5, y + 0.5, 24, laneH - 1);
 
-      // name gutter
-      ctx.fillStyle = "#0f1319";
-      ctx.fillRect(0, y, GUTTER - 6, laneH);
-      ctx.fillStyle = padColor(pad, 0.9);
-      ctx.fillRect(0, y, 3, laneH);
+      // gutter: the pad's place on the controller, then its name
+      ctx.fillStyle = "#1a1e24";
+      this.roundRect(2, y + 1, GUTTER - 10, laneH - 2, 8);
+      ctx.fill();
+      ctx.strokeStyle = padColor(pad, 0.45);
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      const grid = this.miniGrid(pad, f.padLayout, 11, y + laneH / 2);
       ctx.fillStyle = padColor(pad, 0.95);
-      ctx.font = "700 11px ui-sans-serif, system-ui, sans-serif";
+      ctx.font = "700 11.5px ui-sans-serif, system-ui, sans-serif";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
-      ctx.fillText(PADS[pad].name.toUpperCase(), 12, y + laneH / 2, GUTTER - 26);
+      ctx.fillText(
+        PADS[pad].name.toUpperCase(),
+        grid + 9,
+        y + laneH / 2,
+        GUTTER - grid - 22,
+      );
       ctx.textBaseline = "alphabetic";
     });
 
@@ -191,6 +204,36 @@ export class PadLanes implements LaneRenderer {
   }
 
   // ---------------------------------------------------------------- parts
+
+  /**
+   * The controller grid with this pad's cell lit, drawn from `cx` at vertical
+   * centre `cy`. Returns the x the grid ends at, so the name can follow it.
+   */
+  private miniGrid(pad: number, layout: LaneFrame["padLayout"], cx: number, cy: number): number {
+    const ctx = this.ctx;
+    const p = padPosition(pad, layout);
+    const cell = 3;
+    const step = cell + 1.5;
+    const gw = p.cols * step - 1.5;
+    const gh = p.rows * step - 1.5;
+    const x0 = cx;
+    const y0 = cy - gh / 2;
+    for (let r = 0; r < p.rows; r++) {
+      for (let c = 0; c < p.cols; c++) {
+        const on = r === p.row && c === p.col;
+        ctx.fillStyle = on ? padColor(pad, 1) : "#2b313a";
+        ctx.fillRect(x0 + c * step, y0 + r * step, cell, cell);
+      }
+    }
+    return x0 + gw;
+  }
+
+  /** Pad under a point in the gutter, for click-to-play. Null elsewhere. */
+  laneAt(x: number, y: number): number | null {
+    if (x > GUTTER) return null;
+    for (const h of this.gutterHits) if (y >= h.y0 && y <= h.y1) return h.pad;
+    return null;
+  }
 
   private note(
     x: number,

@@ -10,7 +10,7 @@
  */
 
 import type { NoteInstance } from "@/engine/scoring";
-import type { LaneOrientation } from "@/stores/settings";
+import type { LaneOrientation, PadLayout } from "@/stores/settings";
 
 export interface LaneFrame {
   /** Audio-clock now, seconds. */
@@ -29,6 +29,8 @@ export interface LaneFrame {
 
   /** Pads: pad indices in use, left-to-right. */
   padLanes: number[];
+  /** Pads: the controller arrangement, for the mini grid in the gutter. */
+  padLayout: PadLayout;
 
   /** Piano: visible key range (inclusive), lane === MIDI pitch. */
   lowNote: number;

@@ -130,6 +130,7 @@ const {
   stop,
   setBpm,
   strike,
+  padAtPoint,
   hardwareHitTime,
 } = useTrainer(audio, laneCanvas, overviewCanvas);
 
@@ -150,6 +151,17 @@ async function ensureAudio() {
 async function onPlay() {
   await ensureAudio();
   play();
+}
+
+/** In horizontal pads mode the lane headers are the playable pads. */
+function onLanePointer(e: PointerEvent) {
+  const el = e.currentTarget as HTMLCanvasElement;
+  const r = el.getBoundingClientRect();
+  const pad = padAtPoint(e.clientX - r.left, e.clientY - r.top);
+  if (pad !== null) {
+    e.preventDefault();
+    void triggerPad(pad, 110, "click");
+  }
 }
 
 function onTempo(e: Event) {
@@ -591,10 +603,11 @@ function onVolume(e: Event) {
         <!-- Pads: falling-note lane fills the space, grid sits under it -->
         <template v-if="!isPiano">
           <div class="lane-wrap">
-            <canvas ref="laneCanvas" class="lane-canvas" />
+            <canvas ref="laneCanvas" class="lane-canvas" @pointerdown="onLanePointer" />
             <div v-if="toast" class="toast">{{ toast }}</div>
           </div>
           <PadGrid
+            v-if="settings.laneOrientation === 'vertical'"
             :active="activePads"
             :emphasis="lanes"
             :pops="pops"
