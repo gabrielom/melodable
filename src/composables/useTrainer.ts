@@ -13,7 +13,7 @@ import { useLessons } from "@/stores/lessons";
 import type { Rating } from "@/engine/types";
 import { Transport } from "@/engine/transport";
 import { Scorer, lessonTargets } from "@/engine/scoring";
-import { nextTempo, AdvanceTracker, PUSH_ACC } from "@/engine/adaptive";
+import { AdvanceTracker } from "@/engine/adaptive";
 import { MidiClock } from "@/engine/midi-clock";
 import { noteToPad, PADS } from "@/engine/gm";
 import type { AudioEngine } from "@/engine/audio";
@@ -44,7 +44,6 @@ export function useTrainer(
 
   const playing = ref(false);
   const bpm = ref(lesson.value.bpm);
-  const autoAdapt = ref(true);
   const guide = ref(false);
 
   const accuracy = ref(100);
@@ -312,7 +311,7 @@ export function useTrainer(
           const acc = scorer.endLoop();
           loopRatings.clear();
           loopAcc.value = Math.round(acc * 100);
-          onLoopEnd(acc, now);
+          onLoopEnd(acc);
           // Keep the previous loop's notes alive: they're still scrolling
           // through the "already played" zone below the hit line.
           scorer.pruneBefore(pos.loopIndex - 1);
@@ -360,18 +359,12 @@ export function useTrainer(
     }
   }
 
-  /** Loop boundary: adaptive tempo, then check for lesson advancement. */
-  function onLoopEnd(acc: number, now: number): void {
-    if (!autoAdapt.value) return;
-    const base = lesson.value.bpm;
-    const nb = nextTempo(base, transport.bpm, acc);
-    if (nb !== transport.bpm) {
-      transport.setBpm(nb, now);
-      scorer.retime(timeOf);
-      bpm.value = nb;
-      showToast(acc >= PUSH_ACC ? `Nice — nudging up to ${nb} BPM` : `Easing back to ${nb} BPM`);
-    }
-    if (advanceTracker.update(acc, transport.bpm, base)) {
+  /**
+   * Loop boundary. Tempo is the player's to set — the adaptive ramp is no
+   * longer applied — but clearing a lesson still advances the library.
+   */
+  function onLoopEnd(acc: number): void {
+    if (advanceTracker.update(acc, transport.bpm, lesson.value.bpm)) {
       // Clearing the lesson advances the library; the lesson-change watcher
       // resets the transport and HUD for the new lesson (stopped, ready).
       const next = lessons.advance();
@@ -443,7 +436,6 @@ export function useTrainer(
     lesson,
     playing,
     bpm,
-    autoAdapt,
     guide,
     accuracy,
     combo,

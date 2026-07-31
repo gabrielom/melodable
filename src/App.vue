@@ -19,7 +19,6 @@ import type { MidiMessage, InstrumentType } from "@/engine/types";
 
 import DeviceMenu from "@/components/DeviceMenu.vue";
 import MidiMonitor from "@/components/MidiMonitor.vue";
-import Hud from "@/components/Hud.vue";
 import HomeScreen from "@/components/HomeScreen.vue";
 import ImportDialog from "@/components/ImportDialog.vue";
 import type { LogRow } from "@/components/midi-log";
@@ -114,12 +113,10 @@ const overviewCanvas = ref<HTMLCanvasElement | null>(null);
 const {
   playing,
   bpm,
-  autoAdapt,
   guide,
   accuracy,
   combo,
   bestCombo,
-  phase,
   loopAcc,
   toast,
   pops,
@@ -407,14 +404,6 @@ function onVolume(e: Event) {
       <div class="modes" role="group" aria-label="Practice options">
         <button
           class="mode"
-          :class="{ on: autoAdapt }"
-          title="Adaptive tempo: clean bars push the BPM up, rough bars ease it off"
-          @click="autoAdapt = !autoAdapt"
-        >
-          Adapt
-        </button>
-        <button
-          class="mode"
           :class="{ on: guide }"
           title="Play the target part quietly as a guide"
           @click="guide = !guide"
@@ -511,6 +500,20 @@ function onVolume(e: Event) {
 
       <div class="spacer" />
 
+      <span v-if="view === 'trainer'" class="stats">
+        <span class="stat" title="Accuracy so far">
+          <b class="teal">{{ accuracy }}<i>%</i></b>
+        </span>
+        <span class="stat" title="Current combo, best this run">
+          <b class="amber">×{{ combo }}</b><em>▲{{ bestCombo }}</em>
+        </span>
+        <span class="stat" title="Score for the last bar">
+          <b>{{ loopAcc === null ? "—" : loopAcc }}</b><em>bar</em>
+        </span>
+      </span>
+
+      <div class="spacer" />
+
       <button v-if="!audioReady" class="iconbtn arm" title="Enable audio" @click="ensureAudio">▶</button>
 
       <DeviceMenu
@@ -587,17 +590,6 @@ function onVolume(e: Event) {
       </section>
 
       <section v-else class="stage">
-        <div class="trainhead">
-          <Hud
-            :bpm="bpm"
-            :accuracy="accuracy"
-            :combo="combo"
-            :best-combo="bestCombo"
-            :phase="phase"
-            :loop-acc="loopAcc"
-          />
-        </div>
-
         <canvas ref="overviewCanvas" class="overview" />
 
         <!-- Pads: falling-note lane fills the space, grid sits under it -->
@@ -664,8 +656,8 @@ function onVolume(e: Event) {
 .bar {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 9px 10px 9px 76px;
+  gap: 4px;
+  padding: 9px 9px 9px 74px;
   border-bottom: 1px solid var(--line);
   background: linear-gradient(180deg, #15181e, #101318);
   flex: none;
@@ -694,6 +686,21 @@ function onVolume(e: Event) {
 }
 .mode.on { background: var(--panel2); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
 .mode.icon { display: inline-flex; align-items: center; padding: 5px 7px; }
+
+/* Live score, inline in the bar. */
+.stats { display: inline-flex; align-items: baseline; gap: 9px; flex: none; }
+.stat { display: inline-flex; align-items: baseline; gap: 2px; }
+.stat b {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.stat b.teal { color: var(--teal); }
+.stat b.amber { color: var(--amber); }
+.stat b i { font-style: normal; font-size: 9px; color: var(--faint); margin-left: 1px; }
+.stat em { font-style: normal; font-family: var(--mono); font-size: 9px; color: var(--faint); }
 .mode.icon.on { color: var(--teal); }
 
 /* Pads button carries a chevron opening the controller-layout menu. */
@@ -751,7 +758,7 @@ function onVolume(e: Event) {
 .pmitem em { font-style: normal; font-size: 11px; color: var(--faint); display: block; }
 
 .vol { display: flex; align-items: center; }
-.vol input { accent-color: var(--teal); width: 52px; }
+.vol input { accent-color: var(--teal); width: 46px; }
 
 .iconbtn.arm { background: linear-gradient(180deg, #37d0c4, #20b3a8); color: #04201d; border: none; }
 
@@ -803,9 +810,6 @@ function onVolume(e: Event) {
 
 
 /* trainer chrome */
-/* Just the live stats now — the lesson header moved to the Home screen. */
-.trainhead { display: flex; margin-bottom: 10px; }
-
 /* The whole loop at a glance, with the playhead sweeping it. */
 .overview {
   display: block;
@@ -888,7 +892,7 @@ function onVolume(e: Event) {
 .btn.stopbtn { background: #2a1c1c; border-color: #e2564d55; color: #f0a8a2; }
 
 .tempo { display: flex; align-items: center; gap: 6px; }
-.tempo input { accent-color: var(--teal); width: 56px; }
+.tempo input { accent-color: var(--teal); width: 50px; }
 .bpm {
   font-family: var(--mono);
   font-size: 11.5px;
