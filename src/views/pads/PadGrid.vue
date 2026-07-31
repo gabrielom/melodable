@@ -70,10 +70,6 @@ function tileStyle(i: number): Record<string, string> {
 
 <template>
   <div class="wrap">
-    <div class="head">
-      <span class="ttl">PADS IN THIS LESSON</span>
-    </div>
-
     <div class="tiles">
       <button
         v-for="t in shown"
@@ -114,15 +110,7 @@ function tileStyle(i: number): Record<string, string> {
 </template>
 
 <style scoped>
-.wrap { display: flex; flex-direction: column; gap: 9px; }
-
-.head { display: flex; align-items: center; }
-.ttl {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 1.5px;
-  color: var(--faint);
-}
+.wrap { display: flex; flex-direction: column; padding-top: 10px; }
 
 .tiles { display: flex; flex-wrap: wrap; gap: 8px; }
 
