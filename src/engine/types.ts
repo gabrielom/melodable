@@ -11,8 +11,6 @@ export interface NoteEvent {
   time: number; // beats (quarter note = 1.0)
   pitch: number; // MIDI note number (0-127)
   velocity?: number; // 0-127 (optional target dynamics)
-  duration?: number; // beats (for piano hold grading, v2)
-  hand?: "left" | "right"; // optional hand cue for piano lessons
 }
 
 export interface Lesson {
@@ -61,15 +59,3 @@ export const RATING_COLOR: Record<Rating, string> = {
   good: "#6ea8ff",
   miss: "#e2564d",
 };
-
-/** Hand cue tints for piano lessons (Melodics used blue/yellow). */
-export const HAND_COLOR = { left: "#6ea8ff", right: "#ffb340" } as const;
-
-/** Ableton Link state pushed from Rust (M6). */
-export interface LinkState {
-  enabled: boolean;
-  tempo: number;
-  beat: number; // current beat position on the shared timeline
-  phase: number; // position within the quantum (bar)
-  peers: number;
-}

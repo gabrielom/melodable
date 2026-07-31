@@ -5,7 +5,7 @@ import {
   noteName,
   countWhiteKeys,
   normalizeRange,
-} from "../src/views/piano/mapping";
+} from "../src/engine/pitch";
 import { noteToPad, looksLikeDrums, padPosition, PADS, PAD_KEY_MAP } from "../src/engine/gm";
 
 describe("piano key geometry", () => {

@@ -36,7 +36,6 @@ interface SettingsSnapshot {
 export const useSettings = defineStore("settings", () => {
   const instrument = ref<InstrumentType>("pads");
   const volume = ref(0.9);
-  const lastPortName = ref<string>("");
   const soundOutput = ref<SoundOutput>("internal");
   /** Metronome click, count-in included. Off when the DAW provides the click. */
   const metronome = ref(true);
@@ -95,7 +94,6 @@ export const useSettings = defineStore("settings", () => {
   return {
     instrument,
     volume,
-    lastPortName,
     soundOutput,
     metronome,
     monitorOpen,

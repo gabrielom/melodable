@@ -6,9 +6,9 @@ import { persistGet, persistSet } from "./persist";
 
 /**
  * The lesson library and where the player currently is in it. The built-in
- * progression seeds the list; M4 will append MIDI-imported lessons here at
- * runtime. Selection and advancement live here so the trainer and the library
- * UI share one source of truth.
+ * progression seeds the list; MIDI imports are appended at runtime. Selection
+ * and advancement live here so the trainer and the home screen share one
+ * source of truth.
  */
 export const useLessons = defineStore("lessons", () => {
   const lessons = ref<Lesson[]>([...BUILTIN_LESSONS]);
@@ -17,7 +17,6 @@ export const useLessons = defineStore("lessons", () => {
 
   const current = computed(() => lessons.value[currentIndex.value] ?? lessons.value[0]);
   const hasNext = computed(() => currentIndex.value < lessons.value.length - 1);
-  const hasPrev = computed(() => currentIndex.value > 0);
 
   function selectIndex(i: number): void {
     if (i >= 0 && i < lessons.value.length) currentIndex.value = i;
@@ -61,7 +60,6 @@ export const useLessons = defineStore("lessons", () => {
     currentIndex,
     current,
     hasNext,
-    hasPrev,
     selectIndex,
     selectId,
     advance,

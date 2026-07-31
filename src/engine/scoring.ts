@@ -179,16 +179,4 @@ export class Scorer {
       if (!inst.resolved) inst.time = timeOf(inst.loopIndex, inst.beat);
     }
   }
-
-  /** Fresh run: clear instances and tallies (targets are kept). */
-  reset(): void {
-    this.all = [];
-    this.spawned.clear();
-    this.hitPoints = 0;
-    this.total = 0;
-    this.loopHitPoints = 0;
-    this.loopTotal = 0;
-    this.combo = 0;
-    this.bestCombo = 0;
-  }
 }

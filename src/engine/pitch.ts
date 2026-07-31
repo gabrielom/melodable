@@ -1,11 +1,14 @@
 /**
- * Pitch -> keyboard geometry. This is the *only* thing that differs between
- * the piano view and the pad view at the rendering layer; the engine treats
- * both identically.
+ * Pitch naming and keyboard geometry.
+ *
+ * Pure functions over MIDI note numbers — no Vue, no DOM. The piano renderer,
+ * the on-screen keyboard, the MIDI monitor and the clip importer all read note
+ * names from here, so there is exactly one definition of "what C#4 is called"
+ * and one definition of where a key sits.
  */
 
 /** Semitone offsets within an octave that are white keys. */
-export const WHITE_OFFSETS = [0, 2, 4, 5, 7, 9, 11];
+const WHITE_OFFSETS = [0, 2, 4, 5, 7, 9, 11];
 
 const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 

@@ -157,17 +157,6 @@ describe("scorer", () => {
     expect(byBeat(2).time).toBeCloseTo(12);
   });
 
-  it("resets for a fresh run", () => {
-    const s = new Scorer(targets);
-    s.spawnLoop(0, timeOf);
-    s.hit(12, 10.0);
-    s.reset();
-    expect(s.instances).toHaveLength(0);
-    expect(s.combo).toBe(0);
-    expect(s.accuracy).toBe(1);
-    s.spawnLoop(0, timeOf);
-    expect(s.instances).toHaveLength(3);
-  });
 });
 
 describe("chord grading (piano)", () => {

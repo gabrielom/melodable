@@ -4,7 +4,6 @@ import { MidiClock } from "../src/engine/midi-clock";
 describe("MidiClock", () => {
   it("falls back to 'now' before any sync", () => {
     const c = new MidiClock();
-    expect(c.synced).toBe(false);
     expect(c.toAudioTime(123_000_000, 42)).toBe(42);
   });
 
@@ -23,13 +22,5 @@ describe("MidiClock", () => {
     c.sync(3_000_000, 103.018);
     // best (min) estimate comes from the 5ms delivery
     expect(c.toAudioTime(4_000_000, 0)).toBeCloseTo(104.005);
-  });
-
-  it("resets", () => {
-    const c = new MidiClock();
-    c.sync(1_000_000, 101);
-    c.reset();
-    expect(c.synced).toBe(false);
-    expect(c.toAudioTime(1_000_000, 7)).toBe(7);
   });
 });

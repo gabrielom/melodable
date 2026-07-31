@@ -5,17 +5,15 @@
  * Export MIDI Clip), then import the `.mid` here. This module turns that file
  * into a gradable `Lesson` at the clip's own tempo.
  *
- * Pure TypeScript, no DOM: the caller supplies an `ArrayBuffer`. Ported and
- * hardened from the prototype's `parseMidi`/`midiToLesson` (running status,
- * tempo + time-signature meta, bounds checks). M4 targets pads; melodic
- * routing to piano keys arrives with M5.
+ * Pure TypeScript, no DOM: the caller supplies an `ArrayBuffer`. Handles
+ * running status, tempo + time-signature meta, and bounds-checks throughout.
+ * Drum clips route to pads, melodic clips to piano keys — auto-detected, and
+ * overridable in the import dialog.
  */
 
 import type { InstrumentType, Lesson, NoteEvent } from "./types";
 import { PADS, PAD_TO_NOTE, looksLikeDrums, noteToPad } from "./gm";
-
-const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-const noteName = (n: number) => `${NOTE_NAMES[((n % 12) + 12) % 12]}${Math.floor(n / 12) - 1}`;
+import { noteName } from "./pitch";
 
 export interface RawMidiNote {
   tick: number;

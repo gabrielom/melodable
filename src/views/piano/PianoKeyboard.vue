@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
- * On-screen piano. Geometry comes from mapping.ts — the same function the
+ * On-screen piano. Geometry comes from `engine/pitch` — the same function the
  * piano-roll renderer uses to align falling notes to their keys, so the
  * keyboard must stay flush (no outer padding/margins) for the columns to line
  * up with the canvas above it.
  */
 import { computed } from "vue";
-import { keyGeometry, isWhiteKey, noteName, normalizeRange } from "./mapping";
+import { keyGeometry, isWhiteKey, noteName, normalizeRange } from "@/engine/pitch";
 import { RATING_COLOR } from "@/engine/types";
 import type { RatingPop } from "@/composables/useTrainer";
 
@@ -18,9 +18,8 @@ const props = withDefaults(
     active: Map<number, number>;
     /** transient rating flashes from the scorer (lane === pitch) */
     pops?: RatingPop[];
-    showLegend?: boolean;
   }>(),
-  { lowNote: 48, highNote: 72, showLegend: true },
+  { lowNote: 48, highNote: 72 },
 );
 
 const emit = defineEmits<{
@@ -56,44 +55,36 @@ const isC = (n: number) => n % 12 === 0;
 </script>
 
 <template>
-  <div class="wrap">
-    <div class="keyboard">
-      <!-- white keys -->
-      <button
-        v-for="n in whiteNotes"
-        :key="n"
-        class="white"
-        :class="{ on: active.has(n) }"
-        :style="flashColor(n) ? { boxShadow: `inset 0 0 0 2px ${flashColor(n)}, 0 0 16px ${flashColor(n)}` } : {}"
-        @pointerdown.prevent="emit('noteOn', n, 100)"
-        @pointerup="emit('noteOff', n)"
-        @pointerleave="emit('noteOff', n)"
-      >
-        <span v-if="isC(n)" class="label">{{ noteName(n) }}</span>
-      </button>
+  <div class="keyboard">
+    <!-- white keys -->
+    <button
+      v-for="n in whiteNotes"
+      :key="n"
+      class="white"
+      :class="{ on: active.has(n) }"
+      :style="flashColor(n) ? { boxShadow: `inset 0 0 0 2px ${flashColor(n)}, 0 0 16px ${flashColor(n)}` } : {}"
+      @pointerdown.prevent="emit('noteOn', n, 100)"
+      @pointerup="emit('noteOff', n)"
+      @pointerleave="emit('noteOff', n)"
+    >
+      <span v-if="isC(n)" class="label">{{ noteName(n) }}</span>
+    </button>
 
-      <!-- black keys overlaid -->
-      <button
-        v-for="n in blackNotes"
-        :key="n"
-        class="black"
-        :class="{ on: active.has(n) }"
-        :style="[blackStyle(n), flashColor(n) ? { boxShadow: `0 0 0 2px ${flashColor(n)}, 0 0 14px ${flashColor(n)}` } : {}]"
-        @pointerdown.prevent="emit('noteOn', n, 100)"
-        @pointerup="emit('noteOff', n)"
-        @pointerleave="emit('noteOff', n)"
-      />
-    </div>
-
-    <p v-if="showLegend" class="legend">
-      Home row plays white keys (<code>a s d f g h j k</code>), upper row the blacks
-      (<code>w e t y u</code>). Or play your MIDI keyboard — every note lights up here.
-    </p>
+    <!-- black keys overlaid -->
+    <button
+      v-for="n in blackNotes"
+      :key="n"
+      class="black"
+      :class="{ on: active.has(n) }"
+      :style="[blackStyle(n), flashColor(n) ? { boxShadow: `0 0 0 2px ${flashColor(n)}, 0 0 14px ${flashColor(n)}` } : {}]"
+      @pointerdown.prevent="emit('noteOn', n, 100)"
+      @pointerup="emit('noteOff', n)"
+      @pointerleave="emit('noteOff', n)"
+    />
   </div>
 </template>
 
 <style scoped>
-.wrap { display: flex; flex-direction: column; }
 .keyboard {
   position: relative;
   display: flex;
@@ -139,16 +130,5 @@ const isC = (n: number) => n % 12 === 0;
 .black.on {
   background: linear-gradient(180deg, #ffc463 0%, #d68f24 100%);
   box-shadow: 0 0 16px rgba(255, 179, 64, 0.6);
-}
-.legend {
-  font-size: 12px;
-  color: var(--faint);
-  margin: 12px 0 0;
-  line-height: 1.5;
-}
-.legend code {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--dim);
 }
 </style>

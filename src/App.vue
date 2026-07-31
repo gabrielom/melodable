@@ -1,11 +1,12 @@
 <script setup lang="ts">
 /**
- * M2 shell: the shared engine (transport, scoring, adaptive tempo) drives a
- * falling-note canvas above the pad grid. Hardware, computer-keyboard, and
- * mouse hits all route through the same scorer; hardware hits are graded at
- * their midir timestamp mapped onto the audio clock.
+ * The app shell. Two screens — pick a lesson (HomeScreen), or practise it —
+ * with a single transport bar that doubles as the macOS titlebar.
  *
- * Next (see build_plan.html §15): M3 adds the lesson library + persistence.
+ * One engine, two views: `useTrainer` owns the transport, scorer and canvas
+ * loop for both pads and piano. Hardware, computer-keyboard and mouse hits all
+ * route through the same scorer; hardware hits are graded at their midir
+ * timestamp mapped onto the audio clock, never at handler time.
  */
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { useSettings, type PadLayout } from "@/stores/settings";
@@ -616,7 +617,6 @@ function onVolume(e: Event) {
             :low-note="pianoRange[0]"
             :high-note="pianoRange[1]"
             :pops="pops"
-            :show-legend="false"
             @note-on="(n, v) => noteOn(n, v, 'click')"
             @note-off="noteOff"
           />
@@ -858,7 +858,7 @@ function onVolume(e: Event) {
   height: auto;
   background: #0b0d11;
 }
-.piano-stage :deep(.wrap) { flex: none; }
+.piano-stage :deep(.keyboard) { flex: none; }
 
 .toast {
   position: absolute;

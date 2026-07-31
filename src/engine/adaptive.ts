@@ -1,29 +1,14 @@
 /**
- * Adaptive difficulty — Melodics' Auto-BPM idea, generalized.
+ * Lesson advancement.
  *
- * Tempo moves at loop boundaries based on that loop's accuracy: clean loops
- * nudge the tempo up (capped at 135% of the lesson's base), rough loops ease
- * it back down (floored at 60% of base). Consistently strong loops at or
- * above base tempo clear the lesson.
+ * Tempo is the player's to set — there is no automatic ramp. What remains is
+ * the "clear the lesson" rule: consistently strong loops at or above the
+ * lesson's base tempo earn advancement to the next lesson.
  */
 
-/** Loops >= this accuracy push the tempo up. */
-export const PUSH_ACC = 0.85;
-/** Loops below this accuracy ease the tempo down. */
-export const EASE_ACC = 0.6;
 /** Consecutive strong loops (>= ADVANCE_ACC at >= base bpm) to clear a lesson. */
-export const ADVANCE_ACC = 0.9;
-export const ADVANCE_STREAK = 2;
-
-/**
- * Next tempo given the lesson's base bpm, the current bpm, and the accuracy
- * (0..1) of the loop that just ended.
- */
-export function nextTempo(base: number, current: number, loopAcc: number): number {
-  if (loopAcc >= PUSH_ACC) return Math.min(Math.round(base * 1.35), current + 4);
-  if (loopAcc < EASE_ACC) return Math.max(Math.round(base * 0.6), current - 5);
-  return current;
-}
+const ADVANCE_ACC = 0.9;
+const ADVANCE_STREAK = 2;
 
 /**
  * Tracks the "clear the lesson" streak. Feed it every finished loop; it

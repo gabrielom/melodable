@@ -21,10 +21,6 @@ export class MidiClock {
     if (this.deltas.length > WINDOW) this.deltas.shift();
   }
 
-  get synced(): boolean {
-    return this.deltas.length > 0;
-  }
-
   /**
    * Convert a MIDI timestamp to audio-clock seconds. Falls back to
    * `fallback` (typically "now") until at least one pair has been seen.
@@ -32,9 +28,5 @@ export class MidiClock {
   toAudioTime(stampMicros: number, fallback: number): number {
     if (this.deltas.length === 0) return fallback;
     return stampMicros / 1e6 + Math.min(...this.deltas);
-  }
-
-  reset(): void {
-    this.deltas = [];
   }
 }

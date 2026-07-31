@@ -1,6 +1,6 @@
 /**
- * The training session: owns the transport, scorer, and adaptive logic, and
- * drives the falling-note canvas from a single requestAnimationFrame loop.
+ * The training session: owns the transport, scorer, and lesson advancement,
+ * and drives the falling-note canvas from a single requestAnimationFrame loop.
  *
  * All timing reads `audio.now` (the AudioContext clock). Hardware hits are
  * converted from midir timestamps onto that clock via MidiClock before
@@ -21,7 +21,7 @@ import type { LaneRenderer } from "@/views/lane-frame";
 import { PadLanes } from "@/views/pads/PadLanes";
 import { PianoRoll } from "@/views/piano/PianoRoll";
 import { Overview } from "@/views/Overview";
-import { normalizeRange } from "@/views/piano/mapping";
+import { normalizeRange } from "@/engine/pitch";
 
 export interface RatingPop {
   id: number;
@@ -49,7 +49,6 @@ export function useTrainer(
   const accuracy = ref(100);
   const combo = ref(0);
   const bestCombo = ref(0);
-  const phase = ref("Ready");
   const loopAcc = ref<number | null>(null);
   const toast = ref<string | null>(null);
   const pops = ref<RatingPop[]>([]);
@@ -200,14 +199,12 @@ export function useTrainer(
     bestCombo.value = 0;
     loopAcc.value = null;
     pops.value = [];
-    phase.value = "Count-in";
     playing.value = true;
   }
 
   function stop(): void {
     transport.stop();
     playing.value = false;
-    phase.value = "Ready";
   }
 
   /**
@@ -233,7 +230,6 @@ export function useTrainer(
     bestCombo.value = 0;
     loopAcc.value = null;
     pops.value = [];
-    phase.value = "Ready";
   }
 
   /** Manual tempo change (the slider). Keeps the playhead continuous. */
@@ -306,7 +302,6 @@ export function useTrainer(
       scorer.spawnLoop(pos.loopIndex + 1, timeOf);
 
       if (!pos.countIn) {
-        if (phase.value === "Count-in") phase.value = "Playing";
         if (lastLoop >= 0 && pos.loopIndex > lastLoop) {
           const acc = scorer.endLoop();
           loopRatings.clear();
@@ -440,7 +435,6 @@ export function useTrainer(
     accuracy,
     combo,
     bestCombo,
-    phase,
     loopAcc,
     toast,
     pops,

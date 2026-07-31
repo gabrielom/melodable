@@ -13,7 +13,6 @@ describe("lessons store", () => {
     expect(s.lessons.length).toBe(BUILTIN_LESSONS.length);
     expect(s.currentIndex).toBe(0);
     expect(s.current.id).toBe(BUILTIN_LESSONS[0].id);
-    expect(s.hasPrev).toBe(false);
     expect(s.hasNext).toBe(true);
   });
 

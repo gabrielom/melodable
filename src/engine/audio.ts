@@ -1,7 +1,7 @@
 /**
  * Web Audio engine: a synthesized drum kit, a polyphonic piano voice, and a
  * metronome click. Everything is scheduled against `AudioContext.currentTime`,
- * which is also the clock the transport and scorer will use in M2.
+ * which is also the clock the transport and scorer grade against.
  *
  * No samples required — the whole kit is synthesized, so the bundle stays tiny.
  * Swap in AudioBuffer playback later without touching callers.
@@ -36,13 +36,6 @@ export class AudioEngine {
   /** Current audio clock in seconds. The single source of truth for timing. */
   get now(): number {
     return this.ctx ? this.ctx.currentTime : 0;
-  }
-
-  /** Round-trip latency estimate, useful for the M7 calibration screen. */
-  get outputLatency(): number {
-    if (!this.ctx) return 0;
-    const c = this.ctx as AudioContext & { outputLatency?: number };
-    return (c.outputLatency ?? 0) + (c.baseLatency ?? 0);
   }
 
   setVolume(v: number): void {

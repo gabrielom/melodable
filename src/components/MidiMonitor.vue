@@ -4,7 +4,7 @@
  * which note numbers your controller actually sends, which you'll need when
  * extending GM_TO_PAD in src/engine/gm.ts.
  */
-import { noteName } from "@/views/piano/mapping";
+import { noteName } from "@/engine/pitch";
 import type { LogRow } from "@/components/midi-log";
 
 defineProps<{ rows: LogRow[] }>();

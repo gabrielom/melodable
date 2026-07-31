@@ -15,7 +15,7 @@
 
 import { RATING_COLOR } from "@/engine/types";
 import type { LaneFrame, LaneRenderer } from "@/views/lane-frame";
-import { countWhiteKeys, isWhiteKey, keyGeometry, noteName, pitchClass } from "./mapping";
+import { countWhiteKeys, isWhiteKey, keyGeometry, noteName, pitchClass } from "@/engine/pitch";
 
 const PX_PER_BEAT = 118;
 /** Fraction of the lane behind the hit line — the "already played" zone, so a

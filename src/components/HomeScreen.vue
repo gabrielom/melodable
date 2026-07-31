@@ -1,15 +1,13 @@
 <script setup lang="ts">
 /**
  * Home: pick a lesson. This is the app's entry point — the trainer opens on
- * top of it and the X in the transport bar comes back here.
- *
- * Replaces the old lesson-library modal: the same list, but given the whole
- * window so the trainer view can drop its lesson header entirely.
+ * top of it and the X in the transport bar comes back here. It gets the whole
+ * window, which is what lets the trainer view drop its lesson header entirely.
  */
 import { computed } from "vue";
 import type { Lesson } from "@/engine/types";
 import { noteToPad, PADS } from "@/engine/gm";
-import { noteName } from "@/views/piano/mapping";
+import { noteName } from "@/engine/pitch";
 
 const props = defineProps<{
   lessons: Lesson[];

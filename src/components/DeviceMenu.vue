@@ -2,8 +2,6 @@
 /**
  * Compact MIDI device control for the transport bar: a button showing the
  * connected device, opening a menu of available ports plus rescan/disconnect.
- * Replaces the old inline <select> + buttons + status text, which needed a
- * toolbar row of its own.
  */
 import { computed, onMounted, onUnmounted, ref } from "vue";
 
