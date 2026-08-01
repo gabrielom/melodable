@@ -12,6 +12,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { useSettings, type PadLayout } from "@/stores/settings";
 import { useLessons } from "@/stores/lessons";
 import { useMidi } from "@/composables/useMidi";
+import { useLink } from "@/composables/useLink";
 import { useTrainer } from "@/composables/useTrainer";
 import { AudioEngine } from "@/engine/audio";
 import { PADS, PAD_KEY_MAP, PIANO_KEY_MAP, noteToPad } from "@/engine/gm";
@@ -113,7 +114,7 @@ const laneCanvas = ref<HTMLCanvasElement | null>(null);
 const overviewCanvas = ref<HTMLCanvasElement | null>(null);
 const {
   playing,
-  bpm,
+  bpmLabel,
   guide,
   accuracy,
   combo,
@@ -124,13 +125,36 @@ const {
   lanes,
   isPiano,
   pianoRange,
+  loopBeats,
   play,
   stop,
   setBpm,
+  followLink,
   strike,
   padAtPoint,
   hardwareHitTime,
 } = useTrainer(audio, laneCanvas, overviewCanvas);
+
+// ------------------------------------------------------------ Ableton Link
+// Link shares tempo and phase with Ableton; the trainer's loop rides its grid.
+// `loopBeats` is the quantum, so our loop boundary is one Ableton agrees on.
+const {
+  available: linkAvailable,
+  enabled: linkOn,
+  peers: linkPeers,
+  probe: probeLink,
+  setEnabled: setLinkEnabled,
+  proposeTempo: proposeLinkTempo,
+} = useLink(followLink);
+
+function toggleLink() {
+  void setLinkEnabled(!linkOn.value, loopBeats.value);
+}
+
+// A different lesson can mean a different loop length — re-agree the quantum.
+watch(loopBeats, (q) => {
+  if (linkOn.value) void setLinkEnabled(true, q);
+});
 
 let logId = 0;
 let lastLogTime = 0;
@@ -163,7 +187,10 @@ function onLanePointer(e: PointerEvent) {
 }
 
 function onTempo(e: Event) {
-  setBpm(Number((e.target as HTMLInputElement).value));
+  const v = Number((e.target as HTMLInputElement).value);
+  setBpm(v);
+  // Linked, the slider drives the session too; Link's next snapshot confirms it.
+  void proposeLinkTempo(v);
 }
 
 // ------------------------------------------------------------------ logging
@@ -319,6 +346,7 @@ onMounted(() => {
   window.addEventListener("keyup", onKeyUp);
   document.addEventListener("pointerdown", onPadMenuPointer);
   void refreshPorts();
+  void probeLink();
 });
 
 onUnmounted(() => {
@@ -397,9 +425,9 @@ function onVolume(e: Event) {
       <button v-if="!playing" class="btn primary" @click="onPlay">▶ Play</button>
       <button v-else class="btn stopbtn" @click="stop">■ Stop</button>
 
-      <label class="tempo" :title="`Tempo — ${bpm} BPM`">
-        <input type="range" min="50" max="160" :value="bpm" @input="onTempo" />
-        <span class="bpm">{{ bpm }}</span>
+      <label class="tempo" :title="`Tempo — ${bpmLabel} BPM`">
+        <input type="range" min="50" max="160" :value="bpmLabel" @input="onTempo" />
+        <span class="bpm">{{ bpmLabel }}</span>
       </label>
 
       <div class="modes" role="group" aria-label="Practice options">
@@ -516,6 +544,29 @@ function onVolume(e: Event) {
       <div class="spacer" />
 
       <button v-if="!audioReady" class="iconbtn arm" title="Enable audio" @click="ensureAudio">▶</button>
+
+      <button
+        v-if="linkAvailable"
+        class="iconbtn linkbtn"
+        :class="{ on: linkOn }"
+        :aria-pressed="linkOn"
+        :title="
+          linkOn
+            ? `Ableton Link on — ${linkPeers} peer(s). Tempo and downbeat follow the session.`
+            : 'Ableton Link — lock tempo and downbeat to Ableton'
+        "
+        @click="toggleLink"
+      >
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+          <path d="M6.5 9.5 9.5 6.5" fill="none" stroke="currentColor" stroke-width="1.6"
+                stroke-linecap="round" />
+          <path d="M7 4.6 8.2 3.4a2.7 2.7 0 0 1 3.8 3.8l-1.2 1.2" fill="none"
+                stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          <path d="M9 11.4 7.8 12.6a2.7 2.7 0 0 1-3.8-3.8l1.2-1.2" fill="none"
+                stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+        </svg>
+        <i v-if="linkOn" class="peerbadge">{{ linkPeers }}</i>
+      </button>
 
       <DeviceMenu
         :ports="ports"
@@ -686,6 +737,26 @@ function onVolume(e: Event) {
 }
 .mode.on { background: var(--panel2); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
 .mode.icon { display: inline-flex; align-items: center; padding: 5px 7px; }
+/* Ableton Link toggle. The peer count is a badge rather than inline text so
+   the indicator costs the bar no width — it is already full at ~1110px. */
+.linkbtn { position: relative; }
+.linkbtn.on { color: var(--teal); border-color: #37d0c455; }
+.peerbadge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 12px;
+  padding: 0 2px;
+  border-radius: 6px;
+  background: var(--teal);
+  color: #06232a;
+  font-family: var(--mono);
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 12px;
+  text-align: center;
+}
 
 /* Live score, inline in the bar. */
 .stats { display: inline-flex; align-items: baseline; gap: 9px; flex: none; }

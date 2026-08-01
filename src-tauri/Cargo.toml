@@ -14,14 +14,13 @@ tauri = { version = "2", features = [] }
 tauri-plugin-store = "2"
 serde = { version = "1", features = ["derive"] }
 midir = "0.10"
-
-# M6: Ableton Link. Enable with `cargo build --features link`
-# rusty_link = { version = "0.4", optional = true }
+# Ableton Link (M6). Feature-gated: needs CMake to build, so the app must
+# still compile and run with the feature off.
+rusty_link = { version = "0.4", optional = true }
 
 [features]
-default = []
-link = []
-# link = ["dep:rusty_link"]   # <- swap to this when adding rusty_link in M6
+default = ["link"]
+link = ["dep:rusty_link"]
 
 [profile.release]
 codegen-units = 1

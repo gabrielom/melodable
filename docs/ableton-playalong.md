@@ -4,10 +4,9 @@
 your track), while **Melodable shows the falling notes and grades your timing**.
 The two apps never exchange audio — they just both listen to the same MIDI.
 
-This is the "external sound" workflow. It works today for the pad trainer. The
-one thing it does *not* yet do is lock Melodable's tempo and downbeat to
-Ableton's transport automatically — see [Tempo & phase sync](#tempo--phase-sync)
-at the bottom for where that stands.
+This is the "external sound" workflow. To keep the two apps on the same grid as
+well, turn on Ableton Link — see [Tempo & phase sync](#tempo--phase-sync) at the
+bottom.
 
 ---
 
@@ -78,24 +77,50 @@ is where a fixed input/audio offset will be dialled in later.
 
 ## Tempo & phase sync
 
-**Today:** Melodable runs its **own** transport. You hit ▶ Play, get a one‑bar
-count‑in, and the lesson loops at its own BPM (adapting as you play). Ableton is
-the *sound source*; it isn't driving Melodable's clock. This is the workflow to
-test first — pick a lesson, play along, hear your Ableton kit.
+Melodable follows **Ableton Link** (M6). Link shares tempo and beat phase
+between apps on the same machine or local network — no cables, no MIDI routing,
+and it works alongside everything in sections 1–4.
 
-If you also run a **backing track** in Ableton, nothing keeps the two transports
-phase‑locked yet, so they'll drift. Two ways to close that gap, in order of how
-much work they are:
+### Turning it on
 
-- **MIDI Clock follow (lighter).** Ableton can send MIDI Clock + Start/Stop out a
-  port (e.g. IAC). Melodable already has a native MIDI path; teaching it to read
-  clock (`0xF8`) and Start (`0xFA`) would let the transport derive Ableton's
-  tempo and align its downbeat — no extra Rust dependencies. The Rust bridge
-  currently filters clock (`Ignore::All` in `src-tauri/src/midi.rs`); that and a
-  small clock‑follower on the frontend are the whole job.
-- **Ableton Link (the planned M6).** Bidirectional tempo + beat‑phase sync via
-  `rusty_link`. This is the "proper" solution in `build_plan.html` §11b and needs
-  CMake to build the Link library.
+1. In Ableton: **Settings → Link / Tempo / MIDI → Link: Show / On**.
+2. In Melodable: click the **chain icon** in the transport bar, left of the MIDI
+   device menu. It turns teal and shows the peer count as a small badge.
+3. Hit ▶ Play. The trainer's loop now rides Ableton's grid: the loop boundary
+   lands on Ableton's, and moving Ableton's tempo moves the trainer.
 
-Neither is built yet — they're the next real step for true play‑along. Everything
-in sections 1–4 above works without them.
+The tempo slider still works while linked — dragging it *proposes* the tempo to
+the whole session, so Melodable can drive Ableton as well as follow it. That's
+normal Link behaviour, the same as between two Live sets.
+
+### How it works
+
+- `src-tauri/src/link.rs` owns the session and polls it at ~30 Hz, emitting
+  `link://state` — the same Rust→Vue event pattern as MIDI.
+- Each snapshot carries Link's own clock reading. The frontend maps that onto
+  the `AudioContext` clock (`src/engine/host-clock.ts`, shared with the midir
+  path) so a slow event delivery can't skew the phase we align to.
+- `useTrainer` closes the gap: `Transport.setBpm` for tempo, `Transport.anchorTo`
+  for phase. Corrections under 3 ms are ignored, so a locked transport isn't
+  jittered 30 times a second.
+- Link's quantum is the *lesson's loop length*, so a 2-bar lesson lines up with
+  Ableton every 2 bars rather than every beat.
+
+### Building it
+
+Link needs CMake (`brew install cmake`) because `rusty_link` compiles the C++
+Link library. It is behind a cargo feature, on by default:
+
+```sh
+cargo build                        # with Link
+cargo build --no-default-features  # without — the chain icon simply hides
+```
+
+### The lighter alternative, if you ever want it
+
+Ableton can also send **MIDI Clock + Start/Stop** out a port (e.g. IAC), and
+Melodable already has a native MIDI path. Teaching it to read clock (`0xF8`) and
+Start (`0xFA`) would need no extra Rust dependencies and no CMake — the bridge
+currently filters clock (`Ignore::All` in `src-tauri/src/midi.rs`). Link is
+better (bidirectional, phase-accurate, no routing to set up), so this is only
+worth doing if CMake is a problem on your build machine.

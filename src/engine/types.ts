@@ -35,6 +35,25 @@ export interface MidiMessage {
   timestampMicros: number;
 }
 
+/**
+ * A snapshot of the Ableton Link session, pushed up from Rust as
+ * `link://state`. Mirrors `LinkState` in `src-tauri/src/link.rs`.
+ */
+export interface LinkState {
+  /** False when Link is switched off, or this build has no Link support. */
+  enabled: boolean;
+  /** False when the app was built without the `link` cargo feature. */
+  available: boolean;
+  tempo: number;
+  /** Position within the current quantum — the trainer's loop length. */
+  phase: number;
+  /** Other participants on the network (Ableton counts as one). */
+  peers: number;
+  /** Link's clock reading for this snapshot. Map it onto the audio clock via
+   *  `HostClock` before using it — never apply it at delivery time. */
+  clockMicros: number;
+}
+
 export type Rating = "perfect" | "great" | "good" | "miss";
 
 /** Timing windows in seconds, measured as |hit - target|. */

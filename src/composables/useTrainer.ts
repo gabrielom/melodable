@@ -3,18 +3,18 @@
  * and drives the falling-note canvas from a single requestAnimationFrame loop.
  *
  * All timing reads `audio.now` (the AudioContext clock). Hardware hits are
- * converted from midir timestamps onto that clock via MidiClock before
+ * converted from midir timestamps onto that clock via HostClock before
  * grading — never graded at "whenever the Vue handler ran".
  */
 
 import { computed, onMounted, onUnmounted, ref, watch, type Ref } from "vue";
 import { useSettings } from "@/stores/settings";
 import { useLessons } from "@/stores/lessons";
-import type { Rating } from "@/engine/types";
-import { Transport } from "@/engine/transport";
+import type { LinkState, Rating } from "@/engine/types";
+import { Transport, phaseDelta } from "@/engine/transport";
 import { Scorer, lessonTargets } from "@/engine/scoring";
 import { AdvanceTracker } from "@/engine/adaptive";
-import { MidiClock } from "@/engine/midi-clock";
+import { HostClock } from "@/engine/host-clock";
 import { noteToPad, PADS } from "@/engine/gm";
 import type { AudioEngine } from "@/engine/audio";
 import type { LaneRenderer } from "@/views/lane-frame";
@@ -32,6 +32,13 @@ export interface RatingPop {
 /** How far ahead (seconds) clicks and guide notes are scheduled. */
 const LOOKAHEAD = 1.0;
 
+/**
+ * Phase error we tolerate before re-anchoring to Link. Below this the drift is
+ * inaudible, and correcting it every poll (~30 Hz) would jitter the playhead
+ * for nothing.
+ */
+const LINK_DEADBAND = 0.003;
+
 export function useTrainer(
   audio: AudioEngine,
   canvasEl: Ref<HTMLCanvasElement | null>,
@@ -44,6 +51,8 @@ export function useTrainer(
 
   const playing = ref(false);
   const bpm = ref(lesson.value.bpm);
+  /** Link tempos are fractional; the bar shows a whole number. */
+  const bpmLabel = computed(() => Math.round(bpm.value));
   const guide = ref(false);
 
   const accuracy = ref(100);
@@ -53,7 +62,7 @@ export function useTrainer(
   const toast = ref<string | null>(null);
   const pops = ref<RatingPop[]>([]);
 
-  const midiClock = new MidiClock();
+  const midiClock = new HostClock();
 
   const isPiano = computed(() => lesson.value.instrument === "piano");
 
@@ -240,6 +249,55 @@ export function useTrainer(
       scorer.retime(timeOf);
     }
   }
+
+  // ------------------------------------------------------------ Ableton Link
+
+  /**
+   * Link's clock is its own; map it onto the audio clock so a slow event
+   * delivery can't skew the phase we align to. Separate from the MIDI mapper —
+   * midir and Link aren't guaranteed to read the same underlying clock.
+   */
+  const linkClock = new HostClock();
+
+  /**
+   * Follow one Link snapshot: match Ableton's tempo, and slide our loop so its
+   * boundary sits on Link's. Rust reports `phase` against a quantum of
+   * `loopBeats`, so phase *is* our beat-in-loop as Ableton sees it — we only
+   * have to close the gap.
+   *
+   * This is the whole of M6's transport work: the transport already re-anchors
+   * on tempo change, and `anchorTo` handles the phase. Nothing here knows or
+   * cares which instrument is on screen.
+   */
+  function followLink(s: LinkState): void {
+    const now = audio.now;
+    linkClock.sync(s.clockMicros, now);
+    // The instant this snapshot describes, in audio-clock terms.
+    const at = linkClock.toAudioTime(s.clockMicros, now);
+
+    let moved = false;
+
+    if (s.tempo > 0 && Math.abs(s.tempo - transport.bpm) > 0.01) {
+      bpm.value = s.tempo;
+      transport.setBpm(s.tempo, playing.value ? now : undefined);
+      moved = true;
+    }
+
+    if (playing.value && transport.isPlaying) {
+      const cur = transport.position(at).absBeat;
+      const delta = phaseDelta(cur, s.phase, transport.loopBeats);
+      if (Math.abs(delta) * transport.secPerBeat > LINK_DEADBAND) {
+        transport.anchorTo(cur + delta, at);
+        moved = true;
+      }
+    }
+
+    // Note times are derived from the anchor, so they move with it.
+    if (moved && playing.value) scorer.retime(timeOf);
+  }
+
+  /** Link's quantum: our loop length, so loop boundaries line up with Ableton. */
+  const loopBeats = computed(() => lesson.value.bars * lesson.value.beatsPerBar);
 
   // ------------------------------------------------------------------ input
 
@@ -431,6 +489,7 @@ export function useTrainer(
     lesson,
     playing,
     bpm,
+    bpmLabel,
     guide,
     accuracy,
     combo,
@@ -441,9 +500,11 @@ export function useTrainer(
     lanes,
     isPiano,
     pianoRange,
+    loopBeats,
     play,
     stop,
     setBpm,
+    followLink,
     strike,
     padAtPoint,
     hardwareHitTime,

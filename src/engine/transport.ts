@@ -12,6 +12,29 @@
  * the playhead continuous.
  */
 
+/**
+ * A re-anchor that moves the playhead further than this counts as a jump
+ * rather than a drift trim — see `anchorTo`. Well above the sub-millisecond
+ * corrections a locked Link follower makes, well below a musical distance.
+ */
+const JUMP_BEATS = 0.25;
+
+/**
+ * Signed distance from `absBeat` to the nearest beat whose position within the
+ * loop is `phase`, taking the shorter way round the loop.
+ *
+ * This is how the Link follower decides which way to slide: a loop sitting
+ * just after the grid gets nudged back, not dragged almost a whole loop
+ * forward. The result is never more than half a loop in either direction.
+ */
+export function phaseDelta(absBeat: number, phase: number, loopBeats: number): number {
+  const inLoop = ((absBeat % loopBeats) + loopBeats) % loopBeats;
+  let d = phase - inLoop;
+  if (d > loopBeats / 2) d -= loopBeats;
+  else if (d < -loopBeats / 2) d += loopBeats;
+  return d;
+}
+
 export interface TransportPosition {
   playing: boolean;
   /** True while the pre-roll count-in bar is still running. */
@@ -63,6 +86,11 @@ export class Transport {
     return this.playing;
   }
 
+  /** Absolute beat at clock time `now`, ignoring whether we're playing. */
+  private absBeatAt(now: number): number {
+    return this.anchorLoop * this.loopBeats + (now - this.anchorTime) / this.secPerBeat;
+  }
+
   /**
    * Begin playback: a short scheduling delay, then the count-in bar, then
    * loop 0. `now` is the current clock reading.
@@ -82,7 +110,7 @@ export class Transport {
     if (!this.playing) {
       return { playing: false, countIn: false, countInBeat: 0, loopIndex: 0, beatInLoop: 0, absBeat: 0 };
     }
-    const absBeat = this.anchorLoop * this.loopBeats + (now - this.anchorTime) / this.secPerBeat;
+    const absBeat = this.absBeatAt(now);
     if (absBeat < 0) {
       return {
         playing: true,
@@ -122,7 +150,7 @@ export class Transport {
   setBpm(bpm: number, now?: number): void {
     if (bpm === this.bpm) return;
     if (this.playing && now !== undefined) {
-      const absBeat = this.anchorLoop * this.loopBeats + (now - this.anchorTime) / this.secPerBeat;
+      const absBeat = this.absBeatAt(now);
       this.bpm = bpm;
       // keep the playhead continuous: re-anchor at the current loop's beat 0
       this.anchorLoop = Math.max(0, Math.floor(absBeat / this.loopBeats));
@@ -133,6 +161,28 @@ export class Transport {
   }
 
   /**
+   * Re-anchor so that absolute beat `absBeat` falls at clock time `atTime`.
+   *
+   * This is how an external grid (Ableton Link, M6) drives the playhead: the
+   * follower converts Link's beat + clock reading into our terms and calls
+   * this every poll. In the steady state the correction is well under a
+   * millisecond, so the playhead is trimmed rather than moved.
+   *
+   * A correction larger than `JUMP_BEATS` is treated as a real move — locking
+   * on to Link for the first time, or Ableton relocating — and the scheduling
+   * window jumps with it, so we neither replay the beats we skipped nor flood
+   * the scheduler after moving backwards. Audio already queued for the old
+   * position still fires; that one-off blip is the same cost a tempo-slider
+   * drag already pays.
+   */
+  anchorTo(absBeat: number, atTime: number): void {
+    const moved = Math.abs(absBeat - this.absBeatAt(atTime));
+    this.anchorLoop = Math.max(0, Math.floor(absBeat / this.loopBeats));
+    this.anchorTime = atTime - (absBeat - this.anchorLoop * this.loopBeats) * this.secPerBeat;
+    if (moved > JUMP_BEATS) this.scheduledUntilBeat = absBeat;
+  }
+
+  /**
    * Advance the scheduling window: returns the half-open range of absolute
    * beats [from, to) that now needs audio events scheduled (metronome clicks,
    * guide notes), or null if the window hasn't grown. `horizon` is how far
@@ -140,7 +190,7 @@ export class Transport {
    */
   advanceScheduler(now: number, horizon = 1.0): { from: number; to: number } | null {
     if (!this.playing) return null;
-    const nowBeat = this.anchorLoop * this.loopBeats + (now - this.anchorTime) / this.secPerBeat;
+    const nowBeat = this.absBeatAt(now);
     const to = nowBeat + horizon / this.secPerBeat;
     if (to <= this.scheduledUntilBeat) return null;
     const from = this.scheduledUntilBeat;
