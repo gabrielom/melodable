@@ -5,6 +5,7 @@
   "bpm": 94,
   "bars": 1,
   "beatsPerBar": 4,
+  "repeats": 16,
   "source": "builtin",
   "hint": "Ghost kick before beat 3, open hat lifts into 2.",
   "notes": [

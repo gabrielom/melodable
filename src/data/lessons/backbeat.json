@@ -5,6 +5,7 @@
   "bpm": 82,
   "bars": 1,
   "beatsPerBar": 4,
+  "repeats": 16,
   "source": "builtin",
   "hint": "Kick on 1 & 3, snare answers on 2 & 4.",
   "notes": [

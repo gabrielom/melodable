@@ -5,6 +5,7 @@
   "bpm": 90,
   "bars": 1,
   "beatsPerBar": 4,
+  "repeats": 16,
   "source": "builtin",
   "hint": "Hats sit on the 'and' of each beat — feel the space.",
   "notes": [

@@ -20,6 +20,13 @@
 const JUMP_BEATS = 0.25;
 
 /**
+ * Beats the playhead keeps running past the last repeat before the run is
+ * called finished, so the final note can still be struck late and is seen to
+ * resolve rather than vanishing with the transport.
+ */
+const END_TAIL_BEATS = 1;
+
+/**
  * Signed distance from `absBeat` to the nearest beat whose position within the
  * loop is `phase`, taking the shorter way round the loop.
  *
@@ -47,6 +54,8 @@ export interface TransportPosition {
   beatInLoop: number;
   /** Absolute beat since the first loop's beat 0; negative during count-in. */
   absBeat: number;
+  /** True once the run's repeats (plus a short tail) have played out. */
+  finished: boolean;
 }
 
 export class Transport {
@@ -54,6 +63,12 @@ export class Transport {
   readonly beatsPerBar: number;
   readonly bars: number;
   readonly countInBars: number;
+  /**
+   * How many times the pattern plays before the run ends. `Infinity` keeps the
+   * old endless behaviour, which the Ableton Link follower and the tests rely
+   * on when no run length is given.
+   */
+  readonly totalLoops: number;
 
   private playing = false;
   /** Loop index whose beat 0 happens at `anchorTime`. */
@@ -62,11 +77,18 @@ export class Transport {
   /** Absolute beat up to which repeating events (clicks…) have been issued. */
   private scheduledUntilBeat = 0;
 
-  constructor(opts: { bpm: number; bars: number; beatsPerBar: number; countInBars?: number }) {
+  constructor(opts: {
+    bpm: number;
+    bars: number;
+    beatsPerBar: number;
+    countInBars?: number;
+    totalLoops?: number;
+  }) {
     this.bpm = opts.bpm;
     this.bars = opts.bars;
     this.beatsPerBar = opts.beatsPerBar;
     this.countInBars = opts.countInBars ?? 1;
+    this.totalLoops = opts.totalLoops ?? Infinity;
   }
 
   get secPerBeat(): number {
@@ -80,6 +102,11 @@ export class Transport {
 
   get countInBeats(): number {
     return this.countInBars * this.beatsPerBar;
+  }
+
+  /** Length of the whole run in beats; `Infinity` when endless. */
+  get runBeats(): number {
+    return this.totalLoops * this.loopBeats;
   }
 
   get isPlaying(): boolean {
@@ -108,7 +135,15 @@ export class Transport {
 
   position(now: number): TransportPosition {
     if (!this.playing) {
-      return { playing: false, countIn: false, countInBeat: 0, loopIndex: 0, beatInLoop: 0, absBeat: 0 };
+      return {
+        playing: false,
+        countIn: false,
+        countInBeat: 0,
+        loopIndex: 0,
+        beatInLoop: 0,
+        absBeat: 0,
+        finished: false,
+      };
     }
     const absBeat = this.absBeatAt(now);
     if (absBeat < 0) {
@@ -119,6 +154,7 @@ export class Transport {
         loopIndex: 0,
         beatInLoop: 0,
         absBeat,
+        finished: false,
       };
     }
     const loopIndex = Math.floor(absBeat / this.loopBeats);
@@ -129,6 +165,7 @@ export class Transport {
       loopIndex,
       beatInLoop: absBeat - loopIndex * this.loopBeats,
       absBeat,
+      finished: absBeat >= this.runBeats + END_TAIL_BEATS,
     };
   }
 

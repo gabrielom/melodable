@@ -5,6 +5,7 @@
   "bpm": 86,
   "bars": 1,
   "beatsPerBar": 4,
+  "repeats": 16,
   "source": "builtin",
   "hint": "Closed hat drives the 8ths over the backbeat. Lock to the click.",
   "notes": [

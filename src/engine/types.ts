@@ -18,8 +18,15 @@ export interface Lesson {
   name: string;
   instrument: InstrumentType;
   bpm: number; // suggested starting tempo
-  bars: number; // loop length in bars
+  bars: number; // pattern length in bars
   beatsPerBar: number; // e.g. 4
+  /**
+   * How many times the pattern plays in one run. A lesson is a finite piece
+   * of music, not an endless loop — it ends, and you are scored on the whole
+   * run. Omitted for imported clips, where `lessonRepeats` derives a count
+   * that lands the run near the target length.
+   */
+  repeats?: number;
   notes: NoteEvent[];
   source: "builtin" | "midi-import";
   hint?: string;

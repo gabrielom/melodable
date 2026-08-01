@@ -5,6 +5,7 @@
   "bpm": 98,
   "bars": 1,
   "beatsPerBar": 4,
+  "repeats": 16,
   "source": "builtin",
   "hint": "Groove for three beats, then roll the toms into the turn.",
   "notes": [

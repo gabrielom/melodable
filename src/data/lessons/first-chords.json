@@ -5,6 +5,7 @@
   "bpm": 70,
   "bars": 2,
   "beatsPerBar": 4,
+  "repeats": 8,
   "source": "builtin",
   "hint": "Right hand: C, E, G one at a time — then land the full C-major chord.",
   "notes": [

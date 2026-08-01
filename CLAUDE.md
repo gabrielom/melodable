@@ -31,6 +31,12 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
 - Design tokens live in **two places that must stay in step**: `src/styles.css` (CSS custom properties, for the DOM) and `src/engine/theme.ts` (the same values as data, because canvas can't read custom properties). Change one, change the other. Don't introduce a new palette. These now supersede the palette in `build_plan.html`, which predates the trainer redesign.
 - Two themes, `dark` and `light`, swapped by `data-theme` on `<html>` from `settings.theme`. Light is one flat grey, so on-states **invert** to a dark chip and every field needs the `--outline` hairline — a lighter fill reads as nothing.
 - Rating colors live in the palette: `PALETTE[theme].rating[r]` (`src/engine/theme.ts`). Renderers read that, never a hardcoded rating colour. Dark: perfect = cyan, great = blue, good = amber, miss = red.
+- **A lesson is a finite run, not an endless loop.** The pattern plays
+  `lesson.repeats` times (built-ins are 16 bars, 39-55s) and then ends; the run
+  is scored as a whole, and clearing one clean run advances the library.
+  `lessonRepeats` derives a count for imported clips that don't state one.
+  The overview strip spans the whole run, which is what makes its viewport
+  rectangle a meaningful slice rather than the entire width.
 - Lane identity uses the fixed 8-colour LED set (`ledOf`/`ledUpcoming`), indexed by the lane's position on screen — not a hash of the pad number, so a lane keeps its colour between lessons. Notes still to come are the LED at 33% (`UPCOMING_ALPHA`).
 - Respect `prefers-reduced-motion`; keep controls keyboard-focusable.
 - **Everything lives in the one transport bar**, which is also the macOS titlebar (`data-tauri-drag-region`, left padding clears the traffic lights). It is 34px tall with every control 20px, and must stay a single row down to ~1100px — measure it, don't assume (see the responsive block at the bottom of `App.vue`; currently verified clean to 912px). No second toolbar row, no in-stage header.

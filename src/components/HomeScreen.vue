@@ -8,6 +8,7 @@ import { computed } from "vue";
 import type { Lesson } from "@/engine/types";
 import { noteToPad, PADS } from "@/engine/gm";
 import { noteName } from "@/engine/pitch";
+import { lessonRepeats } from "@/engine/scoring";
 
 const props = defineProps<{
   lessons: Lesson[];
@@ -31,12 +32,25 @@ function summary(lesson: Lesson): string {
   return [...names].join(" · ");
 }
 
+/**
+ * How long a run of this lesson takes at its base tempo. A lesson is a finite
+ * piece now, so the length you are committing to matters more than the length
+ * of the pattern it repeats.
+ */
+function runLength(lesson: Lesson): string {
+  const repeats = lessonRepeats(lesson);
+  const bars = lesson.bars * repeats;
+  const secs = Math.round((bars * lesson.beatsPerBar * 60) / lesson.bpm);
+  return `${bars} bar${bars === 1 ? "" : "s"} · ${secs}s`;
+}
+
 const rows = computed(() =>
   props.lessons.map((l, i) => ({
     lesson: l,
     index: i,
     current: i === props.currentIndex,
     summary: summary(l),
+    length: runLength(l),
   })),
 );
 </script>
@@ -69,10 +83,7 @@ const rows = computed(() =>
 
         <span class="foot">
           <span class="parts">{{ row.summary }}</span>
-          <span class="len">
-            {{ row.lesson.bars }} bar{{ row.lesson.bars === 1 ? "" : "s" }} ·
-            {{ row.lesson.notes.length }} notes
-          </span>
+          <span class="len">{{ row.length }}</span>
         </span>
       </button>
     </div>

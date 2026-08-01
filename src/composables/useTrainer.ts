@@ -13,7 +13,7 @@ import { useLessons } from "@/stores/lessons";
 import type { LinkState, Rating } from "@/engine/types";
 import { Transport, phaseDelta } from "@/engine/transport";
 import { PALETTE } from "@/engine/theme";
-import { Scorer, lessonTargets } from "@/engine/scoring";
+import { Scorer, lessonTargets, lessonRepeats } from "@/engine/scoring";
 import { AdvanceTracker } from "@/engine/adaptive";
 import { HostClock } from "@/engine/host-clock";
 import { noteToPad, PADS } from "@/engine/gm";
@@ -56,10 +56,16 @@ export function useTrainer(
   const bpmLabel = computed(() => Math.round(bpm.value * 10) / 10);
   const guide = ref(false);
 
+  /**
+   * True once a run has played to the end, until the next one starts. The bar
+   * keeps the final ACC/CMB on screen rather than blanking them to "—" the
+   * instant the music stops — the end-of-run summary the design calls for
+   * isn't drawn yet, and losing the result would be worse than showing it.
+   */
+  const runComplete = ref(false);
   const accuracy = ref(100);
   const combo = ref(0);
   const bestCombo = ref(0);
-  const loopAcc = ref<number | null>(null);
   const toast = ref<string | null>(null);
   const pops = ref<RatingPop[]>([]);
 
@@ -124,18 +130,33 @@ export function useTrainer(
     return normalizeRange(Math.max(LOWEST_KEY, lo), Math.min(HIGHEST_KEY, hi));
   });
 
+  /**
+   * Run shape. A lesson is a finite piece of music: the pattern plays
+   * `totalLoops` times and then ends. `loopBeats` doubles as Ableton Link's
+   * quantum, so loop boundaries line up with the session.
+   */
+  const loopBeats = computed(() => lesson.value.bars * lesson.value.beatsPerBar);
+  const totalLoops = computed(() => lessonRepeats(lesson.value));
+  /** The whole run in beats — what the overview strip spans. */
+  const runBeats = computed(() => totalLoops.value * loopBeats.value);
+
   let transport = new Transport({
     bpm: bpm.value,
     bars: lesson.value.bars,
     beatsPerBar: lesson.value.beatsPerBar,
+    totalLoops: totalLoops.value,
   });
   let scorer = new Scorer(targets.value);
   const advanceTracker = new AdvanceTracker();
 
   let renderer: LaneRenderer | null = null;
   let overview: Overview | null = null;
-  /** Rating per target index for the loop in progress, for the overview. */
-  const loopRatings = new Map<number, Rating>();
+  /**
+   * Rating per note instance for the whole run, keyed by the scorer's
+   * `loop:target` id. The overview strip shows the entire run, so grades have
+   * to survive past the repeat that earned them.
+   */
+  const runRatings = new Map<string, Rating>();
   let raf = 0;
   let lastLoop = -1;
   let popId = 0;
@@ -179,8 +200,8 @@ export function useTrainer(
     });
   }
 
-  /** The strip above the lane: the whole loop, and where the playhead is. */
-  function drawOverview(beatInLoop: number | null): void {
+  /** The strip above the lane: the whole run, and where the playhead is. */
+  function drawOverview(runBeat: number | null): void {
     if (!overview) return;
     overview.resize();
     overview.draw({
@@ -190,11 +211,12 @@ export function useTrainer(
       lowNote: pianoRange.value[0],
       highNote: pianoRange.value[1],
       loopBeats: transport.loopBeats,
-      beatInLoop,
-      ratings: loopRatings,
+      totalLoops: transport.totalLoops,
+      runBeat,
+      ratings: runRatings,
       // The renderer reports the window it just drew, so the overview's
       // viewport rectangle always matches what is actually on screen.
-      view: beatInLoop === null ? null : (renderer?.visibleBeats() ?? null),
+      view: runBeat === null ? null : (renderer?.visibleBeats() ?? null),
       palette: palette.value,
       theme: settings.theme,
     });
@@ -204,20 +226,21 @@ export function useTrainer(
 
   /** Start a run. The caller must have initialized audio (user gesture). */
   function play(): void {
-    loopRatings.clear();
+    runComplete.value = false;
+    runRatings.clear();
     scorer = new Scorer(targets.value);
     advanceTracker.reset();
     transport = new Transport({
       bpm: bpm.value,
       bars: lesson.value.bars,
       beatsPerBar: lesson.value.beatsPerBar,
+      totalLoops: totalLoops.value,
     });
     transport.start(audio.now);
     lastLoop = -1;
     accuracy.value = 100;
     combo.value = 0;
     bestCombo.value = 0;
-    loopAcc.value = null;
     pops.value = [];
     playing.value = true;
   }
@@ -233,13 +256,15 @@ export function useTrainer(
    * lanes, and HUD all reflect the new lesson before the next Play.
    */
   function resetForLesson(): void {
-    loopRatings.clear();
+    runComplete.value = false;
+    runRatings.clear();
     transport.stop();
     playing.value = false;
     transport = new Transport({
       bpm: lesson.value.bpm,
       bars: lesson.value.bars,
       beatsPerBar: lesson.value.beatsPerBar,
+      totalLoops: totalLoops.value,
     });
     scorer = new Scorer(targets.value);
     advanceTracker.reset();
@@ -248,7 +273,6 @@ export function useTrainer(
     accuracy.value = 100;
     combo.value = 0;
     bestCombo.value = 0;
-    loopAcc.value = null;
     pops.value = [];
   }
 
@@ -307,8 +331,6 @@ export function useTrainer(
     if (moved && playing.value) scorer.retime(timeOf);
   }
 
-  /** Link's quantum: our loop length, so loop boundaries line up with Ableton. */
-  const loopBeats = computed(() => lesson.value.bars * lesson.value.beatsPerBar);
 
   // ------------------------------------------------------------------ input
 
@@ -366,18 +388,17 @@ export function useTrainer(
         if (guide.value) scheduleGuide(win.from, win.to);
       }
 
-      // keep the current and next loop's notes alive (visible through count-in)
-      scorer.spawnLoop(pos.loopIndex, timeOf);
-      scorer.spawnLoop(pos.loopIndex + 1, timeOf);
+      // Keep the current and next repeat's notes alive (visible through the
+      // count-in), but never spawn past the end of the run.
+      for (const i of [pos.loopIndex, pos.loopIndex + 1]) {
+        if (i < transport.totalLoops) scorer.spawnLoop(i, timeOf);
+      }
 
       if (!pos.countIn) {
         if (lastLoop >= 0 && pos.loopIndex > lastLoop) {
-          const acc = scorer.endLoop();
-          loopRatings.clear();
-          loopAcc.value = Math.round(acc * 100);
-          onLoopEnd(acc);
-          // Keep the previous loop's notes alive: they're still scrolling
-          // through the "already played" zone below the hit line.
+          // Close the repeat's tally and let go of notes that have scrolled
+          // well clear of the playhead.
+          scorer.endLoop();
           scorer.pruneBefore(pos.loopIndex - 1);
         }
         lastLoop = pos.loopIndex;
@@ -393,7 +414,10 @@ export function useTrainer(
       }
 
       drawFrame(now, pos);
-      drawOverview(pos.countIn ? null : pos.beatInLoop);
+      drawOverview(pos.countIn ? null : pos.absBeat);
+
+      // The run is over: grade whatever is left and come to rest.
+      if (pos.finished) finishRun();
     } else {
       drawFrame(now, null);
       drawOverview(null);
@@ -424,19 +448,32 @@ export function useTrainer(
   }
 
   /**
-   * Loop boundary. Tempo is the player's to set — the adaptive ramp is no
-   * longer applied — but clearing a lesson still advances the library.
+   * End of the run. A lesson is finite now, so this is where it is judged:
+   * on the accuracy over the whole thing, not on a single repeat. Tempo stays
+   * the player's to set — there is no adaptive ramp.
    */
-  function onLoopEnd(acc: number): void {
+  function finishRun(): void {
+    // Anything still unresolved at the end is a miss.
+    const missed = scorer.sweepMisses(audio.now + 1);
+    for (const m of missed) noteTargetIndex(m.id, "miss");
+    syncStats();
+
+    const acc = scorer.accuracy;
+    transport.stop();
+    playing.value = false;
+    runComplete.value = true;
+
     if (advanceTracker.update(acc, transport.bpm, lesson.value.bpm)) {
       // Clearing the lesson advances the library; the lesson-change watcher
       // resets the transport and HUD for the new lesson (stopped, ready).
       const next = lessons.advance();
       showToast(
         next
-          ? `Lesson cleared! → ${next.name}`
+          ? `Lesson cleared at ${Math.round(acc * 100)}% → ${next.name}`
           : "Lesson cleared — that was the last one. Nice.",
       );
+    } else {
+      showToast(`Run complete — ${Math.round(acc * 100)}%`);
     }
   }
 
@@ -444,8 +481,7 @@ export function useTrainer(
 
   /** Instance ids are `loopIndex:targetIndex`, which the overview keys on. */
   function noteTargetIndex(id: string, rating: Rating): void {
-    const idx = Number(id.split(":")[1]);
-    if (!Number.isNaN(idx)) loopRatings.set(idx, rating);
+    runRatings.set(id, rating);
   }
 
   function syncStats(): void {
@@ -499,19 +535,20 @@ export function useTrainer(
   return {
     lesson,
     playing,
+    runComplete,
     bpm,
     bpmLabel,
     guide,
     accuracy,
     combo,
     bestCombo,
-    loopAcc,
     toast,
     pops,
     lanes,
     isPiano,
     pianoRange,
     loopBeats,
+    runBeats,
     play,
     stop,
     setBpm,

@@ -5,6 +5,7 @@
   "bpm": 78,
   "bars": 1,
   "beatsPerBar": 4,
+  "repeats": 16,
   "source": "builtin",
   "hint": "Steady kick on every beat. Lock to the click.",
   "notes": [

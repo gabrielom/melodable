@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { Scorer, classify, lessonTargets, type TargetNote } from "../src/engine/scoring";
+import {
+  Scorer,
+  classify,
+  lessonTargets,
+  lessonRepeats,
+  type TargetNote,
+} from "../src/engine/scoring";
 import { TIMING_WINDOWS } from "../src/engine/types";
 import { noteToPad } from "../src/engine/gm";
 import type { Lesson } from "../src/engine/types";
@@ -190,5 +196,44 @@ describe("chord grading (piano)", () => {
     expect(missed[0].lane).toBe(67);
     // two of three landed
     expect(s.accuracy).toBeCloseTo(2 / 3);
+  });
+});
+
+describe("lessonRepeats", () => {
+  const lesson = (over: Partial<Lesson>): Lesson => ({
+    id: "t",
+    name: "t",
+    instrument: "pads",
+    bpm: 120,
+    bars: 1,
+    beatsPerBar: 4,
+    notes: [],
+    source: "builtin",
+    ...over,
+  });
+
+  it("uses the lesson's own repeat count when it has one", () => {
+    expect(lessonRepeats(lesson({ repeats: 16 }))).toBe(16);
+    expect(lessonRepeats(lesson({ repeats: 8, bars: 2 }))).toBe(8);
+  });
+
+  it("repeats a short pattern into a run of roughly the target length", () => {
+    // 1 bar at 120bpm = 2s, so ~20 passes lands near 40s
+    expect(lessonRepeats(lesson({}))).toBe(20);
+    // 1 bar at 60bpm = 4s
+    expect(lessonRepeats(lesson({ bpm: 60 }))).toBe(10);
+  });
+
+  it("plays a clip that is already long enough once", () => {
+    // 16 bars at 120bpm = 32s: near the target already
+    expect(lessonRepeats(lesson({ bars: 16 }))).toBe(1);
+    // a full minute: still one pass, never zero
+    expect(lessonRepeats(lesson({ bars: 30 }))).toBe(1);
+  });
+
+  it("never returns zero or a runaway count", () => {
+    expect(lessonRepeats(lesson({ bars: 0 }))).toBe(1);
+    expect(lessonRepeats(lesson({ bpm: 0 }))).toBe(1);
+    expect(lessonRepeats(lesson({ repeats: 9999 }))).toBeLessThanOrEqual(64);
   });
 });

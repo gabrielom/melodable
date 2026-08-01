@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { BUILTIN_LESSONS } from "../src/data/lessons";
 import { noteToPad } from "../src/engine/gm";
+import { lessonRepeats } from "../src/engine/scoring";
 
 describe("builtin lesson data", () => {
   it("has a non-empty catalogue with unique ids", () => {
@@ -12,6 +13,17 @@ describe("builtin lesson data", () => {
   it("orders the pad progression easy → hard by tempo", () => {
     const bpms = BUILTIN_LESSONS.filter((l) => l.instrument === "pads").map((l) => l.bpm);
     expect(bpms).toEqual([...bpms].sort((a, b) => a - b));
+  });
+
+  it("gives every lesson a run of roughly half a minute to a minute", () => {
+    for (const lesson of BUILTIN_LESSONS) {
+      const repeats = lessonRepeats(lesson);
+      const seconds = (lesson.bars * repeats * lesson.beatsPerBar * 60) / lesson.bpm;
+      expect(seconds, `"${lesson.name}" runs ${Math.round(seconds)}s`).toBeGreaterThanOrEqual(30);
+      expect(seconds, `"${lesson.name}" runs ${Math.round(seconds)}s`).toBeLessThanOrEqual(75);
+      // whole bars, so the run ends on a bar line
+      expect(Number.isInteger(lesson.bars * repeats)).toBe(true);
+    }
   });
 
   it("ships at least one lesson of each instrument", () => {

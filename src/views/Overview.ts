@@ -1,18 +1,20 @@
 /**
  * The lesson at a glance: a 22px strip above the lane holding every note of
- * the loop, with a playhead sweeping it. Shows the shape of the whole pattern
- * and where you are in it.
+ * the *run* — the pattern laid out once per repeat, end to end — with a
+ * playhead sweeping it. Shows the shape of the whole exercise and where you
+ * are in it.
  *
  * Draws the lesson's *targets* (what to play), not live instances, so it is
- * stable while the loop repeats. Marks take their rating colour once graded.
+ * stable regardless of what has scrolled off screen. Marks take their rating
+ * colour once graded, and keep it for the rest of the run.
  *
  * Notes are 3x3 squares on three vertical bands — the strip is too short to
  * give every lane its own row, so the bands only hint at register. The lane
  * stack below is where you read individual lanes.
  *
- * A viewport rectangle around the playhead marks the slice of the loop the
+ * A viewport rectangle around the playhead marks the slice of the run the
  * lane is currently showing (Melodics-style), so the strip answers both
- * "where am I?" and "how much of the pattern can I see?".
+ * "where am I?" and "how much of it can I see?".
  */
 
 import type { TargetNote } from "@/engine/scoring";
@@ -27,11 +29,14 @@ export interface OverviewFrame {
   padLanes: number[];
   lowNote: number;
   highNote: number;
+  /** Length of one repeat, in beats. */
   loopBeats: number;
-  /** Position within the loop, in beats. Null when stopped or counting in. */
-  beatInLoop: number | null;
-  /** Rating of each target in the current loop, by target index. */
-  ratings: ReadonlyMap<number, Rating>;
+  /** How many times the pattern plays in the run. */
+  totalLoops: number;
+  /** Position within the run, in beats. Null when stopped or counting in. */
+  runBeat: number | null;
+  /** Rating of each note instance so far, keyed `loopIndex:targetIndex`. */
+  ratings: ReadonlyMap<string, Rating>;
   /**
    * The slice of the timeline the lane below is showing, from its renderer.
    * Drawn as the viewport rectangle. Null when stopped.
@@ -47,35 +52,31 @@ const MARK = 3;
 const BAND_PAD = 4;
 /** How many vertical bands lanes are folded onto. */
 const BANDS = 3;
+/** Cap on repeat grid lines, so a long run doesn't turn into hatching. */
+const MAX_GRID_LINES = 16;
 /** Hex alpha for the viewport rectangle's fill and its edge. */
 const VIEW_FILL = "1f";
 const VIEW_EDGE = "99";
 
 /**
- * The loop-relative span(s) the viewport rectangle covers, as `[from, to)`
- * beat pairs.
+ * The span of the run the viewport rectangle covers, as a `[from, to]` beat
+ * pair, or null when there is nothing to draw.
  *
- * The lane scrolls a continuous timeline while the strip shows a single loop,
- * so the window can run off one end and reappear at the other. That returns
- * two segments; their outer edges land on the strip's own edges, which reads
- * as one rectangle wrapping round. When the window is at least a loop wide the
- * whole loop is on screen at once and the rectangle covers the strip.
- *
- * Exported for its own tests — it is the one bit of real arithmetic here.
+ * Clamped to the run rather than wrapped: a lesson is finite, so there is no
+ * timeline past the end for the window to spill onto. Near either end the
+ * rectangle simply runs up against the strip's edge, and when the window is
+ * at least as long as the run the whole thing is on screen at once.
  */
-export function viewportSegments(
-  beatInLoop: number,
+export function viewportSpan(
+  runBeat: number,
   view: VisibleWindow,
-  loopBeats: number,
-): Array<[number, number]> {
-  const loop = Math.max(1e-9, loopBeats);
-  const span = view.behind + view.ahead;
-  if (span <= 0) return [];
-  if (span >= loop) return [[0, loop]];
-
-  const start = (((beatInLoop - view.behind) % loop) + loop) % loop;
-  const end = start + span;
-  return end <= loop ? [[start, end]] : [[start, loop], [0, end - loop]];
+  runBeats: number,
+): [number, number] | null {
+  const run = Math.max(1e-9, runBeats);
+  if (view.behind + view.ahead <= 0) return null;
+  const from = Math.max(0, runBeat - view.behind);
+  const to = Math.min(run, runBeat + view.ahead);
+  return to > from ? [from, to] : null;
 }
 
 export class Overview {
@@ -115,12 +116,15 @@ export class Overview {
     }
 
     const loop = Math.max(1, f.loopBeats);
-    const xOf = (beat: number) => (beat / loop) * W;
+    const repeats = Number.isFinite(f.totalLoops) ? Math.max(1, Math.floor(f.totalLoops)) : 1;
+    const run = loop * repeats;
+    const xOf = (beat: number) => (beat / run) * W;
 
-    // Bar lines. Quarters of the loop, matching the design's 25/50/75%.
+    // A grid line per repeat, thinned out so a long run doesn't become hatching.
     ctx.fillStyle = p.grid;
-    for (let i = 1; i < 4; i++) {
-      ctx.fillRect(Math.round((W * i) / 4), 0, 1, H);
+    const step = Math.ceil(repeats / MAX_GRID_LINES);
+    for (let r = step; r < repeats; r += step) {
+      ctx.fillRect(Math.round(xOf(r * loop)), 0, 1, H);
     }
 
     // Three bands: outer two sit BAND_PAD from the edges, one between.
@@ -145,48 +149,45 @@ export class Overview {
       return i < 0 ? 0 : i;
     };
 
-    f.targets.forEach((t, i) => {
-      const rating = f.ratings.get(i);
-      ctx.fillStyle = rating
-        ? p.rating[rating]
-        : f.instrument === "piano"
-          ? ledUpcoming(p, 5)
-          : ledUpcoming(p, ledIndexOf(t.lane));
-      ctx.fillRect(Math.round(xOf(t.beat)), Math.round(bandY(bandOf(t.lane))), MARK, MARK);
-    });
+    // Every repeat of the pattern, laid end to end across the strip.
+    for (let r = 0; r < repeats; r++) {
+      f.targets.forEach((t, i) => {
+        const rating = f.ratings.get(`${r}:${i}`);
+        ctx.fillStyle = rating
+          ? p.rating[rating]
+          : f.instrument === "piano"
+            ? ledUpcoming(p, 5)
+            : ledUpcoming(p, ledIndexOf(t.lane));
+        ctx.fillRect(
+          Math.round(xOf(r * loop + t.beat)),
+          Math.round(bandY(bandOf(t.lane))),
+          MARK,
+          MARK,
+        );
+      });
+    }
 
-    // Viewport rectangle: the slice of the loop the lane below is showing, so
+    // Viewport rectangle: the slice of the run the lane below is showing, so
     // what sits inside the rectangle is exactly what is on screen. Drawn
     // under the playhead so the playhead stays the brightest mark.
-    if (f.beatInLoop !== null && f.view) {
-      this.viewport(f, H, loop, xOf);
+    if (f.runBeat !== null && f.view) {
+      const span = viewportSpan(f.runBeat, f.view, run);
+      if (span) {
+        const x0 = Math.round(xOf(span[0])) + 0.5;
+        const x1 = Math.round(xOf(span[1])) - 0.5;
+        if (x1 > x0) {
+          ctx.fillStyle = p.head + VIEW_FILL;
+          ctx.fillRect(x0, 0.5, x1 - x0, H - 1);
+          ctx.strokeStyle = p.head + VIEW_EDGE;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x0, 0.5, x1 - x0, H - 1);
+        }
+      }
     }
 
-    if (f.beatInLoop !== null) {
+    if (f.runBeat !== null) {
       ctx.fillStyle = p.head;
-      ctx.fillRect(Math.round(xOf(f.beatInLoop)), 0, 2, H);
-    }
-  }
-
-  /** Paint the window rectangle from `viewportSegments`. */
-  private viewport(
-    f: OverviewFrame,
-    H: number,
-    loop: number,
-    xOf: (beat: number) => number,
-  ): void {
-    const ctx = this.ctx;
-    const p = f.palette;
-
-    for (const [a, bEnd] of viewportSegments(f.beatInLoop!, f.view!, loop)) {
-      const x0 = Math.round(xOf(a)) + 0.5;
-      const x1 = Math.round(xOf(bEnd)) - 0.5;
-      if (x1 <= x0) continue;
-      ctx.fillStyle = p.head + VIEW_FILL;
-      ctx.fillRect(x0, 0.5, x1 - x0, H - 1);
-      ctx.strokeStyle = p.head + VIEW_EDGE;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x0, 0.5, x1 - x0, H - 1);
+      ctx.fillRect(Math.round(xOf(Math.min(f.runBeat, run))), 0, 2, H);
     }
   }
 }

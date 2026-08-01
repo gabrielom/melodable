@@ -115,6 +115,7 @@ const overviewCanvas = ref<HTMLCanvasElement | null>(null);
 const {
   lesson,
   playing,
+  runComplete,
   bpm,
   bpmLabel,
   guide,
@@ -595,13 +596,17 @@ function onVolume(e: Event) {
       <div class="spacer" data-tauri-drag-region />
 
       <span v-if="view === 'trainer'" class="scores">
-        <span class="score" title="Accuracy so far">
+        <span class="score" :title="runComplete ? 'Accuracy for the last run' : 'Accuracy so far'">
           <i class="k">ACC</i>
-          <b class="num v-acc" :class="{ idle: !playing }">{{ playing ? accuracy : "—" }}</b>
+          <b class="num v-acc" :class="{ idle: !playing && !runComplete }">
+            {{ playing || runComplete ? accuracy : "—" }}
+          </b>
         </span>
-        <span class="score" title="Current combo">
+        <span class="score" :title="runComplete ? 'Best combo in the last run' : 'Current combo'">
           <i class="k">CMB</i>
-          <b class="num v-cmb" :class="{ idle: !playing }">{{ playing ? combo : "—" }}</b>
+          <b class="num v-cmb" :class="{ idle: !playing && !runComplete }">
+            {{ playing || runComplete ? combo : "—" }}
+          </b>
         </span>
         <span class="score best" title="Best combo this session">
           <i class="k">BEST</i>

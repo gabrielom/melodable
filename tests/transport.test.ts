@@ -214,3 +214,37 @@ describe("phaseDelta", () => {
     expect(phaseDelta(-4, 0, 4)).toBeCloseTo(0);
   });
 });
+
+describe("finite runs", () => {
+  it("is endless by default, so nothing ever reports finished", () => {
+    const t = make(120, 1, 4);
+    t.start(0, 0);
+    expect(t.runBeats).toBe(Infinity);
+    expect(t.position(10_000).finished).toBe(false);
+  });
+
+  it("reports its run length in beats", () => {
+    const t = new Transport({ bpm: 120, bars: 1, beatsPerBar: 4, totalLoops: 16 });
+    expect(t.runBeats).toBe(64);
+  });
+
+  it("finishes a beat after the last repeat, so a late final hit still lands", () => {
+    // 4 repeats of a 4-beat loop = 16 beats; spb 0.5, anchor at 2 (count-in)
+    const t = new Transport({ bpm: 120, bars: 1, beatsPerBar: 4, totalLoops: 4 });
+    t.start(0, 0);
+
+    expect(t.position(t.timeOfAbsBeat(15.9)).finished).toBe(false);
+    // exactly on the end: the tail is still running
+    expect(t.position(t.timeOfAbsBeat(16)).finished).toBe(false);
+    expect(t.position(t.timeOfAbsBeat(16.9)).finished).toBe(false);
+    expect(t.position(t.timeOfAbsBeat(17)).finished).toBe(true);
+  });
+
+  it("never reports finished during the count-in", () => {
+    const t = new Transport({ bpm: 120, bars: 1, beatsPerBar: 4, totalLoops: 1 });
+    t.start(0, 0);
+    const p = t.position(0);
+    expect(p.countIn).toBe(true);
+    expect(p.finished).toBe(false);
+  });
+});

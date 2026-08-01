@@ -31,6 +31,31 @@ export interface NoteInstance {
   rating: Rating | null;
 }
 
+/**
+ * How long a run should last when the lesson doesn't specify `repeats` — long
+ * enough to settle into the groove, short enough to retry without groaning.
+ */
+export const TARGET_RUN_SECONDS = 40;
+/** Guard against a pathologically short pattern generating a huge run. */
+const MAX_REPEATS = 64;
+
+/**
+ * How many times a lesson's pattern plays in one run.
+ *
+ * Built-in lessons state `repeats` so their length is musically tidy. Imported
+ * clips usually don't, so the count is derived from the lesson's base tempo to
+ * land near `TARGET_RUN_SECONDS` — a clip that is already a minute long gets
+ * one pass, a one-bar pattern gets repeated into a real exercise.
+ */
+export function lessonRepeats(lesson: Lesson): number {
+  if (lesson.repeats && lesson.repeats > 0) {
+    return Math.min(MAX_REPEATS, Math.floor(lesson.repeats));
+  }
+  const loopSeconds = (lesson.bars * lesson.beatsPerBar * 60) / lesson.bpm;
+  if (!Number.isFinite(loopSeconds) || loopSeconds <= 0) return 1;
+  return Math.min(MAX_REPEATS, Math.max(1, Math.round(TARGET_RUN_SECONDS / loopSeconds)));
+}
+
 /** Classify a timing offset (seconds). Null = outside every window. */
 export function classify(dtSeconds: number): Exclude<Rating, "miss"> | null {
   const dt = Math.abs(dtSeconds);
