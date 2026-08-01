@@ -1,15 +1,18 @@
 /**
- * The lesson at a glance: every note of the loop laid out across the strip,
- * with a playhead sweeping it. Sits above the lane so you can see the shape
- * of the whole pattern and where you are in it — the equivalent of the
- * overview bar in Melodics, scaled to our looping lessons.
+ * The lesson at a glance: a 22px strip above the lane holding every note of
+ * the loop, with a playhead sweeping it. Shows the shape of the whole pattern
+ * and where you are in it.
  *
  * Draws the lesson's *targets* (what to play), not live instances, so it is
- * stable while the loop repeats. Marks are tinted once graded.
+ * stable while the loop repeats. Marks take their rating colour once graded.
+ *
+ * Notes are 3x3 squares on three vertical bands — the strip is too short to
+ * give every lane its own row, so the bands only hint at register. The lane
+ * stack below is where you read individual lanes.
  */
 
 import type { TargetNote } from "@/engine/scoring";
-import { RATING_COLOR } from "@/engine/types";
+import { ledUpcoming, RADIUS, type Palette, type Theme } from "@/engine/theme";
 import type { InstrumentType, Rating } from "@/engine/types";
 
 export interface OverviewFrame {
@@ -24,9 +27,16 @@ export interface OverviewFrame {
   beatInLoop: number | null;
   /** Rating of each target in the current loop, by target index. */
   ratings: ReadonlyMap<number, Rating>;
+  palette: Palette;
+  theme: Theme;
 }
 
-const padColor = (i: number, a = 1) => `hsla(${(i * 47) % 360}, 55%, 60%, ${a})`;
+/** Note mark, px. */
+const MARK = 3;
+/** Inset from the strip's top and bottom to the outer bands. */
+const BAND_PAD = 4;
+/** How many vertical bands lanes are folded onto. */
+const BANDS = 3;
 
 export class Overview {
   private ctx: CanvasRenderingContext2D;
@@ -49,69 +59,65 @@ export class Overview {
 
   draw(f: OverviewFrame): void {
     const ctx = this.ctx;
+    const p = f.palette;
     const W = this.canvas.width / this.dpr;
     const H = this.canvas.height / this.dpr;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = "#0c0e12";
+
+    ctx.fillStyle = p.lane;
     ctx.fillRect(0, 0, W, H);
-
-    const padX = 8;
-    const inner = W - padX * 2;
-    const loop = Math.max(1, f.loopBeats);
-    const xOf = (beat: number) => padX + (beat / loop) * inner;
-
-    // bar and beat lines
-    for (let b = 0; b <= loop; b++) {
-      const isBar = b % 4 === 0;
-      ctx.strokeStyle = isBar ? "#ffffff1c" : "#ffffff0c";
+    // Light has no fill contrast against the window, so it needs the hairline.
+    if (RADIUS[f.theme].panel === 0) {
+      ctx.strokeStyle = p.hair;
       ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(Math.round(xOf(b)) + 0.5, 3);
-      ctx.lineTo(Math.round(xOf(b)) + 0.5, H - 3);
-      ctx.stroke();
+      ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
     }
 
-    // one row per lane, tallest lane at the bottom for pads; pitch for piano
-    const rowOf = (lane: number): number => {
+    const loop = Math.max(1, f.loopBeats);
+    const xOf = (beat: number) => (beat / loop) * W;
+
+    // Bar lines. Quarters of the loop, matching the design's 25/50/75%.
+    ctx.fillStyle = p.grid;
+    for (let i = 1; i < 4; i++) {
+      ctx.fillRect(Math.round((W * i) / 4), 0, 1, H);
+    }
+
+    // Three bands: outer two sit BAND_PAD from the edges, one between.
+    const top = BAND_PAD;
+    const bottom = H - BAND_PAD - MARK;
+    const bandY = (b: number) => top + (b * (bottom - top)) / (BANDS - 1);
+
+    const bandOf = (lane: number): number => {
       if (f.instrument === "piano") {
         const span = Math.max(1, f.highNote - f.lowNote);
-        return 1 - (lane - f.lowNote) / span;
+        // low pitches sit low in the strip
+        const t = 1 - (lane - f.lowNote) / span;
+        return Math.min(BANDS - 1, Math.max(0, Math.round(t * (BANDS - 1))));
       }
       const i = f.padLanes.indexOf(lane);
-      const n = Math.max(1, f.padLanes.length);
-      return f.padLanes.length ? i / n : 0;
+      if (i < 0 || f.padLanes.length <= 1) return Math.floor(BANDS / 2);
+      return Math.min(BANDS - 1, Math.floor((i * BANDS) / f.padLanes.length));
     };
 
-    const top = 6;
-    const usable = H - 12;
-    const markH = f.instrument === "piano" ? 3 : Math.max(3, usable / Math.max(1, f.padLanes.length) - 2);
+    const ledIndexOf = (lane: number): number => {
+      const i = f.padLanes.indexOf(lane);
+      return i < 0 ? 0 : i;
+    };
 
     f.targets.forEach((t, i) => {
-      const x = xOf(t.beat);
-      const y = top + rowOf(t.lane) * (usable - markH);
       const rating = f.ratings.get(i);
       ctx.fillStyle = rating
-        ? RATING_COLOR[rating]
+        ? p.rating[rating]
         : f.instrument === "piano"
-          ? "#37d0c4"
-          : padColor(t.lane, 0.9);
-      ctx.globalAlpha = rating ? 0.95 : 0.75;
-      ctx.fillRect(Math.round(x) - 1, Math.round(y), 3, Math.round(markH));
-      ctx.globalAlpha = 1;
+          ? ledUpcoming(p, 5)
+          : ledUpcoming(p, ledIndexOf(t.lane));
+      ctx.fillRect(Math.round(xOf(t.beat)), Math.round(bandY(bandOf(t.lane))), MARK, MARK);
     });
 
-    // playhead
     if (f.beatInLoop !== null) {
-      const x = xOf(f.beatInLoop);
-      ctx.fillStyle = "#ffb340";
-      ctx.fillRect(Math.round(x) - 1, 0, 2, H);
-      ctx.beginPath();
-      ctx.moveTo(x - 4, 0);
-      ctx.lineTo(x + 4, 0);
-      ctx.lineTo(x, 6);
-      ctx.closePath();
-      ctx.fill();
+      ctx.fillStyle = p.head;
+      ctx.fillRect(Math.round(xOf(f.beatInLoop)), 0, 2, H);
     }
   }
 }

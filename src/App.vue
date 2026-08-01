@@ -113,13 +113,14 @@ const log = ref<LogRow[]>([]);
 const laneCanvas = ref<HTMLCanvasElement | null>(null);
 const overviewCanvas = ref<HTMLCanvasElement | null>(null);
 const {
+  lesson,
   playing,
+  bpm,
   bpmLabel,
   guide,
   accuracy,
   combo,
   bestCombo,
-  loopAcc,
   toast,
   pops,
   lanes,
@@ -186,11 +187,47 @@ function onLanePointer(e: PointerEvent) {
   }
 }
 
-function onTempo(e: Event) {
-  const v = Number((e.target as HTMLInputElement).value);
-  setBpm(v);
-  // Linked, the slider drives the session too; Link's next snapshot confirms it.
-  void proposeLinkTempo(v);
+// ------------------------------------------------------------------- tempo
+// The design replaces the slider with a recessed readout you drag: a compact
+// control that still gives fine adjustment, which a 54px slider could not.
+const TEMPO_MIN = 50;
+const TEMPO_MAX = 160;
+/** Pixels of vertical drag per BPM. Up is faster. */
+const TEMPO_PX_PER_BPM = 3;
+
+function applyTempo(v: number) {
+  const clamped = Math.min(TEMPO_MAX, Math.max(TEMPO_MIN, Math.round(v * 10) / 10));
+  setBpm(clamped);
+  // Linked, the readout drives the session too; Link's next snapshot confirms it.
+  void proposeLinkTempo(clamped);
+}
+
+function onTempoDragStart(e: PointerEvent) {
+  const el = e.currentTarget as HTMLElement;
+  const startY = e.clientY;
+  const startBpm = bpm.value;
+  el.setPointerCapture(e.pointerId);
+
+  const move = (ev: PointerEvent) =>
+    applyTempo(startBpm + (startY - ev.clientY) / TEMPO_PX_PER_BPM);
+  const up = (ev: PointerEvent) => {
+    el.releasePointerCapture(ev.pointerId);
+    el.removeEventListener("pointermove", move);
+    el.removeEventListener("pointerup", up);
+    el.removeEventListener("pointercancel", up);
+  };
+  el.addEventListener("pointermove", move);
+  el.addEventListener("pointerup", up);
+  el.addEventListener("pointercancel", up);
+}
+
+/** Keyboard equivalent, so the control isn't mouse-only. */
+function onTempoKey(e: KeyboardEvent) {
+  const step = e.shiftKey ? 0.1 : 1;
+  if (e.key === "ArrowUp" || e.key === "ArrowRight") applyTempo(bpm.value + step);
+  else if (e.key === "ArrowDown" || e.key === "ArrowLeft") applyTempo(bpm.value - step);
+  else return;
+  e.preventDefault();
 }
 
 // ------------------------------------------------------------------ logging
@@ -339,6 +376,17 @@ function onKeyUp(e: KeyboardEvent) {
   if (settings.instrument === "piano" && midiNote !== undefined) noteOff(midiNote);
 }
 
+// ------------------------------------------------------------------- theme
+// The palette lives in CSS custom properties keyed off `data-theme` on <html>;
+// the canvas renderers get the same values as data via `engine/theme.ts`.
+watch(
+  () => settings.theme,
+  (t) => {
+    document.documentElement.dataset.theme = t;
+  },
+  { immediate: true },
+);
+
 // ------------------------------------------------------------------ mounted
 
 onMounted(() => {
@@ -364,6 +412,8 @@ const padLayouts: Array<{ id: PadLayout; label: string; hint: string }> = [
 
 const padMenuOpen = ref(false);
 const padMenuRoot = ref<HTMLElement | null>(null);
+const volMenuOpen = ref(false);
+const volMenuRoot = ref<HTMLElement | null>(null);
 
 function togglePadMenu() {
   padMenuOpen.value = !padMenuOpen.value;
@@ -377,8 +427,12 @@ function pickPadLayout(id: PadLayout) {
 }
 
 function onPadMenuPointer(e: PointerEvent) {
-  if (padMenuOpen.value && padMenuRoot.value && !padMenuRoot.value.contains(e.target as Node)) {
+  const t = e.target as Node;
+  if (padMenuOpen.value && padMenuRoot.value && !padMenuRoot.value.contains(t)) {
     padMenuOpen.value = false;
+  }
+  if (volMenuOpen.value && volMenuRoot.value && !volMenuRoot.value.contains(t)) {
+    volMenuOpen.value = false;
   }
 }
 
@@ -414,97 +468,106 @@ function onVolume(e: Event) {
 
 <template>
   <div class="app">
-    <!-- ===================== transport (window titlebar) ===================== -->
-    <!-- Left inset clears the macOS window controls, which sit on this bar. -->
+    <!-- ===================== transport (window titlebar) =====================
+         34px, every control 20px tall. Also the macOS titlebar: the 72px left
+         inset clears the traffic lights and `data-tauri-drag-region` makes the
+         empty space draggable. One row, all controls, down to ~1100px — below
+         that things drop out in the order the design specifies (see `.app`
+         media queries at the bottom of this file). -->
     <header class="bar" data-tauri-drag-region>
       <template v-if="view === 'trainer'">
-      <button class="iconbtn close" title="Back to lessons" aria-label="Back to lessons" @click="goHome">
-        ✕
-      </button>
-
-      <button v-if="!playing" class="btn primary" @click="onPlay">▶ Play</button>
-      <button v-else class="btn stopbtn" @click="stop">■ Stop</button>
-
-      <label class="tempo" :title="`Tempo — ${bpmLabel} BPM`">
-        <input type="range" min="50" max="160" :value="bpmLabel" @input="onTempo" />
-        <span class="bpm">{{ bpmLabel }}</span>
-      </label>
-
-      <div class="modes" role="group" aria-label="Practice options">
-        <button
-          class="mode"
-          :class="{ on: guide }"
-          title="Play the target part quietly as a guide"
-          @click="guide = !guide"
-        >
-          Guide
+        <button class="ico" title="Back to lessons" aria-label="Back to lessons" @click="goHome">
+          ✕
         </button>
-        <button
-          class="mode"
-          :class="{ on: settings.metronome }"
-          title="Metronome click, count-in included"
-          @click="settings.metronome = !settings.metronome"
-        >
-          Click
-        </button>
-      </div>
 
+        <button
+          class="transport"
+          :class="playing ? 'is-stop' : 'is-start'"
+          @click="playing ? stop() : onPlay()"
+        >
+          {{ playing ? "■ STOP" : "▶ START" }}
+        </button>
+
+        <i class="divider" />
+
+        <!-- Drag up/down to scrub the tempo; arrow keys step it. -->
+        <div
+          class="field tempo"
+          role="slider"
+          tabindex="0"
+          :aria-valuenow="bpmLabel"
+          aria-valuemin="50"
+          aria-valuemax="160"
+          aria-label="Tempo"
+          :title="`Tempo — ${bpmLabel} BPM. Drag to change.`"
+          @pointerdown="onTempoDragStart"
+          @keydown="onTempoKey"
+        >
+          <span class="num tempo-val">{{ bpmLabel.toFixed(1) }}</span>
+          <span class="unit">BPM</span>
+        </div>
+
+        <div class="seg" role="group" aria-label="Practice options">
+          <button
+            class="seg-i"
+            :class="{ on: guide }"
+            :aria-pressed="guide"
+            title="Play the target part quietly as a guide"
+            @click="guide = !guide"
+          >
+            GUIDE
+          </button>
+          <button
+            class="seg-i"
+            :class="{ on: settings.metronome }"
+            :aria-pressed="settings.metronome"
+            title="Metronome click, count-in included"
+            @click="settings.metronome = !settings.metronome"
+          >
+            CLICK
+          </button>
+        </div>
+
+        <i class="divider" />
       </template>
 
-      <div class="modes" role="group" aria-label="Note direction">
+      <div class="seg" role="group" aria-label="Note direction">
         <button
-          class="mode icon"
+          class="seg-i icon"
           :class="{ on: settings.laneOrientation === 'vertical' }"
           title="Notes fall top to bottom"
           aria-label="Falling notes"
           @click="settings.laneOrientation = 'vertical'"
         >
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-            <path d="M8 2v9M4.5 7.5 8 11.5l3.5-4" fill="none" stroke="currentColor"
-                  stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-            <path d="M2.5 14h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-          </svg>
+          ↓
         </button>
         <button
-          class="mode icon"
+          class="seg-i icon"
           :class="{ on: settings.laneOrientation === 'horizontal' }"
           title="Notes scroll right to left"
           aria-label="Scrolling notes"
           @click="settings.laneOrientation = 'horizontal'"
         >
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-            <path d="M14 8H5M9.5 4.5 5.5 8l4 3.5" fill="none" stroke="currentColor"
-                  stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-            <path d="M2 2.5v11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-          </svg>
+          →
         </button>
       </div>
 
-      <div class="modes">
-        <span ref="padMenuRoot" class="modewrap">
+      <div class="seg" role="group" aria-label="Instrument">
+        <span ref="padMenuRoot" class="seg-wrap">
           <button
-            class="mode"
+            class="seg-i"
             :class="{ on: settings.instrument === 'pads' }"
-            @click="setMode('pads')"
+            @click="settings.instrument === 'pads' ? togglePadMenu() : setMode('pads')"
           >
-            Pads
-          </button>
-          <button
-            class="modechev"
-            :class="{ on: settings.instrument === 'pads' }"
-            title="Controller pad layout"
-            aria-label="Controller pad layout"
-            @click="togglePadMenu"
-          >
-            ▾
+            PADS <i class="caret">▾</i>
           </button>
 
-          <div v-if="padMenuOpen" class="padmenu" role="menu">
-            <div class="pmhead">PAD LAYOUT</div>
+          <div v-if="padMenuOpen" class="menu" role="menu">
+            <div class="menu-head">PAD LAYOUT</div>
             <button
               v-for="opt in padLayouts"
               :key="opt.id"
-              class="pmitem"
+              class="menu-row"
               :class="{ on: settings.padLayout === opt.id }"
               role="menuitem"
               @click="pickPadLayout(opt.id)"
@@ -519,35 +582,40 @@ function onVolume(e: Event) {
         </span>
 
         <button
-          class="mode"
+          class="seg-i"
           :class="{ on: settings.instrument === 'piano' }"
           @click="setMode('piano')"
         >
-          Piano
+          PIANO
         </button>
       </div>
 
-      <div class="spacer" />
+      <div class="spacer" data-tauri-drag-region />
+      <span v-if="view === 'trainer'" class="title">{{ lesson.name }}</span>
+      <div class="spacer" data-tauri-drag-region />
 
-      <span v-if="view === 'trainer'" class="stats">
-        <span class="stat" title="Accuracy so far">
-          <b class="teal">{{ accuracy }}<i>%</i></b>
+      <span v-if="view === 'trainer'" class="scores">
+        <span class="score" title="Accuracy so far">
+          <i class="k">ACC</i>
+          <b class="num v-acc" :class="{ idle: !playing }">{{ playing ? accuracy : "—" }}</b>
         </span>
-        <span class="stat" title="Current combo, best this run">
-          <b class="amber">×{{ combo }}</b><em>▲{{ bestCombo }}</em>
+        <span class="score" title="Current combo">
+          <i class="k">CMB</i>
+          <b class="num v-cmb" :class="{ idle: !playing }">{{ playing ? combo : "—" }}</b>
         </span>
-        <span class="stat" title="Score for the last bar">
-          <b>{{ loopAcc === null ? "—" : loopAcc }}</b><em>bar</em>
+        <span class="score best" title="Best combo this session">
+          <i class="k">BEST</i>
+          <b class="num v-best">{{ bestCombo }}</b>
         </span>
       </span>
 
-      <div class="spacer" />
+      <i class="divider" />
 
-      <button v-if="!audioReady" class="iconbtn arm" title="Enable audio" @click="ensureAudio">▶</button>
-
+      <!-- Ableton Link (M6) isn't in the redesign's control list; it sits with
+           the other external-gear controls. -->
       <button
         v-if="linkAvailable"
-        class="iconbtn linkbtn"
+        class="ico link"
         :class="{ on: linkOn }"
         :aria-pressed="linkOn"
         :title="
@@ -557,15 +625,15 @@ function onVolume(e: Event) {
         "
         @click="toggleLink"
       >
-        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-          <path d="M6.5 9.5 9.5 6.5" fill="none" stroke="currentColor" stroke-width="1.6"
+        <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
+          <path d="M6.6 9.4 9.4 6.6" fill="none" stroke="currentColor" stroke-width="1.5"
                 stroke-linecap="round" />
-          <path d="M7 4.6 8.2 3.4a2.7 2.7 0 0 1 3.8 3.8l-1.2 1.2" fill="none"
-                stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-          <path d="M9 11.4 7.8 12.6a2.7 2.7 0 0 1-3.8-3.8l1.2-1.2" fill="none"
-                stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          <path d="M7.1 4.7 8.2 3.6a2.6 2.6 0 0 1 3.6 3.6l-1.1 1.1" fill="none"
+                stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          <path d="M8.9 11.3 7.8 12.4a2.6 2.6 0 0 1-3.6-3.6l1.1-1.1" fill="none"
+                stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
         </svg>
-        <i v-if="linkOn" class="peerbadge">{{ linkPeers }}</i>
+        <i v-if="linkOn" class="peerbadge num">{{ linkPeers }}</i>
       </button>
 
       <DeviceMenu
@@ -579,17 +647,17 @@ function onVolume(e: Event) {
         @disconnect="disconnect()"
       />
 
-      <div class="modes" role="group" aria-label="Instrument sound source">
+      <div class="seg" role="group" aria-label="Instrument sound source">
         <button
-          class="mode"
+          class="seg-i"
           :class="{ on: settings.soundOutput === 'internal' }"
           title="Melodable's built-in synth plays your hits"
           @click="settings.soundOutput = 'internal'"
         >
-          Synth
+          SYNTH
         </button>
         <button
-          class="mode"
+          class="seg-i"
           :class="{ on: settings.soundOutput === 'external' }"
           title="Silent: your DAW (Ableton) makes the sound while Melodable tracks timing"
           @click="settings.soundOutput = 'external'"
@@ -598,7 +666,40 @@ function onVolume(e: Event) {
         </button>
       </div>
 
-      <button class="iconbtn" title="Import a MIDI clip from Ableton" @click="openImport">⇪</button>
+      <span ref="volMenuRoot" class="volwrap">
+        <button
+          class="ico"
+          :class="{ on: volMenuOpen }"
+          :title="`Volume — ${Math.round(settings.volume * 100)}%`"
+          aria-label="Volume"
+          :aria-expanded="volMenuOpen"
+          @click="volMenuOpen = !volMenuOpen"
+        >
+          <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+            <path d="M3 6.2h2.3L8.4 3.6v8.8L5.3 9.8H3z" fill="currentColor" />
+            <path v-if="settings.volume > 0" d="M10.6 6a2.9 2.9 0 0 1 0 4" fill="none"
+                  stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+            <path v-if="settings.volume > 0.5" d="M12.4 4.3a5.4 5.4 0 0 1 0 7.4" fill="none"
+                  stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+            <path v-if="settings.volume === 0" d="M11 6.2 14 9.8M14 6.2 11 9.8" fill="none"
+                  stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+          </svg>
+        </button>
+
+        <div v-if="volMenuOpen" class="menu vol-menu">
+          <div class="menu-head">VOLUME <b class="num">{{ Math.round(settings.volume * 100) }}</b></div>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            aria-label="Volume"
+            :value="Math.round(settings.volume * 100)"
+            @input="onVolume"
+          />
+        </div>
+      </span>
+
+      <button class="ico" title="Import a MIDI clip from Ableton" @click="openImport">⇪</button>
       <input
         ref="fileInput"
         type="file"
@@ -607,44 +708,52 @@ function onVolume(e: Event) {
         @change="onImportFile"
       />
 
-      <label class="vol">
-        <input
-          type="range"
-          min="0"
-          max="100"
-          :value="Math.round(settings.volume * 100)"
-          @input="onVolume"
-        />
-      </label>
+      <i class="divider" />
+
+      <div class="seg" role="group" aria-label="Theme">
+        <button
+          class="seg-i icon"
+          :class="{ on: settings.theme === 'dark' }"
+          title="Dark theme"
+          aria-label="Dark theme"
+          @click="settings.theme = 'dark'"
+        >
+          ◐
+        </button>
+        <button
+          class="seg-i icon"
+          :class="{ on: settings.theme === 'light' }"
+          title="Light theme"
+          aria-label="Light theme"
+          @click="settings.theme = 'light'"
+        >
+          ☀
+        </button>
+      </div>
 
       <button
-        class="iconbtn panel"
+        class="ico mon"
         :class="{ on: settings.monitorOpen }"
         title="Show or hide the MIDI monitor"
         aria-label="Toggle MIDI monitor"
         @click="settings.monitorOpen = !settings.monitorOpen"
       >
-        <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-          <rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor" />
-          <rect x="9.5" y="2.5" width="5" height="11" rx="2" fill="currentColor" stroke="none" />
-        </svg>
+        ▤
       </button>
     </header>
 
     <!-- ============================= body ============================= -->
     <main class="body">
-      <section v-if="view === 'home'" class="stage">
-        <HomeScreen
-          :lessons="lessons.lessons"
-          :current-index="lessons.currentIndex"
-          @open="openLesson"
-        />
-      </section>
+      <HomeScreen
+        v-if="view === 'home'"
+        :lessons="lessons.lessons"
+        :current-index="lessons.currentIndex"
+        @open="openLesson"
+      />
 
       <section v-else class="stage">
         <canvas ref="overviewCanvas" class="overview" />
 
-        <!-- Pads: falling-note lane fills the space, grid sits under it -->
         <template v-if="!isPiano">
           <div class="lane-wrap">
             <canvas ref="laneCanvas" class="lane-canvas" @pointerdown="onLanePointer" />
@@ -660,7 +769,6 @@ function onVolume(e: Event) {
           />
         </template>
 
-        <!-- Piano: notes fall the full height onto a keyboard pinned to the bottom -->
         <div v-else class="piano-stage">
           <canvas ref="laneCanvas" class="lane-canvas piano-canvas" />
           <PianoKeyboard
@@ -675,7 +783,8 @@ function onVolume(e: Event) {
         </div>
       </section>
 
-      <aside v-if="settings.monitorOpen" class="side">
+      <!-- The monitor is an overlay over the lane, never a permanent column. -->
+      <aside v-if="settings.monitorOpen" class="monitor-overlay">
         <MidiMonitor :rows="log" @clear="log = []" @collapse="settings.monitorOpen = false" />
       </aside>
     </main>
@@ -698,282 +807,371 @@ function onVolume(e: Event) {
   height: 100%;
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  background: var(--win);
 }
 
-/* Transport bar. Doubles as the window titlebar on macOS (the traffic lights
-   are overlaid on its left), so the whole strip is a drag region and the left
-   padding keeps the controls clear of them. */
+/* ============================ transport bar ============================ */
+
 .bar {
+  height: var(--bar-h);
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 9px 9px 9px 74px;
-  border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, #15181e, #101318);
-  flex: none;
-  flex-wrap: wrap;
+  gap: var(--gap-bar);
+  padding: 0 10px 0 72px;
+  background: var(--bar);
+  border-bottom: 1px solid var(--bar-line);
+  /* One row, always — a second row would break the 34px titlebar. Note this
+     must NOT clip: the pad-layout, device and volume dropdowns hang below the
+     bar, and `overflow: auto` here would cut them off at 34px. Below the
+     measured 921px floor the rightmost controls run past the window edge
+     rather than wrapping. */
+  flex-wrap: nowrap;
 }
 .bar > * { -webkit-app-region: no-drag; }
 .spacer { flex: 1; min-width: 0; }
-
-.modes {
-  display: flex;
-  gap: 3px;
-  background: #0c0e12;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 3px;
+.divider {
+  width: 1px;
+  height: 18px;
+  flex: none;
+  background: var(--bar-line);
 }
-.mode {
-  background: none;
+
+/* Every bar control is 20px tall; the mono label style is shared. */
+.ico,
+.transport,
+.seg,
+.field,
+.seg-i {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 1.1px;
+}
+
+.ico {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
-  color: var(--dim);
-  font-size: 12.5px;
-  font-weight: 600;
-  padding: 5px 8px;
-  border-radius: 7px;
+  border-radius: var(--r-field);
+  background: var(--face);
+  box-shadow: var(--outline);
+  color: var(--txt2);
+  font-size: 9px;
+  letter-spacing: 0;
   cursor: pointer;
 }
-.mode.on { background: var(--panel2); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
-.mode.icon { display: inline-flex; align-items: center; padding: 5px 7px; }
-/* Ableton Link toggle. The peer count is a badge rather than inline text so
-   the indicator costs the bar no width — it is already full at ~1110px. */
-.linkbtn { position: relative; }
-.linkbtn.on { color: var(--teal); border-color: #37d0c455; }
+.ico:hover { background: var(--hover); color: var(--txt); }
+.ico:focus-visible,
+.transport:focus-visible,
+.seg-i:focus-visible,
+.field:focus-visible {
+  outline: 1px solid var(--head);
+  outline-offset: 1px;
+}
+
+.transport {
+  height: 20px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--r-field);
+  cursor: pointer;
+}
+.transport.is-stop { background: var(--stop); color: var(--stop-txt); }
+.transport.is-start { background: var(--start); color: var(--start-txt); }
+
+/* Recessed field — the tempo readout and the volume slider sit in one. */
+.field {
+  height: 20px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  border-radius: var(--r-field);
+  background: var(--track);
+  box-shadow: var(--outline);
+}
+.tempo {
+  gap: 5px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+.tempo-val { font-size: 9.5px; font-weight: 500; line-height: 1; color: var(--txt); }
+.tempo .unit {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 1.2px;
+  line-height: 1;
+  color: var(--txt3);
+}
+
+/* Volume isn't in the design's control list; it gets the same 20px icon
+   treatment as the others, with the slider in a popover so the bar keeps
+   its width budget. */
+.volwrap { position: relative; display: inline-flex; }
+.ico.on { background: var(--active); color: var(--active-txt); }
+/* Right-anchored: this control sits near the window edge, so a left-anchored
+   panel would hang off-screen. */
+.menu.vol-menu { left: auto; right: -2px; min-width: 148px; padding: 4px 10px 10px; }
+.vol-menu .menu-head { display: flex; justify-content: space-between; padding-left: 0; padding-right: 0; }
+.vol-menu .menu-head b { color: var(--txt); font-weight: 500; font-size: 9.5px; }
+.vol-menu input {
+  width: 100%;
+  height: 2px;
+  appearance: none;
+  background: var(--hair);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.vol-menu input::-webkit-slider-thumb {
+  appearance: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--txt2);
+}
+
+/* 2-up (or n-up) segment on a recessed track. */
+.seg {
+  height: 20px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-field);
+  background: var(--track);
+  box-shadow: var(--outline);
+}
+.seg-wrap { position: relative; display: inline-flex; }
+.seg-i {
+  height: var(--seg-item-h);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  border: none;
+  border-radius: var(--r-item);
+  background: none;
+  color: var(--txt2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.seg-i.icon {
+  width: 20px;
+  padding: 0;
+  justify-content: center;
+  font-size: 9px;
+  letter-spacing: 0;
+}
+.seg-i:hover { background: var(--hover); }
+/* Light inverts on-state to a dark chip rather than lightening it — every
+   surface is the same grey, so a lighter fill would read as nothing. */
+.seg-i.on { background: var(--active); color: var(--active-txt); }
+.seg-i.on:hover { background: var(--active); }
+/* Direction icons take the accent when active in dark, the inverted ink in light. */
+:root[data-theme="dark"] .seg-i.icon.on { color: var(--head); }
+.caret { font-size: 6.5px; font-style: normal; opacity: 0.7; }
+
+.title {
+  flex: none;
+  font-family: var(--sans);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--txt);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scores {
+  flex: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 11px;
+}
+.score { display: inline-flex; align-items: baseline; gap: 3px; }
+.score .k {
+  font-family: var(--mono);
+  font-size: 7.5px;
+  font-weight: 400;
+  font-style: normal;
+  letter-spacing: 1.2px;
+  color: var(--txt3);
+}
+.score b { font-size: 13px; font-weight: 400; }
+.v-acc { color: var(--rate-perfect); }
+.v-cmb { color: var(--rate-good); }
+.v-best { color: var(--txt); }
+.score b.idle { color: var(--txt3); }
+
+/* Link (M6) — the peer count is a badge so the control stays 20px wide. */
+.link { position: relative; }
+.link.on { color: var(--head); }
 .peerbadge {
   position: absolute;
   top: -4px;
   right: -4px;
-  min-width: 12px;
+  min-width: 11px;
   padding: 0 2px;
   border-radius: 6px;
-  background: var(--teal);
-  color: #06232a;
-  font-family: var(--mono);
-  font-size: 8px;
+  background: var(--head);
+  color: var(--win);
+  font-size: 7.5px;
   font-style: normal;
-  font-weight: 700;
-  line-height: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 11px;
   text-align: center;
 }
 
-/* Live score, inline in the bar. */
-.stats { display: inline-flex; align-items: baseline; gap: 9px; flex: none; }
-.stat { display: inline-flex; align-items: baseline; gap: 2px; }
-.stat b {
-  font-family: var(--mono);
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
-}
-.stat b.teal { color: var(--teal); }
-.stat b.amber { color: var(--amber); }
-.stat b i { font-style: normal; font-size: 9px; color: var(--faint); margin-left: 1px; }
-.stat em { font-style: normal; font-family: var(--mono); font-size: 9px; color: var(--faint); }
-.mode.icon.on { color: var(--teal); }
+.mon.on { background: var(--mon-tab); color: var(--mon-icon); }
 
-/* Pads button carries a chevron opening the controller-layout menu. */
-.modewrap { position: relative; display: inline-flex; align-items: center; }
-.modewrap .mode { padding-right: 4px; }
-.modechev {
-  background: none;
-  border: none;
-  color: var(--faint);
-  font-size: 9px;
-  padding: 5px 7px 5px 2px;
-  border-radius: 7px;
-  cursor: pointer;
-  align-self: stretch;
-}
-.modechev.on { background: var(--panel2); color: var(--dim); box-shadow: 0 0 0 1px var(--line); }
-.modechev:hover { color: var(--teal); }
-
-.padmenu {
+/* Dropdown — one surface, hairline outline, anchored under its control. */
+.menu {
   position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  min-width: 208px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  box-shadow: 0 18px 50px #000000aa;
-  padding: 5px;
-  z-index: 60;
+  top: calc(100% + 6px);
+  left: -2px;
+  z-index: 40;
+  min-width: 180px;
+  padding: 4px;
+  border-radius: var(--r-panel);
+  background: var(--bar);
+  box-shadow: inset 0 0 0 1px var(--hair), 0 10px 24px #00000044;
 }
-.pmhead {
+.menu-head {
+  padding: 5px 8px 4px;
   font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 1.4px;
-  color: var(--faint);
-  padding: 6px 8px 8px;
+  font-size: 7.5px;
+  letter-spacing: 1.2px;
+  color: var(--txt3);
 }
-.pmitem {
+.menu-row {
+  width: 100%;
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  background: none;
+  gap: 6px;
+  padding: 6px 8px;
   border: none;
-  color: var(--ink);
+  border-radius: var(--r-item);
+  background: none;
+  color: var(--txt2);
+  font-family: var(--sans);
+  font-size: 12.5px;
   text-align: left;
-  padding: 7px 9px;
-  border-radius: 8px;
   cursor: pointer;
 }
-.pmitem:hover { background: var(--panel2); }
-.pmitem.on { color: var(--teal); }
-.pmitem .tick { width: 10px; font-size: 9px; font-style: normal; flex: none; }
-.pmitem b { font-size: 13px; font-weight: 600; display: block; }
-.pmitem em { font-style: normal; font-size: 11px; color: var(--faint); display: block; }
+.menu-row:hover { background: var(--hover); }
+.menu-row.on { color: var(--txt); }
+.menu-row .tick { width: 10px; flex: none; font-size: 8px; font-style: normal; color: var(--head); }
+.menu-row b { font-weight: 500; }
+.menu-row em { font-style: normal; color: var(--txt3); margin-left: 6px; font-size: 11.5px; }
 
-.vol { display: flex; align-items: center; }
-.vol input { accent-color: var(--teal); width: 46px; }
+/* ================================ body ================================ */
 
-.iconbtn.arm { background: linear-gradient(180deg, #37d0c4, #20b3a8); color: #04201d; border: none; }
-
-/* square icon buttons: import, monitor toggle */
-.iconbtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  background: #1a1e24;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  color: var(--dim);
-  font-size: 14px;
-  cursor: pointer;
-  flex: none;
-}
-.iconbtn:hover { color: var(--ink); border-color: #39414d; }
-.iconbtn.on { color: var(--teal); border-color: #37d0c455; background: #16211f; }
-.iconbtn.close { font-size: 13px; }
-.iconbtn.close:hover { color: #f0a8a2; border-color: #e2564d55; }
-
-/* body */
 .body {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 330px;
-  gap: 18px;
-  padding: 20px 18px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
 }
-/* Monitor hidden: the stage takes the whole width. */
-.body:not(:has(.side)) { grid-template-columns: minmax(0, 1fr); }
 
 .stage {
-  min-width: 0;
+  flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  /* Safety valve: on a short window the stage scrolls rather than clipping
-     the pad grid. At normal sizes the flex children absorb the height. */
-  overflow-y: auto;
+  gap: var(--gap-section);
+  padding: var(--pad-win);
 }
-/* The pad grid keeps its intrinsic height; the lane above it takes the rest. */
-.stage > .wrap { flex: none; }
-.side { min-height: 0; display: flex; }
-.side > * { flex: 1; }
 
-
-/* trainer chrome */
-/* The whole loop at a glance, with the playhead sweeping it. */
 .overview {
-  display: block;
-  width: 100%;
-  height: 34px;
+  height: var(--overview-h);
   flex: none;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #0c0e12;
-  margin-bottom: 8px;
+  width: 100%;
+  border-radius: var(--r-panel);
 }
 
-/* Pads: the lane takes the leftover height; the grid sits beneath it. */
 .lane-wrap {
   position: relative;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  overflow: hidden;
-  flex: 1 1 auto;
-  min-height: 170px;
-  margin-bottom: 14px;
+  flex: 1;
+  min-height: 0;
 }
 .lane-canvas {
   display: block;
   width: 100%;
   height: 100%;
-  background: #111318;
-  touch-action: none;
+  border-radius: var(--r-panel);
 }
 
-/* Piano: canvas + keyboard as one flush unit that fills the remaining height,
-   so the keys always sit at the bottom of the window. */
 .piano-stage {
   position: relative;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  overflow: hidden;
-  flex: 1 1 auto;
-  min-height: 260px;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  gap: var(--gap-section);
 }
-.piano-canvas {
-  flex: 1 1 auto;
-  min-height: 0;
-  height: auto;
-  background: #0b0d11;
-}
-.piano-stage :deep(.keyboard) { flex: none; }
+.piano-canvas { flex: 1; min-height: 0; }
 
 .toast {
   position: absolute;
-  top: 10px;
   left: 50%;
+  bottom: 18px;
   transform: translateX(-50%);
-  background: #1c2026ee;
-  border: 1px solid #37d0c455;
-  color: #dfe4ea;
-  padding: 6px 12px;
-  border-radius: 20px;
+  padding: 7px 12px;
+  border-radius: var(--r-field);
+  background: var(--bar);
+  box-shadow: inset 0 0 0 1px var(--hair);
+  color: var(--txt);
+  font-family: var(--sans);
   font-size: 12.5px;
-  font-weight: 600;
   white-space: nowrap;
 }
 
-.btn {
-  border: 1px solid var(--line);
-  background: #1a1e24;
-  border-radius: 9px;
-  padding: 6px 12px;
-  font-size: 12.5px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.btn.primary {
-  background: linear-gradient(180deg, #37d0c4, #20b3a8);
-  color: #04201d;
-  border: none;
-}
-.btn.stopbtn { background: #2a1c1c; border-color: #e2564d55; color: #f0a8a2; }
-
-.tempo { display: flex; align-items: center; gap: 6px; }
-.tempo input { accent-color: var(--teal); width: 50px; }
-.bpm {
-  font-family: var(--mono);
-  font-size: 11.5px;
-  color: var(--dim);
-  min-width: 22px;
-  font-variant-numeric: tabular-nums;
+/* The monitor floats over the lane instead of taking a column of its own. */
+.monitor-overlay {
+  position: absolute;
+  top: var(--pad-win);
+  right: var(--pad-win);
+  bottom: var(--pad-win);
+  z-index: 30;
+  width: 300px;
+  max-width: calc(100% - var(--pad-win) * 2);
+  display: flex;
+  border-radius: var(--r-panel);
+  overflow: hidden;
+  background: var(--bar);
+  box-shadow: inset 0 0 0 1px var(--hair), 0 12px 30px #00000055;
 }
 
-@media (max-width: 900px) {
-  .body { grid-template-columns: 1fr; }
-  .side { max-height: 260px; }
+/* ============================== responsive ==============================
+   Drop order is the design's: lesson title, then the device chip's label
+   (the LED dot stays), then BEST. Thresholds are measured, not guessed —
+   each is the width at which the remaining controls stop fitting.
+
+   Everything visible fits down to 1118px — 18px above the design's ~1100px
+   budget, because this bar carries two controls the design doesn't list (the
+   Ableton Link toggle and volume). Verified single-row with no overflow from
+   1400px down to 912px; below that the design's drop list is exhausted and
+   the rightmost controls run past the window edge rather than wrapping. */
+@media (max-width: 1118px) {
+  .title { display: none; }
+}
+@media (max-width: 1018px) {
+  .bar :deep(.trigger .label) { display: none; }
+}
+@media (max-width: 956px) {
+  .scores .best { display: none; }
 }
 </style>

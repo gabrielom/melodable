@@ -7,8 +7,13 @@
  */
 import { computed } from "vue";
 import { keyGeometry, isWhiteKey, noteName, normalizeRange } from "@/engine/pitch";
-import { RATING_COLOR } from "@/engine/types";
+import { PALETTE } from "@/engine/theme";
+import { useSettings } from "@/stores/settings";
 import type { RatingPop } from "@/composables/useTrainer";
+
+const settings = useSettings();
+/** Rating colours follow the active theme. */
+const palette = computed(() => PALETTE[settings.theme]);
 
 const props = withDefaults(
   defineProps<{
@@ -48,7 +53,7 @@ function blackStyle(n: number) {
 
 const flashColor = (n: number): string | null => {
   const pop = props.pops?.find((p) => p.lane === n);
-  return pop ? RATING_COLOR[pop.rating] : null;
+  return pop ? palette.value.rating[pop.rating] : null;
 };
 
 const isC = (n: number) => n % 12 === 0;
@@ -89,7 +94,7 @@ const isC = (n: number) => n % 12 === 0;
   position: relative;
   display: flex;
   height: 150px;
-  background: #0b0d11;
+  background: var(--gutter);
   overflow: hidden;
 }
 .white {
@@ -106,8 +111,8 @@ const isC = (n: number) => n % 12 === 0;
   transition: background 0.06s, box-shadow 0.06s;
 }
 .white.on {
-  background: linear-gradient(180deg, #ffd79a 0%, var(--amber) 100%);
-  box-shadow: 0 0 18px rgba(255, 179, 64, 0.55) inset;
+  background: var(--head);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--head) 55%, transparent) inset;
 }
 .label {
   font-family: var(--mono);
@@ -128,7 +133,7 @@ const isC = (n: number) => n % 12 === 0;
   transition: background 0.06s, box-shadow 0.06s;
 }
 .black.on {
-  background: linear-gradient(180deg, #ffc463 0%, #d68f24 100%);
-  box-shadow: 0 0 16px rgba(255, 179, 64, 0.6);
+  background: var(--head);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--head) 60%, transparent);
 }
 </style>

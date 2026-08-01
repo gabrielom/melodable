@@ -44,9 +44,9 @@ const emit = defineEmits<{ (e: "clear"): void; (e: "collapse"): void }>();
 
 <style scoped>
 .monitor {
-  border: 1px solid var(--line);
+  border: 1px solid var(--hair);
   border-radius: 12px;
-  background: var(--panel);
+  background: var(--bar);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -57,35 +57,35 @@ header {
   justify-content: space-between;
   align-items: center;
   padding: 10px 12px 8px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--hair);
 }
 .ttl {
   font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 1.6px;
-  color: var(--teal);
+  color: var(--head);
 }
 .acts { display: inline-flex; align-items: center; gap: 4px; }
 .clear {
   background: none;
   border: none;
-  color: var(--faint);
+  color: var(--txt3);
   font-size: 11px;
   cursor: pointer;
   font-family: var(--mono);
 }
-.clear:hover { color: var(--ink); }
+.clear:hover { color: var(--txt); }
 .collapse {
   background: none;
   border: none;
-  color: var(--faint);
+  color: var(--txt3);
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
   padding: 2px 6px;
   border-radius: 6px;
 }
-.collapse:hover { color: var(--ink); background: var(--panel2); }
+.collapse:hover { color: var(--txt); background: var(--active); }
 
 .head,
 .row {
@@ -99,9 +99,9 @@ header {
   font-family: var(--mono);
   font-size: 9.5px;
   letter-spacing: 1px;
-  color: var(--faint);
+  color: var(--txt3);
   text-transform: uppercase;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--hair);
 }
 .rows {
   overflow-y: auto;
@@ -112,9 +112,9 @@ header {
   font-size: 12px;
   border-bottom: 1px solid #1e222a;
 }
-.row.noteon .kind { color: var(--teal); }
-.row.noteoff .kind { color: var(--faint); }
-.row.cc .kind { color: var(--blue); }
+.row.noteon .kind { color: var(--head); }
+.row.noteoff .kind { color: var(--txt3); }
+.row.cc .kind { color: var(--rate-great); }
 .kind {
   font-family: var(--mono);
   font-size: 11px;
@@ -129,14 +129,14 @@ header {
   display: inline-block;
   flex: none;
 }
-.src.hardware { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
-.src.keyboard { background: var(--blue); }
-.src.click { background: var(--faint); }
+.src.hardware { background: var(--rate-good); box-shadow: 0 0 6px var(--rate-good); }
+.src.keyboard { background: var(--rate-great); }
+.src.click { background: var(--txt3); }
 .mono { font-family: var(--mono); font-size: 11.5px; }
-.mono em { color: var(--faint); font-style: normal; font-size: 10.5px; }
-.dim { color: var(--faint); }
+.mono em { color: var(--txt3); font-style: normal; font-size: 10.5px; }
+.dim { color: var(--txt3); }
 .empty {
-  color: var(--faint);
+  color: var(--txt3);
   font-size: 12.5px;
   padding: 16px 12px;
   margin: 0;

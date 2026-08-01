@@ -23,8 +23,8 @@ const open = ref(false);
 const root = ref<HTMLElement | null>(null);
 
 const label = computed(() => {
-  if (props.connectedIndex !== null) return props.connectedName;
-  return props.ports.length ? "Select MIDI device" : "No MIDI device";
+  if (props.connectedIndex !== null) return props.connectedName.toUpperCase();
+  return props.ports.length ? "SELECT DEVICE" : "NO DEVICE";
 });
 
 function toggle() {
@@ -63,7 +63,7 @@ onUnmounted(() => {
       @click="toggle"
     >
       <i class="dot" />
-      <span class="name">{{ label }}</span>
+      <span class="name label">{{ label }}</span>
       <span class="chev">▾</span>
     </button>
 
@@ -106,93 +106,104 @@ onUnmounted(() => {
 <style scoped>
 .wrap { position: relative; }
 
+/* Face chip: 20px like every other bar control, LED dot showing connection. */
 .trigger {
+  height: 20px;
+  max-width: 112px;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  max-width: 100px;
-  background: #1a1e24;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  padding: 6px 10px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--dim);
+  gap: 6px;
+  padding: 0 7px;
+  border: none;
+  border-radius: var(--r-field);
+  background: var(--face);
+  box-shadow: var(--outline);
+  color: var(--txt2);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 1.1px;
   cursor: pointer;
 }
-.trigger:hover { border-color: #39414d; color: var(--ink); }
-.trigger.live { color: var(--ink); border-color: #37d0c455; }
-.dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--faint);
-  flex: none;
-}
-.trigger.live .dot { background: var(--teal); box-shadow: 0 0 7px var(--teal); }
-.name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chev { color: var(--faint); font-size: 10px; flex: none; }
+.trigger:hover { background: var(--hover); color: var(--txt); }
+.trigger:focus-visible { outline: 1px solid var(--head); outline-offset: 1px; }
 
+.dot {
+  width: 4px;
+  height: 4px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--txt3);
+}
+.trigger.live .dot { background: var(--led0); }
+.trigger.live { color: var(--txt); }
+
+.name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chev { flex: none; font-size: 6.5px; color: var(--txt3); }
+
+/* Menu — one surface, hairline outline, 12.5px sans rows. */
 .menu {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
+  z-index: 40;
   min-width: 260px;
   max-width: 340px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  box-shadow: 0 18px 50px #000000aa;
-  padding: 5px;
-  z-index: 60;
+  padding: 4px;
+  border-radius: var(--r-panel);
+  background: var(--bar);
+  box-shadow: inset 0 0 0 1px var(--hair), 0 10px 24px #00000044;
 }
+
 .mhead {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 8px 8px;
+  padding: 5px 8px 4px;
   font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 1.4px;
-  color: var(--faint);
+  font-size: 7.5px;
+  letter-spacing: 1.2px;
+  color: var(--txt3);
 }
 .rescan {
-  background: none;
   border: none;
-  color: var(--teal);
+  background: none;
+  color: var(--head);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 7.5px;
+  letter-spacing: 1.2px;
   cursor: pointer;
 }
-.rescan:disabled { color: var(--faint); cursor: default; }
+.rescan:disabled { color: var(--txt3); cursor: default; }
+
+.err,
+.empty {
+  margin: 0;
+  padding: 6px 8px 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--txt2);
+}
+.err { color: var(--stop); }
 
 .item {
+  width: 100%;
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  background: none;
+  gap: 6px;
+  padding: 6px 8px;
   border: none;
-  color: var(--ink);
-  font-size: 13px;
+  border-radius: var(--r-item);
+  background: none;
+  color: var(--txt2);
+  font-family: var(--sans);
+  font-size: 12.5px;
   text-align: left;
-  padding: 8px 9px;
-  border-radius: 8px;
   cursor: pointer;
 }
-.item:hover { background: var(--panel2); }
-.item.on { color: var(--teal); }
-.tick { width: 10px; font-size: 9px; font-style: normal; flex: none; }
+.item:hover { background: var(--hover); }
+.item.on { color: var(--txt); }
+.tick { width: 10px; flex: none; font-size: 8px; font-style: normal; color: var(--head); }
 .pname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.item.disconnect { color: var(--dim); border-top: 1px solid var(--line); margin-top: 4px; }
-.item.disconnect:hover { color: #f0a8a2; }
-
-.err, .empty {
-  font-size: 12px;
-  color: var(--faint);
-  padding: 4px 9px 10px;
-  margin: 0;
-  line-height: 1.5;
-}
-.err { color: var(--red); }
+.disconnect { color: var(--stop); }
 </style>

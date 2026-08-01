@@ -10,6 +10,7 @@
  */
 
 import type { NoteInstance } from "@/engine/scoring";
+import type { Palette, Theme } from "@/engine/theme";
 import type { LaneOrientation, PadLayout } from "@/stores/settings";
 
 export interface LaneFrame {
@@ -23,6 +24,11 @@ export interface LaneFrame {
   countInBeats: number;
   instances: readonly NoteInstance[];
   reducedMotion: boolean;
+
+  /** Active palette. Canvas can't read CSS custom properties, so it's passed. */
+  palette: Palette;
+  /** Drives the corner radii, which differ between the two themes. */
+  theme: Theme;
 
   /** Notes fall top-to-bottom, or scroll right-to-left onto a playhead. */
   orientation: LaneOrientation;

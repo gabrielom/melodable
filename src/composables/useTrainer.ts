@@ -12,6 +12,7 @@ import { useSettings } from "@/stores/settings";
 import { useLessons } from "@/stores/lessons";
 import type { LinkState, Rating } from "@/engine/types";
 import { Transport, phaseDelta } from "@/engine/transport";
+import { PALETTE } from "@/engine/theme";
 import { Scorer, lessonTargets } from "@/engine/scoring";
 import { AdvanceTracker } from "@/engine/adaptive";
 import { HostClock } from "@/engine/host-clock";
@@ -51,8 +52,8 @@ export function useTrainer(
 
   const playing = ref(false);
   const bpm = ref(lesson.value.bpm);
-  /** Link tempos are fractional; the bar shows a whole number. */
-  const bpmLabel = computed(() => Math.round(bpm.value));
+  /** Link tempos are fractional; the bar shows one decimal, as designed. */
+  const bpmLabel = computed(() => Math.round(bpm.value * 10) / 10);
   const guide = ref(false);
 
   const accuracy = ref(100);
@@ -65,6 +66,9 @@ export function useTrainer(
   const midiClock = new HostClock();
 
   const isPiano = computed(() => lesson.value.instrument === "piano");
+
+  /** The active palette, handed to the canvas renderers each frame. */
+  const palette = computed(() => PALETTE[settings.theme]);
 
   /**
    * Pitch → lane, the one thing that differs between the two views. For pads
@@ -165,6 +169,8 @@ export function useTrainer(
       countInBeats: transport.countInBeats,
       instances: pos ? scorer.instances : [],
       reducedMotion,
+      palette: palette.value,
+      theme: settings.theme,
       orientation: settings.laneOrientation,
       padLanes: lanes.value,
       padLayout: settings.padLayout,
@@ -186,6 +192,8 @@ export function useTrainer(
       loopBeats: transport.loopBeats,
       beatInLoop,
       ratings: loopRatings,
+      palette: palette.value,
+      theme: settings.theme,
     });
   }
 

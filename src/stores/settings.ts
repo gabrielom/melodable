@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, watch } from "vue";
 import type { InstrumentType } from "@/engine/types";
+import type { Theme } from "@/engine/theme";
 import { persistGet, persistSet } from "./persist";
 
 /**
@@ -23,6 +24,7 @@ export type LaneOrientation = "vertical" | "horizontal";
  * restored lesson's instrument, so persisting it separately would conflict.
  */
 interface SettingsSnapshot {
+  theme: Theme;
   volume: number;
   soundOutput: SoundOutput;
   metronome: boolean;
@@ -33,18 +35,34 @@ interface SettingsSnapshot {
   pianoHigh: number;
 }
 
+/** The OS preference, used until the player picks a side themselves. */
+function systemTheme(): Theme {
+  if (typeof window === "undefined" || !window.matchMedia) return "dark";
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
 export const useSettings = defineStore("settings", () => {
   const instrument = ref<InstrumentType>("pads");
+  /**
+   * Dark (Maschine chassis) or light (one flat Ableton grey). Follows the OS
+   * on first run, then whatever the player last chose.
+   *
+   * Persisted through the Tauri store like everything else — invariant 7 rules
+   * out localStorage, so the design brief's "persist in localStorage" is met
+   * with the store plugin instead.
+   */
+  const theme = ref<Theme>(systemTheme());
   const volume = ref(0.9);
   const soundOutput = ref<SoundOutput>("internal");
   /** Metronome click, count-in included. Off when the DAW provides the click. */
   const metronome = ref(true);
-  /** Side panel with the live MIDI log. Collapsed gives the stage full width. */
-  const monitorOpen = ref(true);
+  /** MIDI log, shown as an overlay over the lane. Off by default — it is a
+   *  diagnostic, and the design gives the lane the whole stage. */
+  const monitorOpen = ref(false);
   /** 4x4 (MPC style) or 2x8 (Launchkey and most 2-row controllers). */
   const padLayout = ref<PadLayout>("4x4");
-  /** Falling (top-to-bottom) or scrolling (right-to-left, Melodics style). */
-  const laneOrientation = ref<LaneOrientation>("vertical");
+  /** Scrolling (right-to-left) is the designed view; falling is the alternative. */
+  const laneOrientation = ref<LaneOrientation>("horizontal");
 
   /** Fallback piano range (C3..C6) when a lesson has no notes to frame. */
   const pianoLow = ref(48);
@@ -60,6 +78,7 @@ export const useSettings = defineStore("settings", () => {
   // Hydrate from the Tauri store (no-op / undefined in the browser).
   void persistGet<SettingsSnapshot>("settings").then((saved) => {
     if (saved) {
+      if (saved.theme === "dark" || saved.theme === "light") theme.value = saved.theme;
       if (typeof saved.volume === "number") volume.value = saved.volume;
       if (saved.soundOutput) soundOutput.value = saved.soundOutput;
       if (typeof saved.metronome === "boolean") metronome.value = saved.metronome;
@@ -75,10 +94,11 @@ export const useSettings = defineStore("settings", () => {
   // Persist on change. Guarded so the async hydrate above doesn't get
   // clobbered by an initial write before it lands.
   watch(
-    [volume, soundOutput, metronome, monitorOpen, padLayout, laneOrientation, pianoLow, pianoHigh],
+    [theme, volume, soundOutput, metronome, monitorOpen, padLayout, laneOrientation, pianoLow, pianoHigh],
     () => {
     if (!hydrated.value) return;
     void persistSet("settings", {
+      theme: theme.value,
       volume: volume.value,
       soundOutput: soundOutput.value,
       metronome: metronome.value,
@@ -93,6 +113,7 @@ export const useSettings = defineStore("settings", () => {
 
   return {
     instrument,
+    theme,
     volume,
     soundOutput,
     metronome,

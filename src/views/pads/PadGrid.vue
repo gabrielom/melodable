@@ -11,9 +11,14 @@
  */
 import { computed } from "vue";
 import { PADS, padPosition } from "@/engine/gm";
-import { RATING_COLOR } from "@/engine/types";
+import { PALETTE, ledOf, ledUpcoming } from "@/engine/theme";
+import { useSettings } from "@/stores/settings";
 import type { PadLayout } from "@/stores/settings";
 import type { RatingPop } from "@/composables/useTrainer";
+
+const settings = useSettings();
+/** Rating colours follow the active theme. */
+const palette = computed(() => PALETTE[settings.theme]);
 
 const props = withDefaults(
   defineProps<{
@@ -31,9 +36,13 @@ const emit = defineEmits<{
   (e: "trigger", padIndex: number, velocity: number): void;
 }>();
 
-/** Distinct hue per pad, matching the falling-note lane colours. */
-const hue = (i: number) => (i * 47) % 360;
-const padColor = (i: number, a = 1) => `hsla(${hue(i)}, 55%, 60%, ${a})`;
+/**
+ * The pad's LED, matching the lane it catches in the note view. Indexed by
+ * position on screen (not the pad number) so the two always agree.
+ */
+const ledIndex = (i: number) => (props.emphasis ?? []).indexOf(i);
+const padColor = (i: number) => ledOf(palette.value, ledIndex(i));
+const padGlow = (i: number) => ledUpcoming(palette.value, ledIndex(i));
 
 const shown = computed(() => {
   const list = props.emphasis?.length ? props.emphasis : [];
@@ -58,12 +67,12 @@ const popFor = (i: number) => props.pops?.find((p) => p.lane === i);
 
 function tileStyle(i: number): Record<string, string> {
   const vel = props.active.get(i);
-  if (vel === undefined) return { borderColor: padColor(i, 0.45) };
+  // Idle: the LED reads as a left edge, echoing the lane gutter's stripe.
+  if (vel === undefined) return { boxShadow: `inset 3px 0 0 ${padColor(i)}` };
   const strength = 0.35 + (vel / 127) * 0.65;
   return {
-    borderColor: padColor(i, 0.9),
-    background: `radial-gradient(circle at 50% 30%, ${padColor(i, 0.4 * strength)}, #1a1e24)`,
-    boxShadow: `0 0 ${16 * strength}px ${padColor(i, 0.45)}`,
+    background: padGlow(i),
+    boxShadow: `inset 3px 0 0 ${padColor(i)}, 0 0 ${14 * strength}px ${padGlow(i)}`,
   };
 }
 </script>
@@ -97,7 +106,7 @@ function tileStyle(i: number): Record<string, string> {
         <span
           v-if="popFor(t.index)"
           class="pop"
-          :style="{ color: RATING_COLOR[popFor(t.index)!.rating] }"
+          :style="{ color: palette.rating[popFor(t.index)!.rating] }"
         >{{ popFor(t.index)!.rating.toUpperCase() }}</span>
       </button>
     </div>
@@ -122,9 +131,10 @@ function tileStyle(i: number): Record<string, string> {
   align-items: center;
   gap: 6px;
   min-width: 0;
-  background: #1a1e24;
-  border: 1px solid var(--line);
-  border-radius: 9px;
+  background: var(--gutter);
+  border: none;
+  box-shadow: var(--outline);
+  border-radius: var(--r-panel);
   padding: 6px 8px;
   cursor: pointer;
   transition: transform 0.05s, box-shadow 0.06s, background 0.08s;
@@ -140,7 +150,7 @@ function tileStyle(i: number): Record<string, string> {
   width: 3px;
   height: 3px;
   border-radius: 1px;
-  background: #2b313a;
+  background: var(--hair);
   display: block;
 }
 .mini i.on { box-shadow: 0 0 5px currentColor; }
@@ -149,9 +159,12 @@ function tileStyle(i: number): Record<string, string> {
    carried by the mini grid, and the tile's title has the full detail. */
 .name {
   min-width: 0;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: #dfe4ea;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--txt);
   line-height: 1.15;
   text-align: left;
   overflow-wrap: break-word;

@@ -67,14 +67,8 @@ export const RATING_SCORE: Record<Rating, number> = {
 };
 
 /**
- * Timing colour language. Melodics (2015-2019 desktop) used
- * green = perfect, orange/purple = early/late, red = missed.
- * We keep the same semantics with a palette that matches the DAW theme —
- * swap `perfect` to green here if you prefer their convention.
+ * Timing colour language. Lives in `engine/theme.ts` now that there are two
+ * palettes — a rating's colour depends on the active theme, so renderers read
+ * `PALETTE[theme].rating[r]` rather than a single fixed map.
  */
-export const RATING_COLOR: Record<Rating, string> = {
-  perfect: "#ffb340",
-  great: "#37d0c4",
-  good: "#6ea8ff",
-  miss: "#e2564d",
-};
+export type { Theme } from "@/engine/theme";

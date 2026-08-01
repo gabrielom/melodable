@@ -13,7 +13,7 @@
  * loop reading the transport clock. No Vue, no per-frame reactivity.
  */
 
-import { RATING_COLOR } from "@/engine/types";
+import { ledUpcoming, RADIUS } from "@/engine/theme";
 import type { LaneFrame, LaneRenderer } from "@/views/lane-frame";
 import { countWhiteKeys, isWhiteKey, keyGeometry, noteName, pitchClass } from "@/engine/pitch";
 
@@ -24,8 +24,14 @@ const PAST_FRACTION = 0.34;
 /** Width of the note-name gutter in horizontal mode. */
 const GUTTER = 46;
 
-const WHITE_NOTE = "#37d0c4";
-const BLACK_NOTE = "#2aa7c8";
+/** Canvas takes a font shorthand, not a CSS variable — mirrors the tokens. */
+const MONO = '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
+/**
+ * Piano wasn't part of the redesign, so it borrows the pad palette rather than
+ * inventing one: naturals take the cyan LED, accidentals the blue beside it.
+ */
+const WHITE_LED = 5;
+const BLACK_LED = 2;
 
 export class PianoRoll implements LaneRenderer {
   private ctx: CanvasRenderingContext2D;
@@ -52,7 +58,7 @@ export class PianoRoll implements LaneRenderer {
     const H = this.canvas.height / this.dpr;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = "#0b0d11";
+    ctx.fillStyle = f.palette.win;
     ctx.fillRect(0, 0, W, H);
 
     const pxPerSec = PX_PER_BEAT / f.secPerBeat;
@@ -72,11 +78,11 @@ export class PianoRoll implements LaneRenderer {
     for (let note = low; note <= high; note++) {
       const g = keyGeometry(note, low, whiteWidth);
       if (!isWhiteKey(note)) {
-        ctx.fillStyle = "#0f1319";
+        ctx.fillStyle = f.palette.lane;
         ctx.fillRect(g.x, 0, g.width, H);
       }
       if (pitchClass(note) === 0) {
-        ctx.strokeStyle = "#ffffff10";
+        ctx.strokeStyle = f.palette.hair;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(g.x + 0.5, 0);
@@ -85,10 +91,10 @@ export class PianoRoll implements LaneRenderer {
       }
     }
 
-    ctx.fillStyle = "#00000055";
+    ctx.fillStyle = f.palette.elapsed;
     ctx.fillRect(0, hitY, W, H - hitY);
 
-    ctx.strokeStyle = "#37d0c4";
+    ctx.strokeStyle = f.palette.head;
     ctx.globalAlpha = 0.85;
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -97,7 +103,7 @@ export class PianoRoll implements LaneRenderer {
     ctx.stroke();
     ctx.globalAlpha = 1;
 
-    if (!f.playing) return this.idle(W / 2, hitY - 40);
+    if (!f.playing) return this.idle(f, W / 2, hitY - 40);
 
     // black keys last so they sit on top of their neighbours
     for (const blackPass of [false, true]) {
@@ -109,9 +115,9 @@ export class PianoRoll implements LaneRenderer {
         if (y < -30 || y > H + 30) continue;
         const g = keyGeometry(inst.lane, low, whiteWidth);
         const w = g.width - 2;
-        this.note(g.x + 1, y - 9, w, 18, 4, inst, black ? BLACK_NOTE : WHITE_NOTE);
+        this.note(f, g.x + 1, y - 9, w, 18, inst, ledUpcoming(f.palette, black ? BLACK_LED : WHITE_LED));
         // name fits only on wider keys
-        if (w >= 26) this.label(noteName(inst.lane), g.x + 1 + w / 2, y, 9);
+        if (w >= 26) this.label(f, noteName(inst.lane), g.x + 1 + w / 2, y, 8.5);
       }
     }
 
@@ -135,11 +141,11 @@ export class PianoRoll implements LaneRenderer {
     for (let note = low; note <= high; note++) {
       const y = rowY(note);
       if (!isWhiteKey(note)) {
-        ctx.fillStyle = "#0f1319";
+        ctx.fillStyle = f.palette.lane;
         ctx.fillRect(trackX, y, trackW, rowH);
       }
       if (pitchClass(note) === 0) {
-        ctx.strokeStyle = "#ffffff10";
+        ctx.strokeStyle = f.palette.hair;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(trackX, Math.round(y) + 0.5);
@@ -147,8 +153,8 @@ export class PianoRoll implements LaneRenderer {
         ctx.stroke();
         // octave marker in the gutter
         if (rowH >= 9) {
-          ctx.fillStyle = "#5a626d";
-          ctx.font = "600 9px ui-monospace, SFMono-Regular, Menlo, monospace";
+          ctx.fillStyle = f.palette.txt3;
+          ctx.font = `500 8.5px ${MONO}`;
           ctx.textAlign = "right";
           ctx.textBaseline = "middle";
           ctx.fillText(noteName(note), GUTTER - 8, y + rowH / 2);
@@ -157,10 +163,10 @@ export class PianoRoll implements LaneRenderer {
       }
     }
 
-    ctx.fillStyle = "#00000055";
+    ctx.fillStyle = f.palette.elapsed;
     ctx.fillRect(trackX, 0, hitX - trackX, H);
 
-    ctx.strokeStyle = "#37d0c4";
+    ctx.strokeStyle = f.palette.head;
     ctx.globalAlpha = 0.85;
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -169,7 +175,7 @@ export class PianoRoll implements LaneRenderer {
     ctx.stroke();
     ctx.globalAlpha = 1;
 
-    if (!f.playing) return this.idle(trackX + trackW / 2, H / 2);
+    if (!f.playing) return this.idle(f, trackX + trackW / 2, H / 2);
 
     // The blob is deliberately taller than a row so the note name fits — rows
     // get thin over a three-octave range. Neighbours overlap slightly, which
@@ -182,15 +188,15 @@ export class PianoRoll implements LaneRenderer {
       if (x < trackX - 50 || x > W + 50) continue;
       const y = rowY(inst.lane) + (rowH - h) / 2;
       this.note(
+        f,
         x - noteW / 2,
         y,
         noteW,
         h,
-        h / 2,
         inst,
-        isWhiteKey(inst.lane) ? WHITE_NOTE : BLACK_NOTE,
+        ledUpcoming(f.palette, isWhiteKey(inst.lane) ? WHITE_LED : BLACK_LED),
       );
-      this.label(noteName(inst.lane), x, y + h / 2, Math.min(10, h - 4));
+      this.label(f, noteName(inst.lane), x, y + h / 2, Math.min(9, h - 4));
     }
 
     this.countIn(f, W, H);
@@ -199,44 +205,41 @@ export class PianoRoll implements LaneRenderer {
   // ---------------------------------------------------------------- parts
 
   private note(
+    f: LaneFrame,
     x: number,
     y: number,
     w: number,
     h: number,
-    r: number,
     inst: LaneFrame["instances"][number],
     baseColor: string,
   ): void {
     const ctx = this.ctx;
-    this.roundRect(x, y, w, h, r);
-    ctx.fillStyle = inst.resolved ? RATING_COLOR[inst.rating!] : baseColor;
-    ctx.globalAlpha = inst.resolved ? 0.85 : 1;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    if (!inst.resolved) {
-      ctx.strokeStyle = "#ffffff33";
-      ctx.lineWidth = 1;
-      ctx.stroke();
+    const r = RADIUS[f.theme].note;
+    ctx.fillStyle = inst.resolved ? f.palette.rating[inst.rating!] : baseColor;
+    if (r <= 0) ctx.fillRect(x, y, w, h);
+    else {
+      this.roundRect(x, y, w, h, r);
+      ctx.fill();
     }
   }
 
   /** The note's name, written on the note so you know which key to press. */
-  private label(text: string, cx: number, cy: number, size: number): void {
+  private label(f: LaneFrame, text: string, cx: number, cy: number, size: number): void {
     const ctx = this.ctx;
-    ctx.fillStyle = "#08131a";
-    ctx.font = `700 ${size}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.fillStyle = f.theme === "light" ? "#e9e9ea" : "#0b0b0c";
+    ctx.font = `500 ${size}px ${MONO}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(text, cx, cy + 0.5);
     ctx.textBaseline = "alphabetic";
   }
 
-  private idle(cx: number, cy: number): void {
+  private idle(f: LaneFrame, cx: number, cy: number): void {
     const ctx = this.ctx;
-    ctx.fillStyle = "#5a626d";
-    ctx.font = "500 13px ui-sans-serif, system-ui, sans-serif";
+    ctx.fillStyle = f.palette.txt3;
+    ctx.font = `500 8.5px ${MONO}`;
     ctx.textAlign = "center";
-    ctx.fillText("Press Play to start the count-in", cx, cy);
+    ctx.fillText("PRESS START FOR THE COUNT-IN", cx, cy);
   }
 
   private countIn(f: LaneFrame, W: number, H: number): void {
@@ -244,18 +247,18 @@ export class PianoRoll implements LaneRenderer {
     const ctx = this.ctx;
     const remaining = Math.ceil(f.countInBeats - f.countInBeat);
     const frac = f.countInBeat - Math.floor(f.countInBeat);
-    ctx.fillStyle = "#0b0d11aa";
+    ctx.fillStyle = f.theme === "light" ? "#cccccc99" : "#0e0e0f99";
     ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = "#ffb340";
+    ctx.fillStyle = f.palette.head;
     ctx.globalAlpha = f.reducedMotion ? 1 : 1 - frac * 0.6;
-    ctx.font = "700 64px ui-monospace, SFMono-Regular, Menlo, monospace";
+    ctx.font = `500 56px ${MONO}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(String(remaining), W / 2, H / 2 - 10);
+    ctx.fillText(String(remaining), W / 2, H / 2 - 8);
     ctx.globalAlpha = 1;
-    ctx.font = "600 12px ui-sans-serif, system-ui, sans-serif";
-    ctx.fillStyle = "#8a929e";
-    ctx.fillText("COUNT-IN", W / 2, H / 2 + 34);
+    ctx.font = `500 8.5px ${MONO}`;
+    ctx.fillStyle = f.palette.txt3;
+    ctx.fillText("COUNT-IN", W / 2, H / 2 + 30);
     ctx.textBaseline = "alphabetic";
   }
 

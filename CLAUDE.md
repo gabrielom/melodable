@@ -23,29 +23,41 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
 4. **One engine, two views.** Pads and Piano must share the transport and scorer. They differ only in a renderer and a pitch→position mapping (`src/engine/pitch.ts`). If you find yourself duplicating scoring logic per instrument, stop and refactor.
 5. **Keep the `midir` connection alive** in Tauri state (`MidiState` in `src-tauri/src/midi.rs`). Dropping it silently closes the port.
 6. **Canvas for the falling-note lane**, driven by a single `requestAnimationFrame` loop reading the transport clock. Do not re-render Vue per frame.
-7. **No `localStorage`/`sessionStorage`** for persistence — use the Tauri store plugin or SQLite (M7).
+7. **No `localStorage`/`sessionStorage`** for persistence — use the Tauri store plugin or SQLite (M7). This includes the theme, despite the design brief asking for localStorage.
 
 ## Conventions
 
 - Vue 3 Composition API with `<script setup lang="ts">`; Pinia for state; `@/` aliases `src/`.
-- Design tokens live in `src/styles.css` and match `build_plan.html`. Reuse them; don't introduce a new palette.
-- Rating colors: amber = perfect, teal = great, blue = good, red = miss (`RATING_COLOR` in `src/engine/types.ts`). Renderers must read `RATING_COLOR`, never hardcode a rating colour.
+- Design tokens live in **two places that must stay in step**: `src/styles.css` (CSS custom properties, for the DOM) and `src/engine/theme.ts` (the same values as data, because canvas can't read custom properties). Change one, change the other. Don't introduce a new palette. These now supersede the palette in `build_plan.html`, which predates the trainer redesign.
+- Two themes, `dark` and `light`, swapped by `data-theme` on `<html>` from `settings.theme`. Light is one flat grey, so on-states **invert** to a dark chip and every field needs the `--outline` hairline — a lighter fill reads as nothing.
+- Rating colors live in the palette: `PALETTE[theme].rating[r]` (`src/engine/theme.ts`). Renderers read that, never a hardcoded rating colour. Dark: perfect = cyan, great = blue, good = amber, miss = red.
+- Lane identity uses the fixed 8-colour LED set (`ledOf`/`ledUpcoming`), indexed by the lane's position on screen — not a hash of the pad number, so a lane keeps its colour between lessons. Notes still to come are the LED at 33% (`UPCOMING_ALPHA`).
 - Respect `prefers-reduced-motion`; keep controls keyboard-focusable.
-- **Everything lives in the one transport bar**, which is also the macOS titlebar (`data-tauri-drag-region`, left padding clears the traffic lights). It must stay a single row down to ~1120px — measure it, don't assume. No second toolbar row, no in-stage header.
+- **Everything lives in the one transport bar**, which is also the macOS titlebar (`data-tauri-drag-region`, left padding clears the traffic lights). It is 34px tall with every control 20px, and must stay a single row down to ~1100px — measure it, don't assume (see the responsive block at the bottom of `App.vue`; currently verified clean to 912px). No second toolbar row, no in-stage header.
 - Don't add code for a future milestone "while you're there". If something is unused today, it doesn't belong in the tree.
 
-## Next up: M6 — Ableton Link play-along
+## Where things stand
 
-From the plan:
+**M0–M6 are complete.** M6 (Ableton Link) shipped: `src-tauri/src/link.rs` behind the
+`link` cargo feature, `useLink.ts`, a chain-icon toggle with a peers badge, and a
+follower in `useTrainer` that drives tempo via `Transport.setBpm` and phase via
+`Transport.anchorTo`. `docs/ableton-playalong.md` documents it, including the
+MIDI-Clock alternative if CMake ever becomes a problem.
 
-> Tasks: `link.rs` (rusty_link, feature-flagged), `useLink`, "Follow Ableton" toggle, transport follows Link tempo + phase, peers indicator.
->
-> **Done when:** with Ableton running Link, the trainer locks to its tempo and downbeat; changing tempo in Ableton moves the trainer.
+The **trainer redesign** (light + dark, 34px bar, 104px lane gutter, fixed LED
+palette, Geist) has also landed — see the Conventions above for what it changed.
+Its handoff notes list screens that were **not designed**: home / lesson picker,
+piano mode, the count-in, the end-of-run summary, the monitor overlay, and the
+dropdowns' open state. Those currently run on remapped tokens so they follow the
+theme and stay coherent; **ask before designing them properly.**
 
-Notes from M0–M5, already in place — build on these rather than redefining:
+### Next up: M7 — persistence
 
-- **The transport is the integration point.** `src/engine/transport.ts` already re-anchors continuously on `setBpm(bpm, now)` (playhead stays put) and exposes `timeOfAbsBeat`. M6's Link follower drives `bpm` from Link tempo and aligns the loop's downbeat to Link phase — extend the transport with a phase/anchor setter rather than bolting on a parallel clock.
-- Keep Link behind a cargo feature (`link` already stubbed in `src-tauri/Cargo.toml`) and a runtime toggle; the app must still build/run without it. `rusty_link` needs CMake — see build_plan.html §11b/§16.
-- Rust→Vue events already flow through the same pattern as MIDI (`src/composables/useMidi.ts`): add `link://state` emission in `src-tauri/src/link.rs` and a `useLink.ts` composable, with a `LinkState` type (tempo/beat/phase/peers) defined *when you build it* — the speculative one was removed in the audit.
-- **Warn the user (they asked about this):** a lighter alternative to Link is following Ableton's **MIDI Clock** over a virtual port — the MIDI bridge already exists; `src-tauri/src/midi.rs` currently filters clock via `Ignore::All`. `docs/ableton-playalong.md` lays out both paths. Confirm which they want before building.
-- Two views share one engine (M5): the transport and scorer are instrument-agnostic, so Link work touches only the transport + a composable, not the renderers.
+From the plan: SQLite (or the Tauri store) for practice history — per-lesson bests,
+streaks, a session log. Notes:
+
+- Settings and the last lesson already persist through `src/stores/persist.ts`
+  (Tauri store plugin). Invariant 7 still holds: no `localStorage`.
+- `AdvanceTracker` (`src/engine/adaptive.ts`) already tracks the lesson-clear streak
+  in memory — that is the natural thing to persist first.
+- Don't reintroduce automatic tempo changes; tempo stays hand-set on the bar.

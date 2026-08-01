@@ -160,8 +160,8 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
 }
 .panel {
   width: min(460px, 100%);
-  background: var(--panel);
-  border: 1px solid var(--line);
+  background: var(--bar);
+  border: 1px solid var(--hair);
   border-radius: 14px;
   box-shadow: 0 24px 80px #000000aa;
   overflow: hidden;
@@ -171,29 +171,29 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
   align-items: center;
   justify-content: space-between;
   padding: 15px 18px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--hair);
 }
-.kicker { font-family: var(--mono); font-size: 10px; letter-spacing: 2px; color: var(--teal); }
+.kicker { font-family: var(--mono); font-size: 10px; letter-spacing: 2px; color: var(--head); }
 .close {
   background: none;
   border: none;
-  color: var(--faint);
+  color: var(--txt3);
   font-size: 15px;
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 8px;
 }
-.close:hover { color: var(--ink); background: var(--panel2); }
+.close:hover { color: var(--txt); background: var(--active); }
 
 .body { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 6px; }
-.flabel { font-family: var(--mono); font-size: 9.5px; letter-spacing: 1.2px; color: var(--faint); }
+.flabel { font-family: var(--mono); font-size: 9.5px; letter-spacing: 1.2px; color: var(--txt3); }
 .input {
-  background: var(--panel2);
-  border: 1px solid var(--line);
+  background: var(--active);
+  border: 1px solid var(--hair);
   border-radius: 9px;
   padding: 9px 11px;
-  color: var(--ink);
+  color: var(--txt);
   font-size: 14px;
   font-family: var(--sans);
 }
@@ -202,7 +202,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
   display: inline-flex;
   gap: 3px;
   background: #0c0e12;
-  border: 1px solid var(--line);
+  border: 1px solid var(--hair);
   border-radius: 9px;
   padding: 3px;
   width: max-content;
@@ -210,30 +210,30 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
 .segbtn {
   background: none;
   border: none;
-  color: var(--dim);
+  color: var(--txt2);
   font-size: 13px;
   font-weight: 600;
   padding: 5px 16px;
   border-radius: 7px;
   cursor: pointer;
 }
-.segbtn.on { background: var(--panel2); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
+.segbtn.on { background: var(--active); color: var(--txt); box-shadow: 0 0 0 1px var(--hair); }
 
 .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
 .bpmrow { display: flex; align-items: center; gap: 7px; }
 .input.bpm { width: 74px; font-family: var(--mono); }
-.unit { font-family: var(--mono); font-size: 10px; color: var(--faint); }
-.stat { font-family: var(--mono); font-size: 15px; color: var(--ink); padding-top: 4px; }
-.lanes { font-size: 13px; color: var(--dim); line-height: 1.5; }
+.unit { font-family: var(--mono); font-size: 10px; color: var(--txt3); }
+.stat { font-family: var(--mono); font-size: 15px; color: var(--txt); padding-top: 4px; }
+.lanes { font-size: 13px; color: var(--txt2); line-height: 1.5; }
 
 .detect {
   display: flex;
   align-items: center;
   gap: 10px;
   font-size: 12.5px;
-  color: var(--dim);
+  color: var(--txt2);
   background: #0c0e12;
-  border: 1px solid var(--line);
+  border: 1px solid var(--hair);
   border-radius: 10px;
   padding: 10px 12px;
   line-height: 1.45;
@@ -242,39 +242,39 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
   font-family: var(--mono);
   font-size: 9.5px;
   letter-spacing: 0.5px;
-  color: var(--teal);
+  color: var(--head);
   border: 1px solid #37d0c455;
   border-radius: 20px;
   padding: 2px 8px;
   flex: none;
 }
 .detect.warn { border-color: #ffb34033; }
-.detect.warn .tag { color: var(--amber); border-color: #ffb34055; }
+.detect.warn .tag { color: var(--rate-good); border-color: #ffb34055; }
 
 .err { padding: 18px; display: flex; flex-direction: column; gap: 8px; }
-.err-title { font-size: 15px; font-weight: 700; color: var(--red); }
-.err-msg { font-family: var(--mono); font-size: 12px; color: var(--dim); }
-.err-hint { font-size: 12.5px; color: var(--faint); line-height: 1.5; }
-.err-hint code { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+.err-title { font-size: 15px; font-weight: 700; color: var(--rate-miss); }
+.err-msg { font-family: var(--mono); font-size: 12px; color: var(--txt2); }
+.err-hint { font-size: 12.5px; color: var(--txt3); line-height: 1.5; }
+.err-hint code { font-family: var(--mono); font-size: 11px; color: var(--txt2); }
 
 .foot {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
   padding: 13px 18px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--hair);
 }
 .btn {
-  border: 1px solid var(--line);
+  border: 1px solid var(--hair);
   background: #1a1e24;
   border-radius: 10px;
   padding: 9px 16px;
   font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
-  color: var(--ink);
+  color: var(--txt);
 }
-.btn.ghost { background: transparent; color: var(--dim); }
+.btn.ghost { background: transparent; color: var(--txt2); }
 .btn.primary {
   background: linear-gradient(180deg, #37d0c4, #20b3a8);
   color: #04201d;

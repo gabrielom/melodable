@@ -1,29 +1,38 @@
 /**
- * Canvas renderer for the pads falling-note lane.
+ * Canvas renderer for the pads note lane.
  *
  * Framework-free: a single class the Vue side calls `draw()` on from one
  * requestAnimationFrame loop that reads the transport clock. Vue never
- * re-renders per frame (see build_plan.html §13).
+ * re-renders per frame (invariant 6).
  *
- * Two orientations share this code. Vertical: lanes are columns and notes
- * fall onto a horizontal hit line. Horizontal (Melodics-style): lanes are
- * rows behind a name gutter and notes scroll right-to-left onto a vertical
- * playhead. Only the axis mapping differs — timing, colours and the
- * already-played zone are identical.
+ * Horizontal is the designed view: lanes are rows behind a 104px label
+ * gutter, notes scroll right-to-left onto a playhead a fixed 96px into the
+ * note area, and the strip behind the playhead is the "already played" zone
+ * so a note stays visible after you strike it. Vertical keeps the same
+ * palette and note size with the axes swapped — lanes become columns and
+ * notes fall onto a horizontal hit line.
  */
 
-import { RATING_COLOR } from "@/engine/types";
-import { PADS, padPosition } from "@/engine/gm";
+import { ledOf, ledUpcoming, RADIUS } from "@/engine/theme";
+import { PADS } from "@/engine/gm";
 import type { LaneFrame, LaneRenderer } from "@/views/lane-frame";
 
-const PX_PER_BEAT = 118;
-/** Fraction of the lane behind the hit line — the "already played" zone, so a
- *  note stays on screen after you strike it instead of vanishing instantly. */
-const PAST_FRACTION = 0.28;
-/** Width of the lane-name gutter in horizontal mode. */
-const GUTTER = 150;
+/** Canvas takes a font shorthand, not a CSS variable — mirrors `--mono`. */
+const MONO = '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
 
-const padColor = (i: number, a = 1) => `hsla(${(i * 47) % 360}, 55%, 60%, ${a})`;
+const PX_PER_BEAT = 118;
+/** Note square, px — the design's fixed size in both orientations. */
+const NOTE = 20;
+/** Label gutter in horizontal mode. */
+const GUTTER = 104;
+/** The already-played strip: fixed px into the note area, not a fraction. */
+const ELAPSED = 96;
+/** Hairline between lane rows. */
+const LANE_GAP = 1;
+/** The LED stripe down the leading edge of the gutter. */
+const LED_EDGE = 3;
+/** Fraction of the lane behind the hit line in vertical mode. */
+const PAST_FRACTION = 0.28;
 
 export class PadLanes implements LaneRenderer {
   private ctx: CanvasRenderingContext2D;
@@ -53,63 +62,14 @@ export class PadLanes implements LaneRenderer {
     const H = this.canvas.height / this.dpr;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = "#111318";
+    // The stack's background shows through the 1px gaps as the hairline.
+    ctx.fillStyle = f.theme === "light" ? f.palette.hair : f.palette.win;
     ctx.fillRect(0, 0, W, H);
 
     const lanes = f.padLanes.length ? f.padLanes : [12];
     const pxPerSec = PX_PER_BEAT / f.secPerBeat;
     if (f.orientation === "horizontal") this.drawHorizontal(f, W, H, lanes, pxPerSec);
     else this.drawVertical(f, W, H, lanes, pxPerSec);
-  }
-
-  // ------------------------------------------------------------- vertical
-
-  private drawVertical(f: LaneFrame, W: number, H: number, lanes: number[], pxPerSec: number): void {
-    const ctx = this.ctx;
-    const padL = 6;
-    const laneGap = 6;
-    const laneW = (W - padL * 2 - laneGap * (lanes.length - 1)) / lanes.length;
-    const hitY = Math.round(H * (1 - PAST_FRACTION));
-
-    lanes.forEach((pad, li) => {
-      const x = padL + li * (laneW + laneGap);
-      ctx.fillStyle = "#15181e";
-      ctx.fillRect(x, 0, laneW, H);
-      ctx.fillStyle = padColor(pad, 0.14);
-      ctx.fillRect(x, hitY - 3, laneW, 6);
-      ctx.strokeStyle = padColor(pad, 0.5);
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x + 0.5, hitY - 12, laneW - 1, 24);
-      ctx.fillStyle = padColor(pad, 0.85);
-      ctx.font = "600 11px ui-sans-serif, system-ui, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(PADS[pad].name.toUpperCase(), x + laneW / 2, 16);
-    });
-
-    ctx.fillStyle = "#00000055";
-    ctx.fillRect(0, hitY, W, H - hitY);
-
-    ctx.strokeStyle = "#37d0c4";
-    ctx.globalAlpha = 0.8;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(padL, hitY);
-    ctx.lineTo(W - padL, hitY);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-
-    if (!f.playing) return this.idle(W / 2, hitY - 40);
-
-    for (const inst of f.instances) {
-      const li = lanes.indexOf(inst.lane);
-      if (li < 0) continue;
-      const y = hitY - (inst.time - f.now) * pxPerSec;
-      if (y < -30 || y > H + 30) continue;
-      const x = padL + li * (laneW + laneGap);
-      this.note(x + 5, y - 10, laneW - 10, 20, 6, inst.resolved, inst.rating, padColor(inst.lane, 0.95));
-    }
-
-    this.countIn(f, W, H);
   }
 
   // ----------------------------------------------------------- horizontal
@@ -122,81 +82,130 @@ export class PadLanes implements LaneRenderer {
     pxPerSec: number,
   ): void {
     const ctx = this.ctx;
-    const gap = 5;
-    const laneH = (H - gap * (lanes.length - 1)) / lanes.length;
+    const p = f.palette;
+    const n = lanes.length;
+    const laneH = (H - LANE_GAP * (n - 1)) / n;
     const trackX = GUTTER;
-    const trackW = W - GUTTER;
-    // Playhead sits a little in from the left; notes arrive from the right.
-    const hitX = trackX + Math.round(trackW * PAST_FRACTION);
+    const trackW = Math.max(1, W - GUTTER);
+    const hitX = trackX + ELAPSED;
+    /** A lane is dimmed when it has nothing left to play on screen. */
+    const busy = new Set(f.instances.map((i) => i.lane));
 
     this.gutterHits = [];
     lanes.forEach((pad, li) => {
-      const y = li * (laneH + gap);
+      const y = li * (laneH + LANE_GAP);
+      const led = ledOf(p, li);
       this.gutterHits.push({ pad, y0: y, y1: y + laneH });
-      // lane row
-      ctx.fillStyle = "#15181e";
-      ctx.fillRect(trackX, y, trackW, laneH);
-      // hit target
-      ctx.fillStyle = padColor(pad, 0.14);
-      ctx.fillRect(hitX - 3, y, 6, laneH);
-      ctx.strokeStyle = padColor(pad, 0.5);
-      ctx.lineWidth = 1;
-      ctx.strokeRect(hitX - 12.5, y + 0.5, 24, laneH - 1);
 
-      // gutter: the pad's place on the controller, then its name
-      ctx.fillStyle = "#1a1e24";
-      this.roundRect(2, y + 1, GUTTER - 10, laneH - 2, 8);
-      ctx.fill();
-      ctx.strokeStyle = padColor(pad, 0.45);
-      ctx.lineWidth = 1;
-      ctx.stroke();
+      // gutter — LED stripe on the leading edge, then the label
+      ctx.fillStyle = p.gutter;
+      ctx.fillRect(0, y, GUTTER, laneH);
+      ctx.fillStyle = led;
+      ctx.fillRect(0, y, LED_EDGE, laneH);
+      if (f.theme === "light") {
+        ctx.fillStyle = p.hair;
+        ctx.fillRect(GUTTER - 1, y, 1, laneH);
+      }
 
-      const grid = this.miniGrid(pad, f.padLayout, 11, y + laneH / 2);
-      ctx.fillStyle = padColor(pad, 0.95);
-      ctx.font = "700 11.5px ui-sans-serif, system-ui, sans-serif";
+      ctx.fillStyle = f.playing && !busy.has(pad) ? p.txt2 : p.txt;
+      ctx.font = `500 8.5px ${MONO}`;
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
-      ctx.fillText(
-        PADS[pad].name.toUpperCase(),
-        grid + 9,
-        y + laneH / 2,
-        GUTTER - grid - 22,
-      );
-      ctx.textBaseline = "alphabetic";
+      this.tracked(PADS[pad].name.toUpperCase(), 9 + LED_EDGE, y + laneH / 2, 1.1, GUTTER - 22);
+
+      // note bed, then the already-played strip and the playhead
+      ctx.fillStyle = p.lane;
+      ctx.fillRect(trackX, y, trackW, laneH);
+      ctx.fillStyle = p.elapsed;
+      ctx.fillRect(trackX, y, Math.min(ELAPSED, trackW), laneH);
     });
 
-    // already-played zone, left of the playhead
-    ctx.fillStyle = "#00000055";
-    ctx.fillRect(trackX, 0, hitX - trackX, H);
+    ctx.textBaseline = "alphabetic";
 
-    ctx.strokeStyle = "#37d0c4";
-    ctx.globalAlpha = 0.8;
-    ctx.lineWidth = 2;
+    if (hitX < W) {
+      ctx.fillStyle = p.head;
+      ctx.fillRect(hitX, 0, 2, H);
+    }
+
+    if (!f.playing) return this.idle(f, trackX + trackW / 2, H / 2);
+
+    // Clip to the note area: a note scrolling out on the left is half over the
+    // gutter by the time its centre reaches it, and would paint across the label.
+    ctx.save();
     ctx.beginPath();
-    ctx.moveTo(hitX, 0);
-    ctx.lineTo(hitX, H);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
+    ctx.rect(trackX, 0, trackW, H);
+    ctx.clip();
 
-    if (!f.playing) return this.idle(trackX + trackW / 2, H / 2);
-
-    const noteW = Math.min(26, Math.max(14, laneH * 0.7));
+    const size = Math.min(NOTE, Math.max(6, laneH - 4));
     for (const inst of f.instances) {
       const li = lanes.indexOf(inst.lane);
       if (li < 0) continue;
       const x = hitX + (inst.time - f.now) * pxPerSec;
-      if (x < trackX - 40 || x > W + 40) continue;
-      const y = li * (laneH + gap);
-      const h = Math.max(10, laneH - 8);
+      if (x < trackX - NOTE || x > W + NOTE) continue;
+      const y = li * (laneH + LANE_GAP);
       this.note(
-        x - noteW / 2,
-        y + (laneH - h) / 2,
-        noteW,
-        h,
-        5,
-        inst.resolved,
-        inst.rating,
-        padColor(inst.lane, 0.95),
+        f,
+        x - size / 2,
+        y + (laneH - size) / 2,
+        size,
+        size,
+        inst.resolved ? p.rating[inst.rating!] : ledUpcoming(p, li),
+      );
+    }
+    ctx.restore();
+
+    this.countIn(f, W, H);
+  }
+
+  // ------------------------------------------------------------- vertical
+
+  private drawVertical(f: LaneFrame, W: number, H: number, lanes: number[], pxPerSec: number): void {
+    const ctx = this.ctx;
+    const p = f.palette;
+    const n = lanes.length;
+    const laneW = (W - LANE_GAP * (n - 1)) / n;
+    const hitY = Math.round(H * (1 - PAST_FRACTION));
+
+    lanes.forEach((pad, li) => {
+      const x = li * (laneW + LANE_GAP);
+      const led = ledOf(p, li);
+
+      ctx.fillStyle = p.lane;
+      ctx.fillRect(x, 0, laneW, H);
+      // already-played zone below the hit line
+      ctx.fillStyle = p.elapsed;
+      ctx.fillRect(x, hitY, laneW, H - hitY);
+      // the lane's LED reads as a header band, standing in for the gutter
+      ctx.fillStyle = led;
+      ctx.fillRect(x, 0, laneW, LED_EDGE);
+
+      ctx.fillStyle = p.txt;
+      ctx.font = `500 8.5px ${MONO}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      this.trackedCentered(PADS[pad].name.toUpperCase(), x + laneW / 2, LED_EDGE + 10, 1.1, laneW - 8);
+    });
+
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = p.head;
+    ctx.fillRect(0, hitY, W, 2);
+
+    if (!f.playing) return this.idle(f, W / 2, hitY - 40);
+
+    const size = Math.min(NOTE, Math.max(6, laneW - 6));
+    for (const inst of f.instances) {
+      const li = lanes.indexOf(inst.lane);
+      if (li < 0) continue;
+      const y = hitY - (inst.time - f.now) * pxPerSec;
+      if (y < -NOTE || y > H + NOTE) continue;
+      const x = li * (laneW + LANE_GAP);
+      this.note(
+        f,
+        x + (laneW - size) / 2,
+        y - size / 2,
+        size,
+        size,
+        inst.resolved ? p.rating[inst.rating!] : ledUpcoming(p, li),
       );
     }
 
@@ -205,29 +214,6 @@ export class PadLanes implements LaneRenderer {
 
   // ---------------------------------------------------------------- parts
 
-  /**
-   * The controller grid with this pad's cell lit, drawn from `cx` at vertical
-   * centre `cy`. Returns the x the grid ends at, so the name can follow it.
-   */
-  private miniGrid(pad: number, layout: LaneFrame["padLayout"], cx: number, cy: number): number {
-    const ctx = this.ctx;
-    const p = padPosition(pad, layout);
-    const cell = 3;
-    const step = cell + 1.5;
-    const gw = p.cols * step - 1.5;
-    const gh = p.rows * step - 1.5;
-    const x0 = cx;
-    const y0 = cy - gh / 2;
-    for (let r = 0; r < p.rows; r++) {
-      for (let c = 0; c < p.cols; c++) {
-        const on = r === p.row && c === p.col;
-        ctx.fillStyle = on ? padColor(pad, 1) : "#2b313a";
-        ctx.fillRect(x0 + c * step, y0 + r * step, cell, cell);
-      }
-    }
-    return x0 + gw;
-  }
-
   /** Pad under a point in the gutter, for click-to-play. Null elsewhere. */
   laneAt(x: number, y: number): number | null {
     if (x > GUTTER) return null;
@@ -235,55 +221,87 @@ export class PadLanes implements LaneRenderer {
     return null;
   }
 
-  private note(
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    r: number,
-    resolved: boolean,
-    rating: LaneFrame["instances"][number]["rating"],
-    baseColor: string,
-  ): void {
+  private note(f: LaneFrame, x: number, y: number, w: number, h: number, color: string): void {
     const ctx = this.ctx;
-    this.roundRect(x, y, w, h, r);
-    ctx.fillStyle = resolved ? RATING_COLOR[rating!] : baseColor;
-    ctx.globalAlpha = resolved ? 0.85 : 1;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    if (!resolved) {
-      ctx.strokeStyle = "#ffffff33";
-      ctx.lineWidth = 1;
-      ctx.stroke();
+    const r = RADIUS[f.theme].note;
+    ctx.fillStyle = color;
+    if (r <= 0) {
+      ctx.fillRect(x, y, w, h);
+      return;
     }
+    this.roundRect(x, y, w, h, r);
+    ctx.fill();
   }
 
-  private idle(cx: number, cy: number): void {
+  private idle(f: LaneFrame, cx: number, cy: number): void {
     const ctx = this.ctx;
-    ctx.fillStyle = "#5a626d";
-    ctx.font = "500 13px ui-sans-serif, system-ui, sans-serif";
+    ctx.fillStyle = f.palette.txt3;
+    ctx.font = `500 8.5px ${MONO}`;
     ctx.textAlign = "center";
-    ctx.fillText("Press Play to start the count-in", cx, cy);
+    ctx.textBaseline = "middle";
+    this.trackedCentered("PRESS START FOR THE COUNT-IN", cx, cy, 1.1, Infinity);
+    ctx.textBaseline = "alphabetic";
   }
 
   private countIn(f: LaneFrame, W: number, H: number): void {
     if (!f.countIn) return;
     const ctx = this.ctx;
+    const p = f.palette;
     const remaining = Math.ceil(f.countInBeats - f.countInBeat);
     const frac = f.countInBeat - Math.floor(f.countInBeat);
-    ctx.fillStyle = "#0e1013aa";
+    ctx.fillStyle = f.theme === "light" ? "#cccccc99" : "#0e0e0f99";
     ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = "#ffb340";
+    ctx.fillStyle = p.head;
     ctx.globalAlpha = f.reducedMotion ? 1 : 1 - frac * 0.6;
-    ctx.font = "700 64px ui-monospace, SFMono-Regular, Menlo, monospace";
+    ctx.font = `500 56px ${MONO}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(String(remaining), W / 2, H / 2 - 10);
+    ctx.fillText(String(remaining), W / 2, H / 2 - 8);
     ctx.globalAlpha = 1;
-    ctx.font = "600 12px ui-sans-serif, system-ui, sans-serif";
-    ctx.fillStyle = "#8a929e";
-    ctx.fillText("COUNT-IN", W / 2, H / 2 + 34);
+    ctx.font = `500 8.5px ${MONO}`;
+    ctx.fillStyle = p.txt3;
+    this.trackedCentered("COUNT-IN", W / 2, H / 2 + 30, 1.2, Infinity);
     ctx.textBaseline = "alphabetic";
+  }
+
+  /**
+   * Canvas has no letter-spacing, and the design leans on it for every label.
+   * Draws left-aligned from `x`, clipping to `maxWidth` with an ellipsis.
+   */
+  private tracked(text: string, x: number, y: number, spacing: number, maxWidth: number): void {
+    const ctx = this.ctx;
+    const width = (s: string) => ctx.measureText(s).width + spacing * Math.max(0, s.length - 1);
+    let s = text;
+    if (width(s) > maxWidth) {
+      while (s.length > 1 && width(s + "…") > maxWidth) s = s.slice(0, -1);
+      s += "…";
+    }
+    let cx = x;
+    for (const ch of s) {
+      ctx.fillText(ch, cx, y);
+      cx += ctx.measureText(ch).width + spacing;
+    }
+  }
+
+  /** Same, centred on `cx`. */
+  private trackedCentered(
+    text: string,
+    cx: number,
+    y: number,
+    spacing: number,
+    maxWidth: number,
+  ): void {
+    const ctx = this.ctx;
+    const prev = ctx.textAlign;
+    ctx.textAlign = "left";
+    const width = (s: string) => ctx.measureText(s).width + spacing * Math.max(0, s.length - 1);
+    let s = text;
+    if (width(s) > maxWidth) {
+      while (s.length > 1 && width(s + "…") > maxWidth) s = s.slice(0, -1);
+      s += "…";
+    }
+    this.tracked(s, cx - width(s) / 2, y, spacing, Infinity);
+    ctx.textAlign = prev;
   }
 
   private roundRect(x: number, y: number, w: number, h: number, r: number): void {
