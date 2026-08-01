@@ -9,9 +9,14 @@
  * Notes are 3x3 squares on three vertical bands — the strip is too short to
  * give every lane its own row, so the bands only hint at register. The lane
  * stack below is where you read individual lanes.
+ *
+ * A viewport rectangle around the playhead marks the slice of the loop the
+ * lane is currently showing (Melodics-style), so the strip answers both
+ * "where am I?" and "how much of the pattern can I see?".
  */
 
 import type { TargetNote } from "@/engine/scoring";
+import type { VisibleWindow } from "@/views/lane-frame";
 import { ledUpcoming, RADIUS, type Palette, type Theme } from "@/engine/theme";
 import type { InstrumentType, Rating } from "@/engine/types";
 
@@ -27,6 +32,11 @@ export interface OverviewFrame {
   beatInLoop: number | null;
   /** Rating of each target in the current loop, by target index. */
   ratings: ReadonlyMap<number, Rating>;
+  /**
+   * The slice of the timeline the lane below is showing, from its renderer.
+   * Drawn as the viewport rectangle. Null when stopped.
+   */
+  view: VisibleWindow | null;
   palette: Palette;
   theme: Theme;
 }
@@ -37,6 +47,36 @@ const MARK = 3;
 const BAND_PAD = 4;
 /** How many vertical bands lanes are folded onto. */
 const BANDS = 3;
+/** Hex alpha for the viewport rectangle's fill and its edge. */
+const VIEW_FILL = "1f";
+const VIEW_EDGE = "99";
+
+/**
+ * The loop-relative span(s) the viewport rectangle covers, as `[from, to)`
+ * beat pairs.
+ *
+ * The lane scrolls a continuous timeline while the strip shows a single loop,
+ * so the window can run off one end and reappear at the other. That returns
+ * two segments; their outer edges land on the strip's own edges, which reads
+ * as one rectangle wrapping round. When the window is at least a loop wide the
+ * whole loop is on screen at once and the rectangle covers the strip.
+ *
+ * Exported for its own tests — it is the one bit of real arithmetic here.
+ */
+export function viewportSegments(
+  beatInLoop: number,
+  view: VisibleWindow,
+  loopBeats: number,
+): Array<[number, number]> {
+  const loop = Math.max(1e-9, loopBeats);
+  const span = view.behind + view.ahead;
+  if (span <= 0) return [];
+  if (span >= loop) return [[0, loop]];
+
+  const start = (((beatInLoop - view.behind) % loop) + loop) % loop;
+  const end = start + span;
+  return end <= loop ? [[start, end]] : [[start, loop], [0, end - loop]];
+}
 
 export class Overview {
   private ctx: CanvasRenderingContext2D;
@@ -115,9 +155,38 @@ export class Overview {
       ctx.fillRect(Math.round(xOf(t.beat)), Math.round(bandY(bandOf(t.lane))), MARK, MARK);
     });
 
+    // Viewport rectangle: the slice of the loop the lane below is showing, so
+    // what sits inside the rectangle is exactly what is on screen. Drawn
+    // under the playhead so the playhead stays the brightest mark.
+    if (f.beatInLoop !== null && f.view) {
+      this.viewport(f, H, loop, xOf);
+    }
+
     if (f.beatInLoop !== null) {
       ctx.fillStyle = p.head;
       ctx.fillRect(Math.round(xOf(f.beatInLoop)), 0, 2, H);
+    }
+  }
+
+  /** Paint the window rectangle from `viewportSegments`. */
+  private viewport(
+    f: OverviewFrame,
+    H: number,
+    loop: number,
+    xOf: (beat: number) => number,
+  ): void {
+    const ctx = this.ctx;
+    const p = f.palette;
+
+    for (const [a, bEnd] of viewportSegments(f.beatInLoop!, f.view!, loop)) {
+      const x0 = Math.round(xOf(a)) + 0.5;
+      const x1 = Math.round(xOf(bEnd)) - 0.5;
+      if (x1 <= x0) continue;
+      ctx.fillStyle = p.head + VIEW_FILL;
+      ctx.fillRect(x0, 0.5, x1 - x0, H - 1);
+      ctx.strokeStyle = p.head + VIEW_EDGE;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x0, 0.5, x1 - x0, H - 1);
     }
   }
 }

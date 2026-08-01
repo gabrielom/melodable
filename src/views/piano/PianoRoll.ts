@@ -14,7 +14,7 @@
  */
 
 import { ledUpcoming, RADIUS } from "@/engine/theme";
-import type { LaneFrame, LaneRenderer } from "@/views/lane-frame";
+import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
 import { countWhiteKeys, isWhiteKey, keyGeometry, noteName, pitchClass } from "@/engine/pitch";
 
 const PX_PER_BEAT = 118;
@@ -36,9 +36,15 @@ const BLACK_LED = 2;
 export class PianoRoll implements LaneRenderer {
   private ctx: CanvasRenderingContext2D;
   private dpr = 1;
+  /** Timeline on screen at the last draw, for the overview's viewport rect. */
+  private window: VisibleWindow = { behind: 0, ahead: 0 };
 
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext("2d")!;
+  }
+
+  visibleBeats(): VisibleWindow {
+    return this.window;
   }
 
   resize(): void {
@@ -74,6 +80,7 @@ export class PianoRoll implements LaneRenderer {
     const high = f.highNote;
     const whiteWidth = W / Math.max(1, countWhiteKeys(low, high));
     const hitY = Math.round(H * (1 - PAST_FRACTION));
+    this.window = { behind: (H - hitY) / PX_PER_BEAT, ahead: hitY / PX_PER_BEAT };
 
     for (let note = low; note <= high; note++) {
       const g = keyGeometry(note, low, whiteWidth);
@@ -135,6 +142,7 @@ export class PianoRoll implements LaneRenderer {
     const trackX = GUTTER;
     const trackW = W - GUTTER;
     const hitX = trackX + Math.round(trackW * PAST_FRACTION);
+    this.window = { behind: (hitX - trackX) / PX_PER_BEAT, ahead: (W - hitX) / PX_PER_BEAT };
     /** Row 0 is the highest pitch, so pitch rises up the screen. */
     const rowY = (pitch: number) => (high - pitch) * rowH;
 

@@ -43,8 +43,27 @@ export interface LaneFrame {
   highNote: number;
 }
 
+/**
+ * The slice of the timeline a renderer has on screen, measured in beats either
+ * side of the playhead. Tempo-independent: the lane scrolls at a fixed number
+ * of pixels per beat, so this depends only on the canvas size and layout.
+ */
+export interface VisibleWindow {
+  /** Beats of already-played timeline still visible behind the playhead. */
+  behind: number;
+  /** Beats of upcoming timeline visible ahead of the playhead. */
+  ahead: number;
+}
+
 export interface LaneRenderer {
   /** Match the backing store to the element's CSS size. */
   resize(): void;
   draw(frame: LaneFrame): void;
+  /**
+   * The window `draw` last used. The overview strip draws this as a viewport
+   * rectangle, so what sits inside the rectangle is exactly what is on screen
+   * below. Recorded during the draw rather than recomputed, so the two can
+   * never disagree about the geometry.
+   */
+  visibleBeats(): VisibleWindow;
 }

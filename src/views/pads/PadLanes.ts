@@ -15,7 +15,7 @@
 
 import { ledOf, ledUpcoming, RADIUS } from "@/engine/theme";
 import { PADS } from "@/engine/gm";
-import type { LaneFrame, LaneRenderer } from "@/views/lane-frame";
+import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
 
 /** Canvas takes a font shorthand, not a CSS variable — mirrors `--mono`. */
 const MONO = '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
@@ -39,6 +39,8 @@ export class PadLanes implements LaneRenderer {
   private dpr = 1;
   /** Gutter hit boxes from the last horizontal draw, for mouse triggering. */
   private gutterHits: Array<{ pad: number; y0: number; y1: number }> = [];
+  /** Timeline on screen at the last draw, for the overview's viewport rect. */
+  private window: VisibleWindow = { behind: 0, ahead: 0 };
 
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext("2d")!;
@@ -88,6 +90,10 @@ export class PadLanes implements LaneRenderer {
     const trackX = GUTTER;
     const trackW = Math.max(1, W - GUTTER);
     const hitX = trackX + ELAPSED;
+    this.window = {
+      behind: Math.min(ELAPSED, trackW) / PX_PER_BEAT,
+      ahead: Math.max(0, trackW - ELAPSED) / PX_PER_BEAT,
+    };
     /** A lane is dimmed when it has nothing left to play on screen. */
     const busy = new Set(f.instances.map((i) => i.lane));
 
@@ -165,6 +171,7 @@ export class PadLanes implements LaneRenderer {
     const n = lanes.length;
     const laneW = (W - LANE_GAP * (n - 1)) / n;
     const hitY = Math.round(H * (1 - PAST_FRACTION));
+    this.window = { behind: (H - hitY) / PX_PER_BEAT, ahead: hitY / PX_PER_BEAT };
 
     lanes.forEach((pad, li) => {
       const x = li * (laneW + LANE_GAP);
@@ -213,6 +220,10 @@ export class PadLanes implements LaneRenderer {
   }
 
   // ---------------------------------------------------------------- parts
+
+  visibleBeats(): VisibleWindow {
+    return this.window;
+  }
 
   /** Pad under a point in the gutter, for click-to-play. Null elsewhere. */
   laneAt(x: number, y: number): number | null {

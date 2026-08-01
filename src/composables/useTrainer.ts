@@ -192,6 +192,9 @@ export function useTrainer(
       loopBeats: transport.loopBeats,
       beatInLoop,
       ratings: loopRatings,
+      // The renderer reports the window it just drew, so the overview's
+      // viewport rectangle always matches what is actually on screen.
+      view: beatInLoop === null ? null : (renderer?.visibleBeats() ?? null),
       palette: palette.value,
       theme: settings.theme,
     });
