@@ -1,0 +1,193 @@
+/*
+ * Design tokens — the DOM half of the palette. The canvas renderers can't read
+ * custom properties, so `src/engine/theme.ts` carries the same values as data.
+ * Change one, change the other.
+ *
+ * Two themes, swapped by `data-theme` on <html>. Dark is a Maschine-style
+ * near-black chassis; light is Ableton's single flat grey. In light every
+ * surface is the *same* grey, so fields and buttons need the hairline outline
+ * (`--outline`) or they disappear — and on-states invert to a dark chip
+ * instead of lightening.
+ */
+
+@font-face {
+  font-family: "Geist";
+  src: url("./assets/fonts/Geist-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist";
+  src: url("./assets/fonts/Geist-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("./assets/fonts/GeistMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("./assets/fonts/GeistMono-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+
+:root {
+  --sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Metrics — fixed across themes. */
+  --bar-h: 34px;
+  --ctl-h: 20px;
+  --seg-item-h: 16px;
+  --overview-h: 22px;
+  --gutter-w: 104px;
+  --elapsed-w: 96px;
+  --pad-win: 6px;
+  --gap-section: 4px;
+  --gap-bar: 9px;
+}
+
+/* ------------------------------------------------------------------ dark */
+:root,
+:root[data-theme="dark"] {
+  --win: #0e0e0f;
+  --bar: #171718;
+  --bar-line: #2a2a2c;
+  --face: #202021;
+  --track: #101011;
+  --active: #2e2e30;
+  --active-txt: #f2f2f3;
+  --gutter: #1b1b1d;
+  --lane: #141415;
+  --elapsed: #0b0b0c;
+  --grid: #202021;
+  --head: #4ccfe0;
+  --hair: #2a2a2c;
+
+  --txt: #f2f2f3;
+  --txt2: #98989c;
+  --txt3: #67676c;
+
+  --stop: #e24b42;
+  --stop-txt: #2a0805;
+  --start: #4fbf6a;
+  --start-txt: #06210c;
+
+  --mon-tab: #16292c;
+  --mon-icon: #4ccfe0;
+
+  /* Rating colours, mirroring `rating` in engine/theme.ts. The loose band is
+     split by direction — rushing and dragging read differently. The bar's
+     score readouts borrow them: ACC as "perfect", CMB as the early amber. */
+  --rate-perfect: #59c46b;
+  --rate-great: #4ccfe0;
+  --rate-early: #f0a129;
+  --rate-late: #dd6ba8;
+  --rate-miss: #e24b42;
+  /* First lane LED — also the device chip's "connected" dot. */
+  --led0: #59c46b;
+  /* Lane LEDs used by chrome: 1 (amber) marks the current lesson and pads;
+     2 (blue) is the old rating blue, now a lane colour only (§21). */
+  --led1: #f0a129;
+  --led2: #3d9fe6;
+  /* Unlit cells of the controller mini-grid. */
+  --mini-off: #2e2e30;
+  /* Held key and lesson-target key share one amber (handoff 02 §22). */
+  --key-mark: #f0a129;
+  /* Overview strip's viewport rectangle — neutral, never the accent. */
+  --view-fill: #1b1b1d;
+  --view-edge: #4a4a4e;
+
+  --hover: #232324;
+
+  --r-panel: 3px;
+  --r-field: 3px;
+  --r-item: 2px;
+
+  /* Dark surfaces read on their own; no outline needed. */
+  --outline: none;
+}
+
+/* ----------------------------------------------------------------- light */
+:root[data-theme="light"] {
+  --win: #cccccc;
+  --bar: #cccccc;
+  --bar-line: #b0b0b0;
+  --face: #cccccc;
+  --track: #cccccc;
+  --active: #2c2d2e;
+  --active-txt: #e9e9ea;
+  --gutter: #cccccc;
+  --lane: #cccccc;
+  --elapsed: #c4c4c4;
+  --grid: #c2c2c2;
+  --head: #2c2d2e;
+  --hair: #b0b0b0;
+
+  --txt: #232324;
+  --txt2: #55565a;
+  --txt3: #74757a;
+
+  --stop: #a8382f;
+  --stop-txt: #f4e9e8;
+  --start: #3d8f4c;
+  --start-txt: #eef6ef;
+
+  --mon-tab: #2c2d2e;
+  --mon-icon: #e9e9ea;
+
+  --rate-perfect: #3d8f4c;
+  --rate-great: #0f7f92;
+  --rate-early: #a5710d;
+  --rate-late: #9e3c72;
+  --rate-miss: #a8382f;
+  --led0: #3d8f4c;
+  --led1: #b1720f;
+  --led2: #2b6fae;
+  --mini-off: #b6b6b6;
+  --key-mark: #a5710d;
+  --view-fill: #d4d4d4;
+  --view-edge: #8f8f8f;
+
+  --hover: #c4c4c4;
+
+  --r-panel: 0px;
+  --r-field: 2px;
+  --r-item: 1px;
+
+  --outline: inset 0 0 0 1px var(--hair);
+}
+
+* { box-sizing: border-box; }
+
+html, body, #app { height: 100%; }
+html { overflow: hidden; }
+
+body {
+  margin: 0;
+  background: var(--win);
+  color: var(--txt);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+
+button { font-family: inherit; color: inherit; }
+
+/* Every numeral in the UI is tabular so values don't jitter as they count. */
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--hair); border-radius: 5px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

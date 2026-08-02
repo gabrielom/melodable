@@ -1,0 +1,29 @@
+[package]
+name = "rhythm-trainer"
+version = "0.1.0"
+description = "Rhythm Trainer — timing trainer for pads and piano"
+authors = ["you"]
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-store = "2"
+serde = { version = "1", features = ["derive"] }
+midir = "0.10"
+# Ableton Link (M6). Feature-gated: needs CMake to build, so the app must
+# still compile and run with the feature off.
+rusty_link = { version = "0.4", optional = true }
+
+[features]
+default = ["link"]
+link = ["dep:rusty_link"]
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

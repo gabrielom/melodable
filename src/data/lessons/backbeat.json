@@ -1,0 +1,17 @@
+{
+  "id": "builtin-backbeat",
+  "name": "Backbeat",
+  "instrument": "pads",
+  "bpm": 82,
+  "bars": 1,
+  "beatsPerBar": 4,
+  "repeats": 16,
+  "source": "builtin",
+  "hint": "Kick on 1 & 3, snare answers on 2 & 4.",
+  "notes": [
+    { "time": 0, "pitch": 36 },
+    { "time": 1, "pitch": 38 },
+    { "time": 2, "pitch": 36 },
+    { "time": 3, "pitch": 38 }
+  ]
+}

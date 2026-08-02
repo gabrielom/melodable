@@ -1,0 +1,30 @@
+{
+  "name": "rhythm-trainer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Melodics-style timing trainer for MPC-style pads and piano, with Ableton clip import and Link sync.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "icons": "node scripts/render-icons.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-store": "^2.4.4",
+    "pinia": "^2.1.7",
+    "vue": "^3.4.21"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "@vitejs/plugin-vue": "^5.0.4",
+    "typescript": "^5.4.5",
+    "vite": "^5.2.10",
+    "vitest": "^1.6.0",
+    "vue-tsc": "^2.0.16"
+  }
+}

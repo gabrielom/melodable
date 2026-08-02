@@ -1,0 +1,17 @@
+{
+  "id": "builtin-four-on-the-floor",
+  "name": "Four on the Floor",
+  "instrument": "pads",
+  "bpm": 78,
+  "bars": 1,
+  "beatsPerBar": 4,
+  "repeats": 16,
+  "source": "builtin",
+  "hint": "Steady kick on every beat. Lock to the click.",
+  "notes": [
+    { "time": 0, "pitch": 36 },
+    { "time": 1, "pitch": 36 },
+    { "time": 2, "pitch": 36 },
+    { "time": 3, "pitch": 36 }
+  ]
+}
