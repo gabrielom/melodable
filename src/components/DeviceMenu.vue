@@ -111,7 +111,12 @@ onUnmounted(() => {
 /* Face chip: 20px like every other bar control, LED dot showing connection. */
 .trigger {
   height: 20px;
-  max-width: 112px;
+  /* Sized so "SELECT DEVICE" — the longest label the control writes itself —
+     is never ellipsised. Measured at 116px for the 8.5px mono with its 1.1px
+     tracking; 112px clipped it by 4px. Port names longer than this still
+     ellipsise, which is the point: the chip has a fixed cost in the bar's
+     width budget, and a device can be called anything. */
+  max-width: 116px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
