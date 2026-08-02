@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for the main window",
+  "description": "Default capability for the main window. start-dragging is granted explicitly: core:window:default carries internal-toggle-maximize but not start-dragging, so without it the transport bar's drag region can double-click-zoom and nothing else, and the window only moves on the click that focuses it — that one is AppKit's, not ours.",
   "windows": ["main"],
-  "permissions": ["core:default", "store:default"]
+  "permissions": ["core:default", "store:default", "core:window:allow-start-dragging"]
 }
