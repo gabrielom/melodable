@@ -57,7 +57,7 @@ The **trainer redesign** (two handoffs) has also landed: light + dark themes, a
   - macOS: Xcode Command Line Tools
   - Windows: MSVC Build Tools + WebView2
   - Linux: `webkit2gtk-4.1`, `libayatana-appindicator3`, `librsvg2`, plus `libasound2-dev` and `pkg-config` for ALSA MIDI
-- **CMake 3.14+** — required: `rusty_link` compiles the Ableton Link C++ library. `brew install cmake` on macOS. To build without it, see the note under *Run it*.
+- **CMake 3.14+** — needed only for Ableton Link, which `rusty_link` compiles from C++. `brew install cmake`, or see *Run it* below for the installer-only route and for building without Link.
 
 ## Run it
 
@@ -68,13 +68,21 @@ npm run tauri dev
 
 First run compiles the Rust side and takes a few minutes; after that it's fast and hot-reloads the Vue side.
 
-**No CMake?** Ableton Link is behind a cargo feature, so you can drop it:
+**No CMake?** Ableton Link is behind a cargo feature, so you can drop it. Pass
+this flag **and nothing else** — adding `--features link` turns Link back on and
+you are back to needing CMake:
 
 ```bash
 npm run tauri dev -- --no-default-features
 ```
 
 Everything else works; the chain toggle just hides itself.
+
+Without Homebrew, CMake also ships its own macOS installer: download the
+universal `.dmg` from <https://cmake.org/download/>, drag `CMake.app` to
+`/Applications`, then
+`sudo "/Applications/CMake.app/Contents/bin/cmake-gui" --install` to put it on
+your PATH.
 
 **Browser-only** — `npm run dev` renders the UI at http://localhost:1420 for quick styling. MIDI, Ableton Link and persistence all need the Tauri shell.
 
