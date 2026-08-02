@@ -347,7 +347,15 @@ const {
 const heldKeys = new Set<string>();
 
 function onKeyDown(e: KeyboardEvent) {
-  if (e.key === "Escape" && padMenuOpen.value) padMenuOpen.value = false;
+  // Escape closes whichever bar menu is open, then stops the run.
+  if (e.key === "Escape" && openMenu.value) {
+    openMenu.value = null;
+    return;
+  }
+  if (e.key === "Escape" && playing.value) {
+    stop();
+    return;
+  }
   if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
   const key = e.key.toLowerCase();
   if (heldKeys.has(key)) return;
@@ -410,30 +418,37 @@ const padLayouts: Array<{ id: PadLayout; label: string; hint: string }> = [
   { id: "2x8", label: "2×8", hint: "Launchkey, two rows" },
 ];
 
-const padMenuOpen = ref(false);
+/**
+ * Only one bar menu is ever open — they overlap each other and the lane, and
+ * two open at once reads as a mistake. The bar lifts above the stage while
+ * any of them is showing so the panel isn't clipped by the lane canvas.
+ */
+type BarMenu = "pad" | "device" | "volume" | null;
+const openMenu = ref<BarMenu>(null);
+const padMenuOpen = computed(() => openMenu.value === "pad");
+const volMenuOpen = computed(() => openMenu.value === "volume");
 const padMenuRoot = ref<HTMLElement | null>(null);
-const volMenuOpen = ref(false);
 const volMenuRoot = ref<HTMLElement | null>(null);
 
+function toggleMenu(which: Exclude<BarMenu, null>) {
+  openMenu.value = openMenu.value === which ? null : which;
+}
+
 function togglePadMenu() {
-  padMenuOpen.value = !padMenuOpen.value;
+  toggleMenu("pad");
   // Opening the layout menu implies you're working with the pads.
   if (padMenuOpen.value && settings.instrument !== "pads") setMode("pads");
 }
 
 function pickPadLayout(id: PadLayout) {
   settings.padLayout = id;
-  padMenuOpen.value = false;
+  openMenu.value = null;
 }
 
 function onPadMenuPointer(e: PointerEvent) {
   const t = e.target as Node;
-  if (padMenuOpen.value && padMenuRoot.value && !padMenuRoot.value.contains(t)) {
-    padMenuOpen.value = false;
-  }
-  if (volMenuOpen.value && volMenuRoot.value && !volMenuRoot.value.contains(t)) {
-    volMenuOpen.value = false;
-  }
+  if (padMenuOpen.value && padMenuRoot.value && !padMenuRoot.value.contains(t)) openMenu.value = null;
+  if (volMenuOpen.value && volMenuRoot.value && !volMenuRoot.value.contains(t)) openMenu.value = null;
 }
 
 /**
@@ -474,7 +489,7 @@ function onVolume(e: Event) {
          empty space draggable. One row, all controls, down to ~1100px — below
          that things drop out in the order the design specifies (see `.app`
          media queries at the bottom of this file). -->
-    <header class="bar" data-tauri-drag-region>
+    <header class="bar" :class="{ 'menu-open': openMenu !== null }" data-tauri-drag-region>
       <template v-if="view === 'trainer'">
         <button class="ico" title="Back to lessons" aria-label="Back to lessons" @click="goHome">
           ✕
@@ -532,7 +547,7 @@ function onVolume(e: Event) {
         <i class="divider" />
       </template>
 
-      <div class="seg" role="group" aria-label="Note direction">
+      <div v-if="view === 'trainer'" class="seg" role="group" aria-label="Note direction">
         <button
           class="seg-i icon"
           :class="{ on: settings.laneOrientation === 'vertical' }"
@@ -553,14 +568,14 @@ function onVolume(e: Event) {
         </button>
       </div>
 
-      <div class="seg" role="group" aria-label="Instrument">
+      <div v-if="view === 'trainer'" class="seg" role="group" aria-label="Instrument">
         <span ref="padMenuRoot" class="seg-wrap">
           <button
             class="seg-i"
             :class="{ on: settings.instrument === 'pads' }"
             @click="settings.instrument === 'pads' ? togglePadMenu() : setMode('pads')"
           >
-            PADS <i class="caret">▾</i>
+            PADS <i class="caret">{{ padMenuOpen ? "▴" : "▾" }}</i>
           </button>
 
           <div v-if="padMenuOpen" class="menu" role="menu">
@@ -591,9 +606,15 @@ function onVolume(e: Event) {
         </button>
       </div>
 
+      <span v-if="view === 'home'" class="wordmark">MELODABLE</span>
+
       <div class="spacer" data-tauri-drag-region />
       <span v-if="view === 'trainer'" class="title">{{ lesson.name }}</span>
       <div class="spacer" data-tauri-drag-region />
+
+      <span v-if="view === 'home'" class="count num">
+        {{ lessons.lessons.length }}<i>LESSONS</i>
+      </span>
 
       <span v-if="view === 'trainer'" class="scores">
         <span class="score" :title="runComplete ? 'Accuracy for the last run' : 'Accuracy so far'">
@@ -642,6 +663,7 @@ function onVolume(e: Event) {
       </button>
 
       <DeviceMenu
+        :open="openMenu === 'device'"
         :ports="ports"
         :connected-index="connectedIndex"
         :connected-name="connectedName"
@@ -650,9 +672,11 @@ function onVolume(e: Event) {
         @refresh="refreshPorts()"
         @connect="(i: number) => connect(i)"
         @disconnect="disconnect()"
+        @toggle="toggleMenu('device')"
+        @close="openMenu = null"
       />
 
-      <div class="seg" role="group" aria-label="Instrument sound source">
+      <div v-if="view === 'trainer'" class="seg" role="group" aria-label="Instrument sound source">
         <button
           class="seg-i"
           :class="{ on: settings.soundOutput === 'internal' }"
@@ -678,7 +702,7 @@ function onVolume(e: Event) {
           :title="`Volume — ${Math.round(settings.volume * 100)}%`"
           aria-label="Volume"
           :aria-expanded="volMenuOpen"
-          @click="volMenuOpen = !volMenuOpen"
+          @click="toggleMenu('volume')"
         >
           <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
             <path d="M3 6.2h2.3L8.4 3.6v8.8L5.3 9.8H3z" fill="currentColor" />
@@ -754,6 +778,7 @@ function onVolume(e: Event) {
         :lessons="lessons.lessons"
         :current-index="lessons.currentIndex"
         @open="openLesson"
+        @import="openImport"
       />
 
       <section v-else class="stage">
@@ -810,6 +835,7 @@ function onVolume(e: Event) {
 /* ============================ transport bar ============================ */
 
 .bar {
+  position: relative;
   height: var(--bar-h);
   flex: none;
   display: flex;
@@ -929,7 +955,7 @@ function onVolume(e: Event) {
 .ico.on { background: var(--active); color: var(--active-txt); }
 /* Right-anchored: this control sits near the window edge, so a left-anchored
    panel would hang off-screen. */
-.menu.vol-menu { left: auto; right: -2px; min-width: 148px; padding: 4px 10px 10px; }
+.menu.vol-menu { left: auto; right: 0; width: 160px; padding: 4px 10px 10px; }
 .vol-menu .menu-head { display: flex; justify-content: space-between; padding-left: 0; padding-right: 0; }
 .vol-menu .menu-head b { color: var(--txt); font-weight: 500; font-size: 9.5px; }
 .vol-menu input {
@@ -990,6 +1016,32 @@ function onVolume(e: Event) {
 :root[data-theme="dark"] .seg-i.icon.on { color: var(--head); }
 .caret { font-size: 6.5px; font-style: normal; opacity: 0.7; }
 
+.wordmark {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 1.1px;
+  color: var(--txt);
+  pointer-events: none;
+}
+.count {
+  flex: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--txt2);
+}
+.count i {
+  font-style: normal;
+  font-size: 7.5px;
+  letter-spacing: 1.2px;
+  color: var(--txt3);
+}
+
 .title {
   flex: none;
   font-family: var(--sans);
@@ -1048,20 +1100,23 @@ function onVolume(e: Event) {
 /* Dropdown — one surface, hairline outline, anchored under its control. */
 .menu {
   position: absolute;
-  top: calc(100% + 6px);
-  left: -2px;
+  top: 25px;
+  left: 0;
   z-index: 40;
-  min-width: 180px;
+  width: 200px;
   padding: 4px;
-  border-radius: var(--r-panel);
-  background: var(--bar);
-  box-shadow: inset 0 0 0 1px var(--hair), 0 10px 24px #00000044;
+  border-radius: var(--r-field);
+  background: var(--gutter);
+  box-shadow: inset 0 0 0 1px var(--hair), 0 12px 30px #00000055;
 }
+/* An open panel hangs below the bar and over the lane canvas. */
+.bar.menu-open { z-index: 30; }
 .menu-head {
-  padding: 5px 8px 4px;
+  padding: 6px 8px 5px;
   font-family: var(--mono);
-  font-size: 7.5px;
-  letter-spacing: 1.2px;
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 1.1px;
   color: var(--txt3);
 }
 .menu-row {
@@ -1080,7 +1135,8 @@ function onVolume(e: Event) {
   cursor: pointer;
 }
 .menu-row:hover { background: var(--hover); }
-.menu-row.on { color: var(--txt); }
+.menu-row.on { background: var(--active); color: var(--active-txt); }
+.menu-row.on .tick { color: var(--active-txt); }
 .menu-row .tick { width: 10px; flex: none; font-size: 8px; font-style: normal; color: var(--head); }
 .menu-row b { font-weight: 500; }
 .menu-row em { font-style: normal; color: var(--txt3); margin-left: 6px; font-size: 11.5px; }

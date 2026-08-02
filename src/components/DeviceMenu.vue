@@ -6,6 +6,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 
 const props = defineProps<{
+  open: boolean;
   ports: string[];
   connectedIndex: number | null;
   connectedName: string;
@@ -17,9 +18,10 @@ const emit = defineEmits<{
   (e: "refresh"): void;
   (e: "connect", index: number): void;
   (e: "disconnect"): void;
+  (e: "toggle"): void;
+  (e: "close"): void;
 }>();
 
-const open = ref(false);
 const root = ref<HTMLElement | null>(null);
 
 const label = computed(() => {
@@ -28,20 +30,20 @@ const label = computed(() => {
 });
 
 function toggle() {
-  open.value = !open.value;
-  if (open.value) emit("refresh");
+  if (!props.open) emit("refresh");
+  emit("toggle");
 }
 
 function pick(i: number) {
   emit("connect", i);
-  open.value = false;
+  emit("close");
 }
 
 function onDocPointer(e: PointerEvent) {
-  if (open.value && root.value && !root.value.contains(e.target as Node)) open.value = false;
+  if (props.open && root.value && !root.value.contains(e.target as Node)) emit("close");
 }
 function onKey(e: KeyboardEvent) {
-  if (e.key === "Escape") open.value = false;
+  if (e.key === "Escape") emit("close");
 }
 
 onMounted(() => {
@@ -58,13 +60,13 @@ onUnmounted(() => {
   <div ref="root" class="wrap">
     <button
       class="trigger"
-      :class="{ live: connectedIndex !== null }"
+      :class="{ live: connectedIndex !== null, open }"
       :title="connectedIndex !== null ? `Connected: ${connectedName}` : 'Choose a MIDI input'"
       @click="toggle"
     >
       <i class="dot" />
       <span class="name label">{{ label }}</span>
-      <span class="chev">▾</span>
+      <span class="chev">{{ open ? "▴" : "▾" }}</span>
     </button>
 
     <div v-if="open" class="menu" role="menu">
@@ -95,7 +97,7 @@ onUnmounted(() => {
       <button
         v-if="connectedIndex !== null"
         class="item disconnect"
-        @click="emit('disconnect'); open = false"
+        @click="emit('disconnect'); emit('close')"
       >
         <i class="tick" /><span>Disconnect</span>
       </button>
@@ -126,6 +128,8 @@ onUnmounted(() => {
   cursor: pointer;
 }
 .trigger:hover { background: var(--hover); color: var(--txt); }
+.trigger.open { background: var(--active); color: var(--active-txt); }
+.trigger.open .chev { color: var(--active-txt); }
 .trigger:focus-visible { outline: 1px solid var(--head); outline-offset: 1px; }
 
 .dot {
@@ -144,25 +148,25 @@ onUnmounted(() => {
 /* Menu — one surface, hairline outline, 12.5px sans rows. */
 .menu {
   position: absolute;
-  top: calc(100% + 6px);
+  top: 25px;
   right: 0;
   z-index: 40;
-  min-width: 260px;
-  max-width: 340px;
+  width: 258px;
   padding: 4px;
-  border-radius: var(--r-panel);
-  background: var(--bar);
-  box-shadow: inset 0 0 0 1px var(--hair), 0 10px 24px #00000044;
+  border-radius: var(--r-field);
+  background: var(--gutter);
+  box-shadow: inset 0 0 0 1px var(--hair), 0 12px 30px #00000055;
 }
 
 .mhead {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 5px 8px 4px;
+  padding: 6px 8px 5px;
   font-family: var(--mono);
-  font-size: 7.5px;
-  letter-spacing: 1.2px;
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 1.1px;
   color: var(--txt3);
 }
 .rescan {
@@ -170,8 +174,7 @@ onUnmounted(() => {
   background: none;
   color: var(--head);
   font-family: var(--mono);
-  font-size: 7.5px;
-  letter-spacing: 1.2px;
+  font-size: 8.5px;
   cursor: pointer;
 }
 .rescan:disabled { color: var(--txt3); cursor: default; }
@@ -202,7 +205,8 @@ onUnmounted(() => {
   cursor: pointer;
 }
 .item:hover { background: var(--hover); }
-.item.on { color: var(--txt); }
+.item.on { background: var(--active); color: var(--active-txt); }
+.item.on .tick { color: var(--active-txt); }
 .tick { width: 10px; flex: none; font-size: 8px; font-style: normal; color: var(--head); }
 .pname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .disconnect { color: var(--stop); }

@@ -15,7 +15,7 @@ const props = defineProps<{
   currentIndex: number;
 }>();
 
-const emit = defineEmits<{ (e: "open", index: number): void }>();
+const emit = defineEmits<{ (e: "open", index: number): void; (e: "import"): void }>();
 
 /** What the lesson asks you to play — pads by name, piano by key range. */
 function summary(lesson: Lesson): string {
@@ -57,10 +57,10 @@ const rows = computed(() =>
 
 <template>
   <div class="home">
-    <header class="head">
+    <div class="head">
       <h1>Choose a lesson</h1>
-      <p>{{ lessons.length }} lessons · pick one to start practising</p>
-    </header>
+      <span class="kicker">PICK ONE TO START PRACTISING</span>
+    </div>
 
     <div class="grid">
       <button
@@ -71,11 +71,12 @@ const rows = computed(() =>
         @click="emit('open', row.index)"
       >
         <span class="top">
-          <span class="tag" :class="row.lesson.instrument">
-            {{ row.lesson.instrument === "piano" ? "PIANO" : "PADS" }}
-          </span>
-          <span v-if="row.lesson.source === 'midi-import'" class="tag import">IMPORTED</span>
-          <span class="bpm">{{ row.lesson.bpm }}<i>BPM</i></span>
+          <span class="kind"><i class="dot" :class="row.lesson.instrument" />{{
+            row.lesson.instrument === "piano" ? "PIANO" : "PADS"
+          }}</span>
+          <span v-if="row.lesson.source === 'midi-import'" class="flag">IMPORTED</span>
+          <span v-else-if="row.current" class="flag resume">RESUME</span>
+          <span class="bpm num">{{ row.lesson.bpm }}<i>BPM</i></span>
         </span>
 
         <span class="name">{{ row.lesson.name }}</span>
@@ -86,6 +87,13 @@ const rows = computed(() =>
           <span class="len">{{ row.length }}</span>
         </span>
       </button>
+
+      <!-- The library's last slot is the way to add to it. -->
+      <button class="card import" @click="emit('import')">
+        <span class="imp-glyph" aria-hidden="true">⇪</span>
+        <span class="imp-title">Import a MIDI clip</span>
+        <span class="imp-sub">.MID FROM YOUR DAW</span>
+      </button>
     </div>
   </div>
 </template>
@@ -93,88 +101,142 @@ const rows = computed(() =>
 <style scoped>
 .home {
   height: 100%;
-  overflow-y: auto;
-  padding: 8px 4px 24px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 14px;
+  background: var(--win);
 }
 
-.head { margin-bottom: 22px; }
-.head h1 {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.4px;
+.head { display: flex; align-items: baseline; gap: 10px; flex: none; }
+h1 {
   margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  color: var(--txt);
 }
-.head p { margin: 5px 0 0; font-size: 13px; color: var(--txt2); }
+.kicker {
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 1.3px;
+  color: var(--txt3);
+}
 
+/* Four columns is what 1180px yields; the real rule keeps it responsive. */
 .grid {
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 12px;
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 8px;
+  overflow-y: auto;
 }
 
 .card {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   gap: 5px;
+  padding: 12px 13px 11px;
+  border: none;
+  border-radius: var(--r-field);
+  background: var(--gutter);
+  box-shadow: inset 0 0 0 1px var(--hair);
   text-align: left;
-  background: var(--bar);
-  border: 1px solid var(--hair);
-  border-radius: 13px;
-  padding: 14px 15px 13px;
   cursor: pointer;
-  transition: border-color 0.1s, transform 0.06s, background 0.1s;
 }
-.card:hover { border-color: #39414d; background: var(--active); }
-.card:active { transform: translateY(1px); }
-.card.current { border-color: #ffb34066; }
+.card:hover { background: var(--hover); }
+/* The lesson you are on swaps the outline rather than filling. */
+.card.current { box-shadow: inset 0 0 0 1px var(--led1); }
+.card:focus-visible { outline: 1px solid var(--head); outline-offset: 1px; }
 
-.top { display: flex; align-items: center; gap: 6px; width: 100%; }
-.tag {
+.top { display: flex; align-items: center; gap: 7px; }
+.kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.8px;
-  border-radius: 20px;
-  padding: 2px 7px;
-  border: 1px solid var(--hair);
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 1.1px;
   color: var(--txt2);
 }
-.tag.piano { color: var(--head); border-color: #37d0c455; }
-.tag.pads { color: var(--led1); border-color: #ffb34055; }
-.tag.import { color: var(--led2); border-color: #6ea8ff55; }
+.dot { width: 4px; height: 4px; flex: none; border-radius: 50%; background: var(--led1); }
+/* Piano's dot names an instrument, not a rating, so it keeps its own hue. */
+.dot.piano { background: var(--rate-great); }
+.flag {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 1.1px;
+  color: var(--txt3);
+}
+.flag.resume { color: var(--led1); }
 .bpm {
   margin-left: auto;
-  font-family: var(--mono);
-  font-size: 13px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  font-size: 11px;
   color: var(--txt);
-  font-variant-numeric: tabular-nums;
 }
-.bpm i { font-style: normal; font-size: 8.5px; color: var(--txt3); margin-left: 3px; }
+.bpm i {
+  font-style: normal;
+  font-size: 7.5px;
+  letter-spacing: 1.2px;
+  color: var(--txt3);
+}
 
-.name { font-size: 16px; font-weight: 700; color: var(--txt); margin-top: 3px; }
+.name { margin-top: 2px; font-size: 14px; font-weight: 600; color: var(--txt); }
 .hint {
-  font-size: 12.5px;
-  color: var(--txt2);
+  font-size: 11.5px;
   line-height: 1.45;
-  min-height: 2.9em;
+  color: var(--txt2);
+  /* Keeps the footers on a line across the row whatever the hint's length. */
+  min-height: 33px;
+  text-wrap: pretty;
 }
 
 .foot {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  width: 100%;
-  margin-top: 4px;
-  padding-top: 9px;
+  gap: 3px;
+  margin-top: auto;
+  padding-top: 8px;
   border-top: 1px solid var(--hair);
 }
 .parts {
-  font-size: 11.5px;
-  color: var(--txt3);
+  font-size: 11px;
+  color: var(--txt2);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
 }
-.len { font-family: var(--mono); font-size: 10px; color: var(--txt3); }
+.len {
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+  color: var(--txt3);
+}
+
+/* Outline only — it is an action, not a lesson. */
+.card.import {
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--hair);
+}
+.card.import:hover { background: var(--hover); }
+.imp-glyph { font-size: 17px; color: var(--txt2); }
+.imp-title { font-size: 12.5px; color: var(--txt2); }
+.imp-sub {
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 1.3px;
+  color: var(--txt3);
+}
 </style>
