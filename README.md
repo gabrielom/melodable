@@ -68,13 +68,16 @@ npm run tauri dev
 
 First run compiles the Rust side and takes a few minutes; after that it's fast and hot-reloads the Vue side.
 
-**No CMake?** Ableton Link is behind a cargo feature, so you can drop it. Pass
-this flag **and nothing else** — adding `--features link` turns Link back on and
-you are back to needing CMake:
+**No CMake?** Ableton Link is behind a cargo feature, so you can drop it:
 
 ```bash
-npm run tauri dev -- --no-default-features
+npm run tauri dev -- -- --no-default-features
 ```
+
+Both `--` are load-bearing. The first gets the rest past npm; the second tells
+the Tauri CLI that what follows is for cargo, not for itself — with only one,
+Tauri tries to parse the flag and rejects it. Pass that flag **and nothing
+else**: adding `--features link` turns Link back on and you need CMake again.
 
 Everything else works; the chain toggle just hides itself.
 
@@ -219,6 +222,8 @@ src-tauri/src/
 
 **Audio but no visuals (or vice versa)** — Check the monitor's source dots: amber = hardware, blue = computer keyboard, grey = mouse.
 
-**`tauri dev` fails in `rusty_link`** — that's CMake missing. Install it, or run with `--no-default-features` to build without Ableton Link.
+**`tauri dev` fails in `rusty_link`** — that's CMake missing. Install it, or build without Ableton Link: `npm run tauri dev -- -- --no-default-features` (two `--`, see *Run it*).
+
+**`error: unexpected argument '--no-default-features' found`** — that's the Tauri CLI trying to parse a cargo flag. It needs the second `--`.
 
 **Browser-only dev** — `npm run dev` renders the UI in a browser for quick styling, but MIDI, Ableton Link and persistence need the Tauri shell; the device menu says so when you open it outside Tauri.
