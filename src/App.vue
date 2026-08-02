@@ -1092,7 +1092,12 @@ function onVolume(e: Event) {
 }
 
 .title {
-  flex: none;
+  /* The one elastic thing in the bar. Every control is a fixed size, so the
+     lesson name is what has to give: `flex: none` let an imported clip with a
+     long name push the controls off the edge. Shrinking with an ellipsis
+     means no name can break the row, whatever it is called. */
+  flex: 0 1 auto;
+  min-width: 0;
   font-family: var(--sans);
   font-size: 11.5px;
   font-weight: 500;
@@ -1280,13 +1285,11 @@ function onVolume(e: Event) {
    Ableton Link toggle and volume). Verified single-row with no overflow from
    1400px down to 912px; below that the design's drop list is exhausted and
    the rightmost controls run past the window edge rather than wrapping. */
-@media (max-width: 1118px) {
-  .title { display: none; }
-}
-@media (max-width: 1018px) {
-  .bar :deep(.trigger .label) { display: none; }
-}
-@media (max-width: 956px) {
-  .scores .best { display: none; }
-}
+/* No responsive drop-outs any more. The window floor (`minWidth` in
+   tauri.conf.json) is set to the measured width at which every control fits
+   at its natural size, so nothing has to be hidden to keep the single row —
+   and the elastic title above absorbs any lesson name. The old rules hid the
+   title at 1118px, the device label at 1018px and BEST at 956px; all three
+   are below the floor now and could never fire. If the floor is ever lowered,
+   they need to come back. */
 </style>
