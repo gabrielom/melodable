@@ -885,7 +885,10 @@ function onVolume(e: Event) {
   display: flex;
   align-items: center;
   gap: var(--gap-bar);
-  padding: 0 10px 0 72px;
+  /* Left inset clears the macOS traffic lights, which end around 66px. 72px
+     left the ✕ almost touching the zoom button; 84px gives it the same kind
+     of breathing room the controls have between themselves. */
+  padding: 0 10px 0 84px;
   background: var(--bar);
   border-bottom: 1px solid var(--bar-line);
   /* This is a titlebar, so it never shows an I-beam and never selects — the
