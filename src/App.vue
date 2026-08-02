@@ -888,6 +888,12 @@ function onVolume(e: Event) {
   padding: 0 10px 0 72px;
   background: var(--bar);
   border-bottom: 1px solid var(--bar-line);
+  /* This is a titlebar, so it never shows an I-beam and never selects — the
+     body rule covers the second part, this one restates it because the bar is
+     where it matters most. */
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
   /* One row, always — a second row would break the 34px titlebar. Note this
      must NOT clip: the pad-layout, device and volume dropdowns hang below the
      bar, and `overflow: auto` here would cut them off at 34px. Below the

@@ -176,6 +176,12 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+  /* The prefix is not optional: Tauri renders in WKWebView on macOS, which
+     only honours the unprefixed property from Safari 17. Without it the
+     transport bar's labels stay selectable, and a selection drag beats the
+     titlebar drag — you get a highlighted "MELODABLE" instead of a moved
+     window. Nothing in this app is meant to be selected. */
+  -webkit-user-select: none;
   user-select: none;
 }
 
