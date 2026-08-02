@@ -69,7 +69,7 @@ onUnmounted(() => {
       <span class="chev">{{ open ? "▴" : "▾" }}</span>
     </button>
 
-    <div v-if="open" class="menu" role="menu">
+    <div v-if="open" class="menu" role="menu" data-tauri-drag-region="false">
       <div class="mhead">
         <span>MIDI INPUT</span>
         <button class="rescan" :disabled="busy" @click="emit('refresh')">

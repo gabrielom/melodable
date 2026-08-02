@@ -494,11 +494,24 @@ function onVolume(e: Event) {
   <div class="app">
     <!-- ===================== transport (window titlebar) =====================
          34px, every control 20px tall. Also the macOS titlebar: the 72px left
-         inset clears the traffic lights and `data-tauri-drag-region` makes the
-         empty space draggable. One row, all controls, down to ~1100px — below
-         that things drop out in the order the design specifies (see `.app`
-         media queries at the bottom of this file). -->
-    <header class="bar" :class="{ 'menu-open': openMenu !== null }" data-tauri-drag-region>
+         inset clears the traffic lights.
+
+         `data-tauri-drag-region="deep"` makes the whole subtree draggable, and
+         Tauri's shim walks up from whatever was clicked and stops at the first
+         interactive element — a button, an input, anything with a tabindex or
+         an interactive role — so every control here opts out on its own. The
+         bare attribute would only catch direct hits on the header itself,
+         which at this density is the gaps and the left inset and nothing else:
+         with all 21 controls showing, the spacers collapse to zero and there
+         is effectively nowhere left to grab.
+
+         Dropdowns hang off the bar in the DOM, so they carry ="false" to stop
+         a drag starting on their non-button chrome.
+
+         One row, all controls, down to ~1100px — below that things drop out in
+         the order the design specifies (see `.app` media queries at the bottom
+         of this file). -->
+    <header class="bar" :class="{ 'menu-open': openMenu !== null }" data-tauri-drag-region="deep">
       <template v-if="view === 'trainer'">
         <button class="ico" title="Back to lessons" aria-label="Back to lessons" @click="goHome">
           ✕
@@ -587,7 +600,7 @@ function onVolume(e: Event) {
             PADS <i class="caret">{{ padMenuOpen ? "▴" : "▾" }}</i>
           </button>
 
-          <div v-if="padMenuOpen" class="menu" role="menu">
+          <div v-if="padMenuOpen" class="menu" role="menu" data-tauri-drag-region="false">
             <div class="menu-head">PAD LAYOUT</div>
             <button
               v-for="opt in padLayouts"
@@ -617,9 +630,9 @@ function onVolume(e: Event) {
 
       <span v-if="view === 'home'" class="wordmark">MELODABLE</span>
 
-      <div class="spacer" data-tauri-drag-region />
+      <div class="spacer" />
       <span v-if="view === 'trainer'" class="title">{{ lesson.name }}</span>
-      <div class="spacer" data-tauri-drag-region />
+      <div class="spacer" />
 
       <span v-if="view === 'home'" class="count num">
         {{ lessons.lessons.length }}<i>LESSONS</i>
@@ -724,7 +737,7 @@ function onVolume(e: Event) {
           </svg>
         </button>
 
-        <div v-if="volMenuOpen" class="menu vol-menu">
+        <div v-if="volMenuOpen" class="menu vol-menu" data-tauri-drag-region="false">
           <div class="menu-head">VOLUME <b class="num">{{ Math.round(settings.volume * 100) }}</b></div>
           <input
             type="range"
@@ -882,7 +895,6 @@ function onVolume(e: Event) {
      rather than wrapping. */
   flex-wrap: nowrap;
 }
-.bar > * { -webkit-app-region: no-drag; }
 .spacer { flex: 1; min-width: 0; }
 .divider {
   width: 1px;

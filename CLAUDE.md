@@ -39,7 +39,8 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   rectangle a meaningful slice rather than the entire width.
 - Lane identity uses the fixed 8-colour LED set (`ledOf`/`ledUpcoming`), indexed by the lane's position on screen — not a hash of the pad number, so a lane keeps its colour between lessons. Notes still to come are the LED at 33% (`UPCOMING_ALPHA`).
 - Respect `prefers-reduced-motion`; keep controls keyboard-focusable.
-- **Everything lives in the one transport bar**, which is also the macOS titlebar (`data-tauri-drag-region`, left padding clears the traffic lights). It is 34px tall with every control 20px, and must stay a single row down to ~1100px — measure it, don't assume (see the responsive block at the bottom of `App.vue`; currently verified clean to 912px). No second toolbar row, no in-stage header.
+- **Everything lives in the one transport bar**, which is also the macOS titlebar (left padding clears the traffic lights). It is 34px tall with every control 20px, and must stay a single row down to ~1100px — measure it, don't assume (see the responsive block at the bottom of `App.vue`; currently verified clean to 912px). No second toolbar row, no in-stage header.
+- The bar carries **`data-tauri-drag-region="deep"`**, not the bare attribute. Tauri's shim walks up from the clicked node and stops at the first interactive element, so controls opt out of dragging by themselves; the bare form only catches direct hits on the header, which at this density is gaps and nothing else. Anything non-interactive that hangs off the bar — the dropdowns — needs `="false"` so a click on its own chrome doesn't drag the window. `-webkit-app-region` is Electron-only and does nothing here.
 - Don't add code for a future milestone "while you're there". If something is unused today, it doesn't belong in the tree.
 
 ## Where things stand
