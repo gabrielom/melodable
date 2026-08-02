@@ -25,6 +25,8 @@ const props = withDefaults(
     pops?: RatingPop[];
     /** The pitches this lesson actually asks for. Only these are named. */
     used?: number[];
+    /** Stand the keyboard on its side, for the horizontal roll. */
+    rotated?: boolean;
   }>(),
   { lowNote: 48, highNote: 72 },
 );
@@ -47,10 +49,17 @@ const blackNotes = computed(() => allNotes.value.filter((n) => !isWhiteKey(n)));
 /** Percentage-based widths keep the keyboard responsive and canvas-aligned. */
 const whiteWidth = computed(() => 100 / whiteNotes.value.length);
 
+/**
+ * Black keys ride the white-key axis, which is horizontal normally and
+ * vertical when the keyboard is rotated. Same geometry either way — only
+ * which pair of properties it lands on changes.
+ */
 function blackStyle(n: number) {
   const [lo] = range.value;
   const g = keyGeometry(n, lo, whiteWidth.value);
-  return { left: `${g.x}%`, width: `${g.width}%` };
+  return props.rotated
+    ? { bottom: `${g.x}%`, height: `${g.width}%` }
+    : { left: `${g.x}%`, width: `${g.width}%` };
 }
 
 const flashColor = (n: number): string | null => {
@@ -69,7 +78,7 @@ const isUsed = (n: number) => usedSet.value.has(n);
 </script>
 
 <template>
-  <div class="keyboard">
+  <div class="keyboard" :class="{ rotated }">
     <!-- white keys -->
     <button
       v-for="n in whiteNotes"
@@ -107,6 +116,42 @@ const isUsed = (n: number) => usedSet.value.has(n);
   height: 150px;
   background: var(--gutter);
   overflow: hidden;
+}
+/*
+ * Rotated: the same geometry, turned a quarter turn so each key lines up with
+ * its own semitone row. `keyGeometry` still drives it — the roll and the
+ * keyboard must never derive positions separately.
+ */
+.keyboard.rotated {
+  width: 56px;
+  height: auto;
+  align-self: stretch;
+  flex: none;
+  flex-direction: column-reverse;
+}
+.keyboard.rotated .white {
+  border-radius: 0 5px 5px 0;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 0 0 4px;
+}
+.keyboard.rotated .white.used { box-shadow: inset -3px 0 0 var(--key-mark); }
+.keyboard.rotated .black {
+  top: auto;
+  left: 0;
+  width: 62%;
+  height: auto;
+  border-radius: 0 5px 5px 0;
+  align-items: center;
+  justify-content: flex-start;
+}
+.keyboard.rotated .black.used {
+  box-shadow: inset -3px 0 0 var(--key-mark), 3px 0 6px rgba(0, 0, 0, 0.6);
+}
+.keyboard.rotated .black-label {
+  position: static;
+  text-align: left;
+  padding-left: 4px;
 }
 .white {
   position: relative;

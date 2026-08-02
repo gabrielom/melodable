@@ -795,9 +795,12 @@ function onVolume(e: Event) {
           </div>
         </template>
 
-        <div v-else class="piano-stage">
+        <!-- The keyboard rotates to the left edge when notes scroll sideways,
+             so every semitone row still lines up with its own key. -->
+        <div v-else class="piano-stage" :class="settings.laneOrientation">
           <canvas ref="laneCanvas" class="lane-canvas piano-canvas" />
           <PianoKeyboard
+            :rotated="settings.laneOrientation === 'horizontal'"
             :active="activeNotes"
             :low-note="pianoRange[0]"
             :high-note="pianoRange[1]"
@@ -1213,7 +1216,9 @@ function onVolume(e: Event) {
   flex-direction: column;
   gap: var(--gap-section);
 }
-.piano-canvas { flex: 1; min-height: 0; }
+/* Rows are semitones, so the keyboard stands on its side beside them. */
+.piano-stage.horizontal { flex-direction: row-reverse; }
+.piano-canvas { flex: 1; min-height: 0; min-width: 0; }
 
 .toast {
   position: absolute;

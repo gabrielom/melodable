@@ -18,8 +18,11 @@ import { paintCountIn, paintGrid, paintVeil, pxPerBeat, ROW_INK } from "@/views/
 import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
 import { countWhiteKeys, isWhiteKey, keyGeometry, noteName, pitchClass } from "@/engine/pitch";
 
-/** Width of the note-name gutter in horizontal mode. */
-const GUTTER = 46;
+/**
+ * No gutter: the rotated keyboard sits beside the roll and names the pitches,
+ * so the roll uses its whole width and every row lines up with its key.
+ */
+const GUTTER = 0;
 
 /** Canvas takes a font shorthand, not a CSS variable — mirrors the tokens. */
 const MONO = '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
@@ -167,15 +170,6 @@ export class PianoRoll implements LaneRenderer {
       if (pitchClass(note) === 0) {
         ctx.fillStyle = ROW_INK[f.theme];
         ctx.fillRect(trackX, Math.round(y), trackW, 1);
-        // octave marker in the gutter
-        if (rowH >= 9) {
-          ctx.fillStyle = f.palette.txt3;
-          ctx.font = `500 8.5px ${MONO}`;
-          ctx.textAlign = "right";
-          ctx.textBaseline = "middle";
-          ctx.fillText(noteName(note), GUTTER - 8, y + rowH / 2);
-          ctx.textBaseline = "alphabetic";
-        }
       }
     }
 

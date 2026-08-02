@@ -1,0 +1,26 @@
+<!--
+  Melodable app icon — approach 7e4 from design handoff 02 §15.
+
+  Three notes closing on the playhead: the icon is about timing, not hardware.
+  Every value is a percentage of the tile, so the same definition renders at
+  any size. The amber is the `early` rating's; the playhead is the `head` cyan.
+
+  Do not scale this master mechanically to 16 and 32px — §15 asks for
+  hand-snapped block widths there, and for dropping the faintest note so the
+  remaining two stay distinct. `npm run icons` renders 32px and up from this.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <clipPath id="tile">
+    <rect width="1024" height="1024" rx="229.38" ry="229.38"/>
+  </clipPath>
+  <g clip-path="url(#tile)">
+    <rect width="1024" height="1024" fill="#0e0e0f"/>
+    <rect width="1024" height="1" fill="#ffffff" fill-opacity="0.08"/>
+    <g transform="translate(184.32 266.24)">
+      <rect x="0" y="0" width="111.41" height="491.52" rx="13.37" ry="108.13" fill="#f0a129" fill-opacity="0.27"/>
+      <rect x="170.39" y="0" width="111.41" height="491.52" rx="13.37" ry="108.13" fill="#f0a129" fill-opacity="0.53"/>
+      <rect x="340.79" y="0" width="111.41" height="491.52" rx="13.37" ry="108.13" fill="#f0a129"/>
+      <rect x="550.5" y="-88.47" width="52.43" height="668.47" rx="10.49" ry="53.48" fill="#4ccfe0"/>
+    </g>
+  </g>
+</svg>
