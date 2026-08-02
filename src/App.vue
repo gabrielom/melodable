@@ -1126,7 +1126,12 @@ function onVolume(e: Event) {
 
 /* Link (M6) — the peer count is a badge so the control stays 20px wide. */
 .link { position: relative; }
-.link.on { color: var(--head); }
+/* Dark only. `.link.on` and `.ico.on` have equal specificity and this is the
+   later rule, so it replaces the on-chip's `--active-txt`; in light `--head`
+   IS `--active`, which painted the chain icon in the chip's own colour and
+   made it disappear exactly when Link was running. Light keeps
+   `--active-txt` from `.ico.on`. */
+:root[data-theme="dark"] .link.on { color: var(--head); }
 .peerbadge {
   position: absolute;
   top: -4px;

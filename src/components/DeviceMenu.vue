@@ -128,6 +128,18 @@ onUnmounted(() => {
   cursor: pointer;
 }
 .trigger:hover { background: var(--hover); color: var(--txt); }
+
+/* Connected: the port name reads at full strength. This must come *before*
+   the open state — `.trigger.live` and `.trigger.open` have equal specificity,
+   so whichever is declared last wins, and on light `--txt` is near-black while
+   the open chip is dark: a connected device's name vanished into the chip the
+   moment you opened the menu. Dark got away with it only because `--txt` and
+   `--active-txt` happen to be the same value there. */
+.trigger.live { color: var(--txt); }
+
+/* Open wins over both hover and live — the chip inverts, so everything on it
+   has to switch with it. The dot is the exception: it stays the connection
+   LED, because that is what it means. */
 .trigger.open { background: var(--active); color: var(--active-txt); }
 .trigger.open .chev { color: var(--active-txt); }
 .trigger:focus-visible { outline: 1px solid var(--head); outline-offset: 1px; }
@@ -140,7 +152,6 @@ onUnmounted(() => {
   background: var(--txt3);
 }
 .trigger.live .dot { background: var(--led0); }
-.trigger.live { color: var(--txt); }
 
 .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chev { flex: none; font-size: 6.5px; color: var(--txt3); }
