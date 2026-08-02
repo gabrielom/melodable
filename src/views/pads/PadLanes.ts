@@ -5,40 +5,58 @@
  * requestAnimationFrame loop that reads the transport clock. Vue never
  * re-renders per frame (invariant 6).
  *
- * Horizontal is the designed view: lanes are rows behind a 104px label
- * gutter, notes scroll right-to-left onto a playhead a fixed 96px into the
- * note area, and the strip behind the playhead is the "already played" zone
- * so a note stays visible after you strike it. Vertical keeps the same
- * palette and note size with the axes swapped — lanes become columns and
- * notes fall onto a horizontal hit line.
+ * Both orientations show the same five bars of music and share every rule:
+ *
+ * - The playhead is **centred** in the note field, one continuous line across
+ *   the whole stack, painted above the lane separators.
+ * - **Ahead of it** notes carry their lane's LED at full strength — what is
+ *   coming has to be the most readable thing on screen.
+ * - **Behind it** they carry the colour they were graded, keep travelling, and
+ *   dissolve into a veil as they reach the far edge. They never vanish at the
+ *   playhead.
+ * - A tempo grid rules the field: a heavy line on each downbeat, hairlines on
+ *   beats and eighths. It sits under the notes — it is orientation, not
+ *   content.
  */
 
-import { ledOf, ledUpcoming, RADIUS } from "@/engine/theme";
-import { PADS } from "@/engine/gm";
+import { ledOf, RADIUS } from "@/engine/theme";
+import { PADS, padPosition } from "@/engine/gm";
+import { paintGrid, paintVeil, pxPerBeat, SEPARATOR_INK } from "@/views/lane-geometry";
 import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
 
 /** Canvas takes a font shorthand, not a CSS variable — mirrors `--mono`. */
 const MONO = '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
+const SANS = '"Geist", ui-sans-serif, system-ui, sans-serif';
 
-const PX_PER_BEAT = 118;
-/** Note square, px — the design's fixed size in both orientations. */
-const NOTE = 20;
-/** Label gutter in horizontal mode. */
-const GUTTER = 104;
-/** The already-played strip: fixed px into the note area, not a fraction. */
-const ELAPSED = 96;
-/** Hairline between lane rows. */
-const LANE_GAP = 1;
-/** The LED stripe down the leading edge of the gutter. */
+/** Label gutter (horizontal). Wide enough to seat the controller mini-grid. */
+const GUTTER = 128;
+/** Label tile under each column (vertical). */
+const TILE_H = 42;
+/** The lane's LED stripe, on the gutter's outer edge in both orientations. */
 const LED_EDGE = 3;
-/** Fraction of the lane behind the hit line in vertical mode. */
-const PAST_FRACTION = 0.28;
+/** Hairline between lanes. */
+const LANE_GAP = 1;
+/** Note block, horizontal. */
+const NOTE_W = 14;
+const NOTE_H = 14;
+/** Note block when notes fall: a pill inset from the column's edges. */
+const NOTE_V = 8;
+const NOTE_V_INSET = 12;
+/** Vertical: distance from the bottom of the note field to the hit line. */
+const HIT_FROM_BOTTOM = 76;
+
+/** Controller mini-grid: 3px cells, 1px gaps. */
+const CELL = 3;
+const CELL_STEP = CELL + 1;
+/** Gap between the mini-grid and the drum name. */
+const MINI_GAP = 9;
+
 
 export class PadLanes implements LaneRenderer {
   private ctx: CanvasRenderingContext2D;
   private dpr = 1;
-  /** Gutter hit boxes from the last horizontal draw, for mouse triggering. */
-  private gutterHits: Array<{ pad: number; y0: number; y1: number }> = [];
+  /** Gutter hit boxes from the last draw, for mouse triggering. */
+  private gutterHits: Array<{ pad: number; x0: number; x1: number; y0: number; y1: number }> = [];
   /** Timeline on screen at the last draw, for the overview's viewport rect. */
   private window: VisibleWindow = { behind: 0, ahead: 0 };
 
@@ -46,7 +64,6 @@ export class PadLanes implements LaneRenderer {
     this.ctx = canvas.getContext("2d")!;
   }
 
-  /** Match the backing store to the element's CSS size (call on resize). */
   resize(): void {
     const { clientWidth, clientHeight } = this.canvas;
     this.dpr = window.devicePixelRatio || 1;
@@ -58,184 +75,284 @@ export class PadLanes implements LaneRenderer {
     }
   }
 
+  visibleBeats(): VisibleWindow {
+    return this.window;
+  }
+
   draw(f: LaneFrame): void {
     const ctx = this.ctx;
     const W = this.canvas.width / this.dpr;
     const H = this.canvas.height / this.dpr;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    // The stack's background shows through the 1px gaps as the hairline.
-    ctx.fillStyle = f.theme === "light" ? f.palette.hair : f.palette.win;
+    ctx.fillStyle = f.palette.lane;
     ctx.fillRect(0, 0, W, H);
 
     const lanes = f.padLanes.length ? f.padLanes : [12];
-    const pxPerSec = PX_PER_BEAT / f.secPerBeat;
-    if (f.orientation === "horizontal") this.drawHorizontal(f, W, H, lanes, pxPerSec);
-    else this.drawVertical(f, W, H, lanes, pxPerSec);
+    if (f.orientation === "horizontal") this.drawHorizontal(f, W, H, lanes);
+    else this.drawVertical(f, W, H, lanes);
   }
 
   // ----------------------------------------------------------- horizontal
 
-  private drawHorizontal(
-    f: LaneFrame,
-    W: number,
-    H: number,
-    lanes: number[],
-    pxPerSec: number,
-  ): void {
+  private drawHorizontal(f: LaneFrame, W: number, H: number, lanes: number[]): void {
     const ctx = this.ctx;
     const p = f.palette;
     const n = lanes.length;
     const laneH = (H - LANE_GAP * (n - 1)) / n;
     const trackX = GUTTER;
     const trackW = Math.max(1, W - GUTTER);
-    const hitX = trackX + ELAPSED;
-    this.window = {
-      behind: Math.min(ELAPSED, trackW) / PX_PER_BEAT,
-      ahead: Math.max(0, trackW - ELAPSED) / PX_PER_BEAT,
-    };
-    /** A lane is dimmed when it has nothing left to play on screen. */
+    // Centred: half the visible span behind the playhead, half ahead.
+    const hitX = trackX + trackW / 2;
+    const beatPx = pxPerBeat(trackW, f.beatsPerBar);
+    const halfBeats = trackW / 2 / beatPx;
+    this.window = { behind: halfBeats, ahead: halfBeats };
+
+    const xOfBeat = (beat: number) => hitX + (beat - f.absBeat) * beatPx;
     const busy = new Set(f.instances.map((i) => i.lane));
 
     this.gutterHits = [];
     lanes.forEach((pad, li) => {
       const y = li * (laneH + LANE_GAP);
-      const led = ledOf(p, li);
-      this.gutterHits.push({ pad, y0: y, y1: y + laneH });
+      this.gutterHits.push({ pad, x0: 0, x1: GUTTER, y0: y, y1: y + laneH });
 
-      // gutter — LED stripe on the leading edge, then the label
-      ctx.fillStyle = p.gutter;
-      ctx.fillRect(0, y, GUTTER, laneH);
-      ctx.fillStyle = led;
-      ctx.fillRect(0, y, LED_EDGE, laneH);
-      if (f.theme === "light") {
-        ctx.fillStyle = p.hair;
-        ctx.fillRect(GUTTER - 1, y, 1, laneH);
-      }
+      this.gutter(f, 0, y, GUTTER, laneH, pad, li, "horizontal", busy.has(pad));
 
-      ctx.fillStyle = f.playing && !busy.has(pad) ? p.txt2 : p.txt;
-      ctx.font = `500 8.5px ${MONO}`;
-      ctx.textAlign = "left";
-      ctx.textBaseline = "middle";
-      this.tracked(PADS[pad].name.toUpperCase(), 9 + LED_EDGE, y + laneH / 2, 1.1, GUTTER - 22);
-
-      // note bed, then the already-played strip and the playhead
+      // note bed, then the tempo grid ruled over it
       ctx.fillStyle = p.lane;
       ctx.fillRect(trackX, y, trackW, laneH);
-      ctx.fillStyle = p.elapsed;
-      ctx.fillRect(trackX, y, Math.min(ELAPSED, trackW), laneH);
     });
 
-    ctx.textBaseline = "alphabetic";
+    paintGrid(ctx, {
+      theme: f.theme,
+      instrument: "pads",
+      from: f.absBeat - this.window.behind,
+      to: f.absBeat + this.window.ahead,
+      beatsPerBar: f.beatsPerBar,
+      posOf: xOfBeat,
+      axis: "vertical-lines",
+      x: trackX,
+      y: 0,
+      w: trackW,
+      h: H,
+    });
 
-    if (hitX < W) {
-      ctx.fillStyle = p.head;
-      ctx.fillRect(hitX, 0, 2, H);
+    if (f.playing) {
+      // Notes: upcoming in the lane LED at full strength, played in their
+      // rating colour. Both scroll with the lane; nothing jumps at the head.
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(trackX, 0, trackW, H);
+      ctx.clip();
+
+      const size = Math.min(NOTE_H, Math.max(5, laneH - 4));
+      for (const inst of f.instances) {
+        const li = lanes.indexOf(inst.lane);
+        if (li < 0) continue;
+        // Nothing has been played during the count-in, so the past stays empty.
+        if (f.countIn && inst.time < f.now) continue;
+        const x = hitX + (inst.time - f.now) * (beatPx / f.secPerBeat);
+        if (x < trackX - NOTE_W || x > W + NOTE_W) continue;
+        const y = li * (laneH + LANE_GAP);
+        this.note(
+          f,
+          x - NOTE_W / 2,
+          y + (laneH - size) / 2,
+          NOTE_W,
+          size,
+          inst.resolved ? p.rating[inst.rating!] : ledOf(p, li),
+        );
+      }
+      ctx.restore();
+
+      paintVeil(ctx, p.lane, [trackX, 0], [hitX, 0], [trackX, 0, hitX - trackX, H]);
     }
 
-    if (!f.playing) return this.idle(f, trackX + trackW / 2, H / 2);
-
-    // Clip to the note area: a note scrolling out on the left is half over the
-    // gutter by the time its centre reaches it, and would paint across the label.
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(trackX, 0, trackW, H);
-    ctx.clip();
-
-    const size = Math.min(NOTE, Math.max(6, laneH - 4));
-    for (const inst of f.instances) {
-      const li = lanes.indexOf(inst.lane);
-      if (li < 0) continue;
-      const x = hitX + (inst.time - f.now) * pxPerSec;
-      if (x < trackX - NOTE || x > W + NOTE) continue;
-      const y = li * (laneH + LANE_GAP);
-      this.note(
-        f,
-        x - size / 2,
-        y + (laneH - size) / 2,
-        size,
-        size,
-        inst.resolved ? p.rating[inst.rating!] : ledUpcoming(p, li),
-      );
+    // Separators over the veil — they are structure, not content, so they do
+    // not dissolve with the notes. Then the playhead over everything.
+    ctx.fillStyle = SEPARATOR_INK[f.theme];
+    for (let li = 1; li < n; li++) {
+      ctx.fillRect(0, Math.round(li * (laneH + LANE_GAP)) - 1, W, LANE_GAP);
     }
-    ctx.restore();
 
+    ctx.fillStyle = p.head;
+    ctx.fillRect(Math.round(hitX) - 1, 0, 2, H);
+
+    if (!f.playing) this.idle(f, trackX + trackW / 2, H / 2);
     this.countIn(f, W, H);
   }
 
   // ------------------------------------------------------------- vertical
 
-  private drawVertical(f: LaneFrame, W: number, H: number, lanes: number[], pxPerSec: number): void {
+  private drawVertical(f: LaneFrame, W: number, H: number, lanes: number[]): void {
     const ctx = this.ctx;
     const p = f.palette;
     const n = lanes.length;
     const laneW = (W - LANE_GAP * (n - 1)) / n;
-    const hitY = Math.round(H * (1 - PAST_FRACTION));
-    this.window = { behind: (H - hitY) / PX_PER_BEAT, ahead: hitY / PX_PER_BEAT };
+    const fieldH = Math.max(1, H - TILE_H);
+    const hitY = fieldH - HIT_FROM_BOTTOM;
+    const beatPx = pxPerBeat(fieldH, f.beatsPerBar);
+    this.window = { behind: HIT_FROM_BOTTOM / beatPx, ahead: hitY / beatPx };
 
+    // Notes fall, so a later beat sits higher up the screen.
+    const yOfBeat = (beat: number) => hitY - (beat - f.absBeat) * beatPx;
+    const busy = new Set(f.instances.map((i) => i.lane));
+
+    this.gutterHits = [];
     lanes.forEach((pad, li) => {
       const x = li * (laneW + LANE_GAP);
-      const led = ledOf(p, li);
-
       ctx.fillStyle = p.lane;
-      ctx.fillRect(x, 0, laneW, H);
-      // already-played zone below the hit line
-      ctx.fillStyle = p.elapsed;
-      ctx.fillRect(x, hitY, laneW, H - hitY);
-      // the lane's LED reads as a header band, standing in for the gutter
-      ctx.fillStyle = led;
-      ctx.fillRect(x, 0, laneW, LED_EDGE);
-
-      ctx.fillStyle = p.txt;
-      ctx.font = `500 8.5px ${MONO}`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      this.trackedCentered(PADS[pad].name.toUpperCase(), x + laneW / 2, LED_EDGE + 10, 1.1, laneW - 8);
+      ctx.fillRect(x, 0, laneW, fieldH);
+      // The label tile sits at the bottom, LED on its outer edge — the same
+      // place it occupies in the horizontal gutter.
+      this.gutterHits.push({ pad, x0: x, x1: x + laneW, y0: fieldH, y1: H });
+      this.gutter(f, x, fieldH, laneW, TILE_H, pad, li, "vertical", busy.has(pad));
     });
 
-    ctx.textBaseline = "alphabetic";
-    ctx.fillStyle = p.head;
-    ctx.fillRect(0, hitY, W, 2);
+    paintGrid(ctx, {
+      theme: f.theme,
+      instrument: "pads",
+      from: f.absBeat - this.window.behind,
+      to: f.absBeat + this.window.ahead,
+      beatsPerBar: f.beatsPerBar,
+      posOf: yOfBeat,
+      axis: "horizontal-lines",
+      x: 0,
+      y: 0,
+      w: W,
+      h: fieldH,
+    });
 
-    if (!f.playing) return this.idle(f, W / 2, hitY - 40);
+    if (f.playing) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, W, fieldH);
+      ctx.clip();
 
-    const size = Math.min(NOTE, Math.max(6, laneW - 6));
-    for (const inst of f.instances) {
-      const li = lanes.indexOf(inst.lane);
-      if (li < 0) continue;
-      const y = hitY - (inst.time - f.now) * pxPerSec;
-      if (y < -NOTE || y > H + NOTE) continue;
-      const x = li * (laneW + LANE_GAP);
-      this.note(
-        f,
-        x + (laneW - size) / 2,
-        y - size / 2,
-        size,
-        size,
-        inst.resolved ? p.rating[inst.rating!] : ledUpcoming(p, li),
-      );
+      for (const inst of f.instances) {
+        const li = lanes.indexOf(inst.lane);
+        if (li < 0) continue;
+        if (f.countIn && inst.time < f.now) continue;
+        const y = hitY - (inst.time - f.now) * (beatPx / f.secPerBeat);
+        if (y < -NOTE_V || y > fieldH + NOTE_V) continue;
+        const x = li * (laneW + LANE_GAP);
+        const inset = Math.min(NOTE_V_INSET, Math.max(0, (laneW - 8) / 2));
+        this.note(
+          f,
+          x + inset,
+          y - NOTE_V / 2,
+          laneW - inset * 2,
+          NOTE_V,
+          inst.resolved ? p.rating[inst.rating!] : ledOf(p, li),
+          NOTE_V / 2, // pill
+        );
+      }
+      ctx.restore();
+
+      // Shorter falloff than horizontal — the played run here is only 76px.
+      paintVeil(ctx, p.lane, [0, fieldH], [0, hitY], [0, hitY, W, fieldH - hitY]);
     }
 
-    this.countIn(f, W, H);
+    ctx.fillStyle = SEPARATOR_INK[f.theme];
+    for (let li = 1; li < n; li++) {
+      ctx.fillRect(Math.round(li * (laneW + LANE_GAP)) - 1, 0, LANE_GAP, H);
+    }
+
+    ctx.fillStyle = p.head;
+    ctx.fillRect(0, Math.round(hitY) - 1, W, 2);
+
+    if (!f.playing) this.idle(f, W / 2, hitY / 2);
+    this.countIn(f, W, fieldH);
   }
 
   // ---------------------------------------------------------------- parts
 
-  visibleBeats(): VisibleWindow {
-    return this.window;
+  /**
+   * A lane's label block: the LED on its outer edge, the controller mini-grid,
+   * then the drum name. Identical content in both orientations — only the edge
+   * the LED sits on differs.
+   */
+  private gutter(
+    f: LaneFrame,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    pad: number,
+    li: number,
+    orientation: "horizontal" | "vertical",
+    active: boolean,
+  ): void {
+    const ctx = this.ctx;
+    const p = f.palette;
+    ctx.fillStyle = p.gutter;
+    ctx.fillRect(x, y, w, h);
+
+    ctx.fillStyle = ledOf(p, li);
+    if (orientation === "horizontal") ctx.fillRect(x, y, LED_EDGE, h);
+    else ctx.fillRect(x, y + h - LED_EDGE, w, LED_EDGE);
+
+    if (f.theme === "light") {
+      ctx.fillStyle = p.hair;
+      if (orientation === "horizontal") ctx.fillRect(x + w - 1, y, 1, h);
+      else ctx.fillRect(x, y, w, 1);
+    }
+
+    // The LED border sits inside the gutter's width, so the label block and
+    // the note field never drift apart.
+    const inner = orientation === "horizontal" ? x + LED_EDGE : x;
+    const cy = orientation === "horizontal" ? y + h / 2 : y + (h - LED_EDGE) / 2;
+    const gridRight = this.miniGrid(f, pad, li, inner + 10, cy);
+
+    ctx.fillStyle = f.playing && !active ? p.txt2 : p.txt;
+    ctx.font = `500 8.5px ${MONO}`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    const nameX = gridRight + MINI_GAP;
+    this.tracked(PADS[pad].name.toUpperCase(), nameX, cy, 1.1, x + w - nameX - 8);
+    ctx.textBaseline = "alphabetic";
   }
 
-  /** Pad under a point in the gutter, for click-to-play. Null elsewhere. */
+  /**
+   * The controller's pad grid in miniature, this pad's cell lit — so you can
+   * see where a lane sits on the hardware without reading the label. Reflows
+   * with the layout (4x4 or 2x8). Returns the x it ends at.
+   */
+  private miniGrid(f: LaneFrame, pad: number, li: number, x0: number, cy: number): number {
+    const ctx = this.ctx;
+    const pos = padPosition(pad, f.padLayout);
+    const gw = pos.cols * CELL_STEP - 1;
+    const gh = pos.rows * CELL_STEP - 1;
+    const y0 = cy - gh / 2;
+    for (let r = 0; r < pos.rows; r++) {
+      for (let c = 0; c < pos.cols; c++) {
+        ctx.fillStyle = r === pos.row && c === pos.col ? ledOf(f.palette, li) : f.palette.miniOff;
+        ctx.fillRect(x0 + c * CELL_STEP, y0 + r * CELL_STEP, CELL, CELL);
+      }
+    }
+    return x0 + gw;
+  }
+
+  /** Pad under a point on the canvas, for click-to-play. Null elsewhere. */
   laneAt(x: number, y: number): number | null {
-    if (x > GUTTER) return null;
-    for (const h of this.gutterHits) if (y >= h.y0 && y <= h.y1) return h.pad;
+    for (const h of this.gutterHits) {
+      if (x >= h.x0 && x <= h.x1 && y >= h.y0 && y <= h.y1) return h.pad;
+    }
     return null;
   }
 
-  private note(f: LaneFrame, x: number, y: number, w: number, h: number, color: string): void {
+  private note(
+    f: LaneFrame,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    colour: string,
+    radius?: number,
+  ): void {
     const ctx = this.ctx;
-    const r = RADIUS[f.theme].note;
-    ctx.fillStyle = color;
+    const r = radius ?? RADIUS[f.theme].note;
+    ctx.fillStyle = colour;
     if (r <= 0) {
       ctx.fillRect(x, y, w, h);
       return;
@@ -254,24 +371,56 @@ export class PadLanes implements LaneRenderer {
     ctx.textBaseline = "alphabetic";
   }
 
+  /**
+   * Count-in: one ring per beat of the bar, filling left to right, the current
+   * beat solid and enlarged. Over a wash of the lane area — the bar above
+   * stays live.
+   */
   private countIn(f: LaneFrame, W: number, H: number): void {
     if (!f.countIn) return;
     const ctx = this.ctx;
     const p = f.palette;
-    const remaining = Math.ceil(f.countInBeats - f.countInBeat);
-    const frac = f.countInBeat - Math.floor(f.countInBeat);
+    const beats = Math.max(1, Math.round(f.countInBeats));
+    const done = Math.floor(f.countInBeat);
+    const frac = f.countInBeat - done;
+
     ctx.fillStyle = f.theme === "light" ? "#cccccc99" : "#0e0e0f99";
     ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = p.head;
-    ctx.globalAlpha = f.reducedMotion ? 1 : 1 - frac * 0.6;
-    ctx.font = `500 56px ${MONO}`;
+
+    const R = 13;
+    const gap = 22;
+    const step = R * 2 + gap;
+    const cx = W / 2 - ((beats - 1) * step) / 2;
+    const cy = H / 2 - 10;
+
+    for (let i = 0; i < beats; i++) {
+      const x = cx + i * step;
+      const current = i === done;
+      // The current beat swells over its beat, unless motion is unwelcome.
+      const grow = current && !f.reducedMotion ? 1 + (1 - frac) * 0.18 : 1;
+      const r = R * grow;
+      ctx.beginPath();
+      ctx.arc(x, cy, r, 0, Math.PI * 2);
+      if (i < done || current) {
+        ctx.fillStyle = p.rating.early;
+        ctx.globalAlpha = current ? 1 : 0.45;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.strokeStyle = p.txt3;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+    }
+
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(String(remaining), W / 2, H / 2 - 8);
-    ctx.globalAlpha = 1;
-    ctx.font = `500 8.5px ${MONO}`;
+    ctx.fillStyle = p.txt;
+    ctx.font = `500 12px ${SANS}`;
+    ctx.fillText(f.lessonName, W / 2, cy + R + 26);
     ctx.fillStyle = p.txt3;
-    this.trackedCentered("COUNT-IN", W / 2, H / 2 + 30, 1.2, Infinity);
+    ctx.font = `500 8.5px ${MONO}`;
+    this.trackedCentered("ESC TO STOP", W / 2, cy + R + 46, 1.2, Infinity);
     ctx.textBaseline = "alphabetic";
   }
 

@@ -249,7 +249,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
   flex: none;
 }
 .detect.warn { border-color: #ffb34033; }
-.detect.warn .tag { color: var(--rate-good); border-color: #ffb34055; }
+.detect.warn .tag { color: var(--led1); border-color: #ffb34055; }
 
 .err { padding: 18px; display: flex; flex-direction: column; gap: 8px; }
 .err-title { font-size: 15px; font-weight: 700; color: var(--rate-miss); }

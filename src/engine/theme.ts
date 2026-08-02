@@ -41,8 +41,16 @@ export interface Palette {
   txt3: string;
   /** Pad/lane identity LEDs, by index. */
   led: readonly string[];
-  /** Note colours once graded. */
+  /** Note colours once graded. Only ever used behind the playhead (§21). */
   rating: Readonly<Record<Rating, string>>;
+  /** Upcoming-note colour for piano, which has no pad LEDs. */
+  instrument: string;
+  /** Unlit cells of the controller mini-grid. */
+  miniOff: string;
+  /** Overview strip's viewport rectangle: neutral, so it can't be mistaken
+   *  for the playhead or a rating. */
+  viewFill: string;
+  viewEdge: string;
 }
 
 const DARK: Palette = {
@@ -58,11 +66,17 @@ const DARK: Palette = {
   txt3: "#67676c",
   led: ["#59c46b", "#f0a129", "#3d9fe6", "#9d5ce8", "#e24b42", "#4ccfe0", "#7fbf5a", "#d98f4a"],
   rating: {
-    perfect: "#4ccfe0",
-    great: "#3d9fe6",
-    good: "#f0a129",
+    perfect: "#59c46b",
+    great: "#4ccfe0",
+    early: "#f0a129",
+    late: "#dd6ba8",
     miss: "#e24b42",
   },
+  /** Piano has no pad LEDs, so upcoming notes take one instrument colour. */
+  instrument: "#9d5ce8",
+  miniOff: "#2e2e30",
+  viewFill: "#1b1b1d",
+  viewEdge: "#4a4a4e",
 };
 
 const LIGHT: Palette = {
@@ -78,27 +92,24 @@ const LIGHT: Palette = {
   txt3: "#74757a",
   led: ["#3d8f4c", "#b1720f", "#2b6fae", "#6b45a8", "#a8382f", "#0f7f92", "#5b8134", "#9b6a20"],
   rating: {
-    perfect: "#0f7f92",
-    great: "#2b6fae",
-    good: "#a5710d",
+    perfect: "#3d8f4c",
+    great: "#0f7f92",
+    early: "#a5710d",
+    late: "#9e3c72",
     miss: "#a8382f",
   },
+  instrument: "#6b45a8",
+  miniOff: "#b6b6b6",
+  viewFill: "#d4d4d4",
+  viewEdge: "#8f8f8f",
 };
 
 export const PALETTE: Readonly<Record<Theme, Palette>> = { dark: DARK, light: LIGHT };
-
-/** Alpha suffix for a note that hasn't been played yet — the LED at 33%. */
-export const UPCOMING_ALPHA = "55";
 
 /** The identity colour for a lane, wrapping past the eight LEDs. */
 export function ledOf(p: Palette, laneIndex: number): string {
   const n = p.led.length;
   return p.led[((laneIndex % n) + n) % n];
-}
-
-/** Same colour at the 33% used for notes still to come. */
-export function ledUpcoming(p: Palette, laneIndex: number): string {
-  return ledOf(p, laneIndex) + UPCOMING_ALPHA;
 }
 
 /**

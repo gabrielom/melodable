@@ -80,14 +80,25 @@
   --mon-tab: #16292c;
   --mon-icon: #4ccfe0;
 
-  /* Rating colours, mirroring `rating` in engine/theme.ts. The bar's score
-     readouts borrow them: ACC reads as "perfect", CMB as the early/late amber. */
-  --rate-perfect: #4ccfe0;
-  --rate-great: #3d9fe6;
-  --rate-good: #f0a129;
+  /* Rating colours, mirroring `rating` in engine/theme.ts. The loose band is
+     split by direction — rushing and dragging read differently. The bar's
+     score readouts borrow them: ACC as "perfect", CMB as the early amber. */
+  --rate-perfect: #59c46b;
+  --rate-great: #4ccfe0;
+  --rate-early: #f0a129;
+  --rate-late: #dd6ba8;
   --rate-miss: #e24b42;
   /* First lane LED — also the device chip's "connected" dot. */
   --led0: #59c46b;
+  /* Lane LEDs used by chrome: 1 (amber) marks the current lesson and pads;
+     2 (blue) is the old rating blue, now a lane colour only (§21). */
+  --led1: #f0a129;
+  --led2: #3d9fe6;
+  /* Unlit cells of the controller mini-grid. */
+  --mini-off: #2e2e30;
+  /* Overview strip's viewport rectangle — neutral, never the accent. */
+  --view-fill: #1b1b1d;
+  --view-edge: #4a4a4e;
 
   --hover: #232324;
 
@@ -127,11 +138,17 @@
   --mon-tab: #2c2d2e;
   --mon-icon: #e9e9ea;
 
-  --rate-perfect: #0f7f92;
-  --rate-great: #2b6fae;
-  --rate-good: #a5710d;
+  --rate-perfect: #3d8f4c;
+  --rate-great: #0f7f92;
+  --rate-early: #a5710d;
+  --rate-late: #9e3c72;
   --rate-miss: #a8382f;
   --led0: #3d8f4c;
+  --led1: #b1720f;
+  --led2: #2b6fae;
+  --mini-off: #b6b6b6;
+  --view-fill: #d4d4d4;
+  --view-edge: #8f8f8f;
 
   --hover: #c4c4c4;
 

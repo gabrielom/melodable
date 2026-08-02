@@ -24,7 +24,6 @@ import MidiMonitor from "@/components/MidiMonitor.vue";
 import HomeScreen from "@/components/HomeScreen.vue";
 import ImportDialog from "@/components/ImportDialog.vue";
 import type { LogRow } from "@/components/midi-log";
-import PadGrid from "@/views/pads/PadGrid.vue";
 import PianoKeyboard from "@/views/piano/PianoKeyboard.vue";
 
 const settings = useSettings();
@@ -124,7 +123,6 @@ const {
   bestCombo,
   toast,
   pops,
-  lanes,
   isPiano,
   pianoRange,
   loopBeats,
@@ -764,14 +762,6 @@ function onVolume(e: Event) {
             <canvas ref="laneCanvas" class="lane-canvas" @pointerdown="onLanePointer" />
             <div v-if="toast" class="toast">{{ toast }}</div>
           </div>
-          <PadGrid
-            v-if="settings.laneOrientation === 'vertical'"
-            :active="activePads"
-            :emphasis="lanes"
-            :pops="pops"
-            :layout="settings.padLayout"
-            @trigger="(i, v) => triggerPad(i, v, 'click')"
-          />
         </template>
 
         <div v-else class="piano-stage">
@@ -1015,7 +1005,7 @@ function onVolume(e: Event) {
 }
 .score b { font-size: 13px; font-weight: 400; }
 .v-acc { color: var(--rate-perfect); }
-.v-cmb { color: var(--rate-good); }
+.v-cmb { color: var(--rate-early); }
 .v-best { color: var(--txt); }
 .score b.idle { color: var(--txt3); }
 

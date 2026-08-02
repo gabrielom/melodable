@@ -56,12 +56,19 @@ export function lessonRepeats(lesson: Lesson): number {
   return Math.min(MAX_REPEATS, Math.max(1, Math.round(TARGET_RUN_SECONDS / loopSeconds)));
 }
 
-/** Classify a timing offset (seconds). Null = outside every window. */
+/**
+ * Classify a timing offset in seconds, signed: negative is ahead of the note,
+ * positive behind it. Null = outside every window.
+ *
+ * Inside the `great` window the direction isn't worth showing — you were on
+ * it. Outside that, the sign is the whole point: `early` means you rushed,
+ * `late` means you dragged.
+ */
 export function classify(dtSeconds: number): Exclude<Rating, "miss"> | null {
   const dt = Math.abs(dtSeconds);
   if (dt <= TIMING_WINDOWS.perfect) return "perfect";
   if (dt <= TIMING_WINDOWS.great) return "great";
-  if (dt <= TIMING_WINDOWS.good) return "good";
+  if (dt <= TIMING_WINDOWS.loose) return dtSeconds < 0 ? "early" : "late";
   return null;
 }
 
@@ -145,7 +152,7 @@ export class Scorer {
         best = inst;
       }
     }
-    if (!best || bestDt > TIMING_WINDOWS.good) return null;
+    if (!best || bestDt > TIMING_WINDOWS.loose) return null;
 
     const rating = classify(time - best.time)!;
     best.resolved = true;
@@ -168,7 +175,7 @@ export class Scorer {
   sweepMisses(now: number): NoteInstance[] {
     const missed: NoteInstance[] = [];
     for (const inst of this.all) {
-      if (!inst.resolved && inst.time < now - TIMING_WINDOWS.good) {
+      if (!inst.resolved && inst.time < now - TIMING_WINDOWS.loose) {
         inst.resolved = true;
         inst.rating = "miss";
         this.total += 1;

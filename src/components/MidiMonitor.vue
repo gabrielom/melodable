@@ -114,7 +114,7 @@ header {
 }
 .row.noteon .kind { color: var(--head); }
 .row.noteoff .kind { color: var(--txt3); }
-.row.cc .kind { color: var(--rate-great); }
+.row.cc .kind { color: var(--led2); }
 .kind {
   font-family: var(--mono);
   font-size: 11px;
@@ -129,8 +129,8 @@ header {
   display: inline-block;
   flex: none;
 }
-.src.hardware { background: var(--rate-good); box-shadow: 0 0 6px var(--rate-good); }
-.src.keyboard { background: var(--rate-great); }
+.src.hardware { background: var(--led1); box-shadow: 0 0 6px var(--led1); }
+.src.keyboard { background: var(--led2); }
 .src.click { background: var(--txt3); }
 .mono { font-family: var(--mono); font-size: 11.5px; }
 .mono em { color: var(--txt3); font-style: normal; font-size: 10.5px; }

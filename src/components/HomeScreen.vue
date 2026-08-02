@@ -140,8 +140,8 @@ const rows = computed(() =>
   color: var(--txt2);
 }
 .tag.piano { color: var(--head); border-color: #37d0c455; }
-.tag.pads { color: var(--rate-good); border-color: #ffb34055; }
-.tag.import { color: var(--rate-great); border-color: #6ea8ff55; }
+.tag.pads { color: var(--led1); border-color: #ffb34055; }
+.tag.import { color: var(--led2); border-color: #6ea8ff55; }
 .bpm {
   margin-left: auto;
   font-family: var(--mono);

@@ -61,15 +61,28 @@ export interface LinkState {
   clockMicros: number;
 }
 
-export type Rating = "perfect" | "great" | "good" | "miss";
+/**
+ * How a hit is graded. The loose band splits by *direction*: rushing and
+ * dragging are different mistakes and want different fixes, so they get
+ * different colours rather than sharing one amber.
+ */
+export type Rating = "perfect" | "great" | "early" | "late" | "miss";
 
-/** Timing windows in seconds, measured as |hit - target|. */
-export const TIMING_WINDOWS = { perfect: 0.032, great: 0.06, good: 0.1 } as const;
+/**
+ * Timing windows in seconds, measured as |hit - target|. `loose` is the
+ * outer band that `classify` splits into `early` / `late` by sign.
+ */
+export const TIMING_WINDOWS = { perfect: 0.032, great: 0.06, loose: 0.1 } as const;
 
+/**
+ * Score weight per rating. `early` and `late` carry what the old single loose
+ * band did, so splitting it changes no accuracy maths.
+ */
 export const RATING_SCORE: Record<Rating, number> = {
   perfect: 100,
   great: 75,
-  good: 40,
+  early: 40,
+  late: 40,
   miss: 0,
 };
 

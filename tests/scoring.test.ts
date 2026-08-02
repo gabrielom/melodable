@@ -11,14 +11,30 @@ import { noteToPad } from "../src/engine/gm";
 import type { Lesson } from "../src/engine/types";
 
 describe("classify", () => {
-  it("grades by absolute offset against the timing windows", () => {
+  it("grades the tight windows by absolute offset, in either direction", () => {
     expect(classify(0)).toBe("perfect");
     expect(classify(-0.02)).toBe("perfect");
     expect(classify(TIMING_WINDOWS.perfect)).toBe("perfect");
+    expect(classify(-TIMING_WINDOWS.perfect)).toBe("perfect");
     expect(classify(0.05)).toBe("great");
+    expect(classify(-0.05)).toBe("great");
+    expect(classify(TIMING_WINDOWS.great)).toBe("great");
     expect(classify(-TIMING_WINDOWS.great)).toBe("great");
-    expect(classify(0.09)).toBe("good");
+  });
+
+  it("splits the loose band by direction: ahead is early, behind is late", () => {
+    expect(classify(-0.09)).toBe("early"); // struck before the note
+    expect(classify(0.09)).toBe("late"); // struck after it
+    expect(classify(-TIMING_WINDOWS.loose)).toBe("early");
+    expect(classify(TIMING_WINDOWS.loose)).toBe("late");
+    // just outside the great window, so direction starts mattering here
+    expect(classify(-(TIMING_WINDOWS.great + 0.001))).toBe("early");
+    expect(classify(TIMING_WINDOWS.great + 0.001)).toBe("late");
+  });
+
+  it("is null outside every window, whichever side", () => {
     expect(classify(0.101)).toBeNull();
+    expect(classify(-0.101)).toBeNull();
     expect(classify(-5)).toBeNull();
   });
 });
@@ -120,7 +136,7 @@ describe("scorer", () => {
     const s = new Scorer(targets);
     s.spawnLoop(0, timeOf);
     s.hit(12, 10.0); // perfect: 1.0
-    s.hit(12, 10.58); // good (0.08 off): 0.4
+    s.hit(12, 10.58); // late (0.08 behind): 0.4
     expect(s.accuracy).toBeCloseTo(0.7);
   });
 

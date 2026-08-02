@@ -30,6 +30,13 @@ export interface LaneFrame {
   /** Drives the corner radii, which differ between the two themes. */
   theme: Theme;
 
+  /** Absolute beat at `now` — the anchor the tempo grid is ruled from. */
+  absBeat: number;
+  /** Beats per bar — sets the downbeat spacing of the tempo grid. */
+  beatsPerBar: number;
+  /** Shown under the count-in rings. */
+  lessonName: string;
+
   /** Notes fall top-to-bottom, or scroll right-to-left onto a playhead. */
   orientation: LaneOrientation;
 

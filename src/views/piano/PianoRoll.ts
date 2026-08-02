@@ -13,25 +13,18 @@
  * loop reading the transport clock. No Vue, no per-frame reactivity.
  */
 
-import { ledUpcoming, RADIUS } from "@/engine/theme";
+import { RADIUS } from "@/engine/theme";
+import { paintGrid, paintVeil, pxPerBeat, ROW_INK } from "@/views/lane-geometry";
 import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
 import { countWhiteKeys, isWhiteKey, keyGeometry, noteName, pitchClass } from "@/engine/pitch";
 
-const PX_PER_BEAT = 118;
-/** Fraction of the lane behind the hit line — the "already played" zone, so a
- *  note stays on screen after you strike it instead of vanishing instantly. */
-const PAST_FRACTION = 0.34;
 /** Width of the note-name gutter in horizontal mode. */
 const GUTTER = 46;
 
 /** Canvas takes a font shorthand, not a CSS variable — mirrors the tokens. */
 const MONO = '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
-/**
- * Piano wasn't part of the redesign, so it borrows the pad palette rather than
- * inventing one: naturals take the cyan LED, accidentals the blue beside it.
- */
-const WHITE_LED = 5;
-const BLACK_LED = 2;
+/** Semitone beds: black-key rows sit a shade darker than white-key rows. */
+const ROW_BLACK = { dark: "#0d0d0e", light: "#c4c4c4" } as const;
 
 export class PianoRoll implements LaneRenderer {
   private ctx: CanvasRenderingContext2D;
@@ -64,23 +57,27 @@ export class PianoRoll implements LaneRenderer {
     const H = this.canvas.height / this.dpr;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = f.palette.win;
+    // White-key rows are the bed; black-key rows darken over it.
+    ctx.fillStyle = f.palette.lane;
     ctx.fillRect(0, 0, W, H);
 
-    const pxPerSec = PX_PER_BEAT / f.secPerBeat;
-    if (f.orientation === "horizontal") this.drawHorizontal(f, W, H, pxPerSec);
-    else this.drawVertical(f, W, H, pxPerSec);
+    if (f.orientation === "horizontal") this.drawHorizontal(f, W, H);
+    else this.drawVertical(f, W, H);
   }
 
   // ------------------------------------------------------------- vertical
 
-  private drawVertical(f: LaneFrame, W: number, H: number, pxPerSec: number): void {
+  private drawVertical(f: LaneFrame, W: number, H: number): void {
     const ctx = this.ctx;
     const low = f.lowNote;
     const high = f.highNote;
     const whiteWidth = W / Math.max(1, countWhiteKeys(low, high));
-    const hitY = Math.round(H * (1 - PAST_FRACTION));
-    this.window = { behind: (H - hitY) / PX_PER_BEAT, ahead: hitY / PX_PER_BEAT };
+    // Centred, like the pads view: half the visible span either side.
+    const hitY = Math.round(H / 2);
+    const beatPx = pxPerBeat(H, f.beatsPerBar);
+    const halfBeats = H / 2 / beatPx;
+    this.window = { behind: halfBeats, ahead: halfBeats };
+    const pxPerSec = beatPx / f.secPerBeat;
 
     for (let note = low; note <= high; note++) {
       const g = keyGeometry(note, low, whiteWidth);
@@ -98,42 +95,53 @@ export class PianoRoll implements LaneRenderer {
       }
     }
 
-    ctx.fillStyle = f.palette.elapsed;
-    ctx.fillRect(0, hitY, W, H - hitY);
+    paintGrid(ctx, {
+      theme: f.theme,
+      instrument: "piano",
+      from: f.absBeat - halfBeats,
+      to: f.absBeat + halfBeats,
+      beatsPerBar: f.beatsPerBar,
+      posOf: (beat) => hitY - (beat - f.absBeat) * beatPx,
+      axis: "horizontal-lines",
+      x: 0,
+      y: 0,
+      w: W,
+      h: H,
+    });
 
-    ctx.strokeStyle = f.palette.head;
-    ctx.globalAlpha = 0.85;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, hitY);
-    ctx.lineTo(W, hitY);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
+    if (!f.playing) {
+      ctx.fillStyle = f.palette.head;
+      ctx.fillRect(0, hitY - 1, W, 2);
+      return this.idle(f, W / 2, hitY - 40);
+    }
 
-    if (!f.playing) return this.idle(f, W / 2, hitY - 40);
-
-    // black keys last so they sit on top of their neighbours
+    // Two passes: white-key notes first so sharps sit above their neighbours.
     for (const blackPass of [false, true]) {
       for (const inst of f.instances) {
         const black = !isWhiteKey(inst.lane);
         if (black !== blackPass) continue;
         if (inst.lane < low || inst.lane > high) continue;
+        if (f.countIn && inst.time < f.now) continue;
         const y = hitY - (inst.time - f.now) * pxPerSec;
         if (y < -30 || y > H + 30) continue;
         const g = keyGeometry(inst.lane, low, whiteWidth);
-        const w = g.width - 2;
-        this.note(f, g.x + 1, y - 9, w, 18, inst, ledUpcoming(f.palette, black ? BLACK_LED : WHITE_LED));
-        // name fits only on wider keys
-        if (w >= 26) this.label(f, noteName(inst.lane), g.x + 1 + w / 2, y, 8.5);
+        // A slim block on the key's own column; the keyboard below names the
+        // pitches this lesson uses, so the note doesn't have to carry a label.
+        this.note(f, g.x + 1, y - 4, g.width - 2, 8, inst, 4);
       }
     }
+
+    paintVeil(ctx, f.palette.lane, [0, H], [0, hitY], [0, hitY, W, H - hitY]);
+
+    ctx.fillStyle = f.palette.head;
+    ctx.fillRect(0, hitY - 1, W, 2);
 
     this.countIn(f, W, H);
   }
 
   // ----------------------------------------------------------- horizontal
 
-  private drawHorizontal(f: LaneFrame, W: number, H: number, pxPerSec: number): void {
+  private drawHorizontal(f: LaneFrame, W: number, H: number): void {
     const ctx = this.ctx;
     const low = f.lowNote;
     const high = f.highNote;
@@ -141,24 +149,23 @@ export class PianoRoll implements LaneRenderer {
     const rowH = H / rows;
     const trackX = GUTTER;
     const trackW = W - GUTTER;
-    const hitX = trackX + Math.round(trackW * PAST_FRACTION);
-    this.window = { behind: (hitX - trackX) / PX_PER_BEAT, ahead: (W - hitX) / PX_PER_BEAT };
+    const hitX = trackX + trackW / 2;
+    const beatPx = pxPerBeat(trackW, f.beatsPerBar);
+    const halfBeats = trackW / 2 / beatPx;
+    this.window = { behind: halfBeats, ahead: halfBeats };
+    const pxPerSec = beatPx / f.secPerBeat;
     /** Row 0 is the highest pitch, so pitch rises up the screen. */
     const rowY = (pitch: number) => (high - pitch) * rowH;
 
     for (let note = low; note <= high; note++) {
       const y = rowY(note);
       if (!isWhiteKey(note)) {
-        ctx.fillStyle = f.palette.lane;
+        ctx.fillStyle = ROW_BLACK[f.theme];
         ctx.fillRect(trackX, y, trackW, rowH);
       }
       if (pitchClass(note) === 0) {
-        ctx.strokeStyle = f.palette.hair;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(trackX, Math.round(y) + 0.5);
-        ctx.lineTo(W, Math.round(y) + 0.5);
-        ctx.stroke();
+        ctx.fillStyle = ROW_INK[f.theme];
+        ctx.fillRect(trackX, Math.round(y), trackW, 1);
         // octave marker in the gutter
         if (rowH >= 9) {
           ctx.fillStyle = f.palette.txt3;
@@ -171,41 +178,52 @@ export class PianoRoll implements LaneRenderer {
       }
     }
 
-    ctx.fillStyle = f.palette.elapsed;
-    ctx.fillRect(trackX, 0, hitX - trackX, H);
+    paintGrid(ctx, {
+      theme: f.theme,
+      instrument: "piano",
+      from: f.absBeat - halfBeats,
+      to: f.absBeat + halfBeats,
+      beatsPerBar: f.beatsPerBar,
+      posOf: (beat) => hitX + (beat - f.absBeat) * beatPx,
+      axis: "vertical-lines",
+      x: trackX,
+      y: 0,
+      w: trackW,
+      h: H,
+    });
 
-    ctx.strokeStyle = f.palette.head;
-    ctx.globalAlpha = 0.85;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(hitX, 0);
-    ctx.lineTo(hitX, H);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-
-    if (!f.playing) return this.idle(f, trackX + trackW / 2, H / 2);
+    if (!f.playing) {
+      ctx.fillStyle = f.palette.head;
+      ctx.fillRect(Math.round(hitX) - 1, 0, 2, H);
+      return this.idle(f, trackX + trackW / 2, H / 2);
+    }
 
     // The blob is deliberately taller than a row so the note name fits — rows
     // get thin over a three-octave range. Neighbours overlap slightly, which
     // is how Melodics reads too.
-    const noteW = 34;
-    const h = Math.max(16, Math.min(rowH * 1.6, 26));
+    const noteW = 16;
+    const h = 26;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(trackX, 0, trackW, H);
+    ctx.clip();
     for (const inst of f.instances) {
       if (inst.lane < low || inst.lane > high) continue;
+      if (f.countIn && inst.time < f.now) continue;
       const x = hitX + (inst.time - f.now) * pxPerSec;
       if (x < trackX - 50 || x > W + 50) continue;
       const y = rowY(inst.lane) + (rowH - h) / 2;
-      this.note(
-        f,
-        x - noteW / 2,
-        y,
-        noteW,
-        h,
-        inst,
-        ledUpcoming(f.palette, isWhiteKey(inst.lane) ? WHITE_LED : BLACK_LED),
-      );
-      this.label(f, noteName(inst.lane), x, y + h / 2, Math.min(9, h - 4));
+      // Deliberately taller than a row, with a full pill radius, so the note
+      // name always fits — rows get thin over a three-octave range.
+      this.note(f, x - noteW / 2, y, noteW, h, inst, h / 2);
+      this.label(f, noteName(inst.lane), x, y + h / 2, 8.5);
     }
+    ctx.restore();
+
+    paintVeil(ctx, f.palette.lane, [trackX, 0], [hitX, 0], [trackX, 0, hitX - trackX, H]);
+
+    ctx.fillStyle = f.palette.head;
+    ctx.fillRect(Math.round(hitX) - 1, 0, 2, H);
 
     this.countIn(f, W, H);
   }
@@ -219,11 +237,13 @@ export class PianoRoll implements LaneRenderer {
     w: number,
     h: number,
     inst: LaneFrame["instances"][number],
-    baseColor: string,
+    radius?: number,
   ): void {
     const ctx = this.ctx;
-    const r = RADIUS[f.theme].note;
-    ctx.fillStyle = inst.resolved ? f.palette.rating[inst.rating!] : baseColor;
+    const r = radius ?? RADIUS[f.theme].note;
+    // Piano has no pad LEDs, so everything still to come takes one instrument
+    // colour; only what has been played wears a rating.
+    ctx.fillStyle = inst.resolved ? f.palette.rating[inst.rating!] : f.palette.instrument;
     if (r <= 0) ctx.fillRect(x, y, w, h);
     else {
       this.roundRect(x, y, w, h, r);

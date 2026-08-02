@@ -178,12 +178,18 @@ export function useTrainer(
   }
 
   /** The frame handed to whichever renderer is active this tick. */
-  function drawFrame(now: number, pos: { countIn: boolean; countInBeat: number } | null): void {
+  function drawFrame(
+    now: number,
+    pos: { countIn: boolean; countInBeat: number; absBeat: number } | null,
+  ): void {
     if (!renderer) return;
     renderer.resize();
     renderer.draw({
       now,
       secPerBeat: transport.secPerBeat,
+      absBeat: pos?.absBeat ?? 0,
+      beatsPerBar: transport.beatsPerBar,
+      lessonName: lesson.value.name,
       playing: pos !== null,
       countIn: pos?.countIn ?? false,
       countInBeat: pos?.countInBeat ?? 0,
@@ -212,6 +218,7 @@ export function useTrainer(
       highNote: pianoRange.value[1],
       loopBeats: transport.loopBeats,
       totalLoops: transport.totalLoops,
+      beatsPerBar: transport.beatsPerBar,
       runBeat,
       ratings: runRatings,
       // The renderer reports the window it just drew, so the overview's
