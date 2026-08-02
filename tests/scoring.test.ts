@@ -253,3 +253,51 @@ describe("lessonRepeats", () => {
     expect(lessonRepeats(lesson({ repeats: 9999 }))).toBeLessThanOrEqual(64);
   });
 });
+
+describe("run breakdown", () => {
+  // two lanes, three notes each, so a lane can drift one way
+  const two: TargetNote[] = [
+    { lane: 12, beat: 0 },
+    { lane: 12, beat: 1 },
+    { lane: 13, beat: 2 },
+    { lane: 13, beat: 3 },
+  ];
+  const at = (loop: number, beat: number) => 10 + loop * 4 + beat;
+
+  it("tallies how many notes landed in each band", () => {
+    const s = new Scorer(two);
+    s.spawnLoop(0, at);
+    s.hit(12, 10.0); // perfect
+    s.hit(12, 11.05); // great
+    s.hit(13, 12.08); // late
+    s.sweepMisses(20); // the last one times out
+    expect(s.tally).toEqual({ perfect: 1, great: 1, early: 0, late: 1, miss: 1 });
+  });
+
+  it("reports each lane's accuracy and which way it drifts, worst first", () => {
+    const s = new Scorer(two);
+    s.spawnLoop(0, at);
+    s.hit(12, 10.0); // perfect
+    s.hit(12, 11.0); // perfect
+    s.hit(13, 11.92); // early (80ms ahead)
+    s.hit(13, 12.92); // early
+
+    const stats = s.laneStats();
+    expect(stats).toHaveLength(2);
+    // lane 13 only managed the loose band, so it sorts first
+    expect(stats[0].lane).toBe(13);
+    expect(stats[0].accuracy).toBeCloseTo(0.4);
+    expect(stats[0].early).toBe(2);
+    expect(stats[0].late).toBe(0);
+    expect(stats[1].lane).toBe(12);
+    expect(stats[1].accuracy).toBeCloseTo(1);
+  });
+
+  it("counts a swept note as a miss in both the tally and the lane", () => {
+    const s = new Scorer(two);
+    s.spawnLoop(0, at);
+    s.sweepMisses(20);
+    expect(s.tally.miss).toBe(4);
+    expect(s.laneStats().every((l) => l.accuracy === 0)).toBe(true);
+  });
+});

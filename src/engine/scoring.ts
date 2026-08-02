@@ -101,6 +101,15 @@ export class Scorer {
   combo = 0;
   bestCombo = 0;
 
+  /** How many notes landed in each band, for the end-of-run breakdown. */
+  private counts: Record<Rating, number> = {
+    perfect: 0,
+    great: 0,
+    early: 0,
+    late: 0,
+    miss: 0,
+  };
+
   constructor(targets: TargetNote[]) {
     this.targets = targets;
   }
@@ -108,6 +117,39 @@ export class Scorer {
   /** All live instances (for the renderer). */
   get instances(): readonly NoteInstance[] {
     return this.all;
+  }
+
+  /** How many notes landed in each band over the whole run. */
+  get tally(): Readonly<Record<Rating, number>> {
+    return this.counts;
+  }
+
+  /**
+   * Per-lane breakdown for the summary: how accurate the lane was, and which
+   * way it drifted. The drift column is the reason splitting `early` from
+   * `late` is worth doing — "you rush the snare" is actionable in a way that
+   * "you are 78% on the snare" is not.
+   */
+  laneStats(): Array<{ lane: number; accuracy: number; early: number; late: number; total: number }> {
+    const by = new Map<number, { points: number; total: number; early: number; late: number }>();
+    for (const inst of this.all) {
+      if (!inst.resolved || !inst.rating) continue;
+      const e = by.get(inst.lane) ?? { points: 0, total: 0, early: 0, late: 0 };
+      e.points += RATING_SCORE[inst.rating] / 100;
+      e.total += 1;
+      if (inst.rating === "early") e.early += 1;
+      if (inst.rating === "late") e.late += 1;
+      by.set(inst.lane, e);
+    }
+    return [...by.entries()]
+      .map(([lane, e]) => ({
+        lane,
+        accuracy: e.total === 0 ? 1 : e.points / e.total,
+        early: e.early,
+        late: e.late,
+        total: e.total,
+      }))
+      .sort((a, b) => a.accuracy - b.accuracy);
   }
 
   /** Score-weighted accuracy 0..1 over everything resolved so far. */
@@ -158,6 +200,7 @@ export class Scorer {
     best.resolved = true;
     best.rating = rating;
     const pts = RATING_SCORE[rating] / 100;
+    this.counts[rating] += 1;
     this.hitPoints += pts;
     this.total += 1;
     this.loopHitPoints += pts;
@@ -178,6 +221,7 @@ export class Scorer {
       if (!inst.resolved && inst.time < now - TIMING_WINDOWS.loose) {
         inst.resolved = true;
         inst.rating = "miss";
+        this.counts.miss += 1;
         this.total += 1;
         this.loopTotal += 1;
         missed.push(inst);

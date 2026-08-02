@@ -23,6 +23,7 @@ import DeviceMenu from "@/components/DeviceMenu.vue";
 import MidiMonitor from "@/components/MidiMonitor.vue";
 import HomeScreen from "@/components/HomeScreen.vue";
 import ImportDialog from "@/components/ImportDialog.vue";
+import RunSummary from "@/components/RunSummary.vue";
 import type { LogRow } from "@/components/midi-log";
 import PianoKeyboard from "@/views/piano/PianoKeyboard.vue";
 
@@ -115,6 +116,7 @@ const {
   lesson,
   playing,
   runComplete,
+  runResult,
   bpm,
   bpmLabel,
   guide,
@@ -123,9 +125,11 @@ const {
   bestCombo,
   toast,
   pops,
+  lanes: trainerLanes,
   isPiano,
   pianoRange,
   lessonPitches,
+  totalLoops,
   loopBeats,
   play,
   stop,
@@ -810,6 +814,24 @@ function onVolume(e: Event) {
         <MidiMonitor :rows="log" @clear="log = []" @collapse="settings.monitorOpen = false" />
       </aside>
     </main>
+
+    <RunSummary
+      v-if="runComplete && runResult && view === 'trainer'"
+      :lesson-name="lesson.name"
+      :instrument="lesson.instrument"
+      :bpm="Math.round(bpm)"
+      :bars="lesson.bars"
+      :repeats="totalLoops"
+      :note-count="lesson.notes.length"
+      :accuracy="runResult.accuracy"
+      :best-combo="runResult.bestCombo"
+      :previous-best="runResult.previousBest"
+      :tally="runResult.tally"
+      :lanes="runResult.lanes"
+      :lane-order="isPiano ? lessonPitches : trainerLanes"
+      @again="onPlay"
+      @lessons="goHome"
+    />
 
     <ImportDialog
       v-if="importOpen"

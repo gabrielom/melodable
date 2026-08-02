@@ -63,6 +63,19 @@ export function useTrainer(
    * isn't drawn yet, and losing the result would be worse than showing it.
    */
   const runComplete = ref(false);
+  /** The finished run's numbers, frozen for the summary screen. */
+  const runResult = ref<{
+    accuracy: number;
+    bestCombo: number;
+    previousBest: number | null;
+    tally: Readonly<Record<Rating, number>>;
+    lanes: ReturnType<Scorer["laneStats"]>;
+  } | null>(null);
+  /**
+   * Best accuracy per lesson so far. In memory for now — M7 persists it, and
+   * this is the shape it will persist.
+   */
+  const bestByLesson = new Map<string, number>();
   const accuracy = ref(100);
   const combo = ref(0);
   const bestCombo = ref(0);
@@ -239,6 +252,7 @@ export function useTrainer(
   /** Start a run. The caller must have initialized audio (user gesture). */
   function play(): void {
     runComplete.value = false;
+    runResult.value = null;
     runRatings.clear();
     scorer = new Scorer(targets.value);
     advanceTracker.reset();
@@ -269,6 +283,7 @@ export function useTrainer(
    */
   function resetForLesson(): void {
     runComplete.value = false;
+    runResult.value = null;
     runRatings.clear();
     transport.stop();
     playing.value = false;
@@ -471,6 +486,16 @@ export function useTrainer(
     syncStats();
 
     const acc = scorer.accuracy;
+    const previousBest = bestByLesson.get(lesson.value.id) ?? null;
+    runResult.value = {
+      accuracy: acc,
+      bestCombo: scorer.bestCombo,
+      previousBest,
+      tally: { ...scorer.tally },
+      lanes: scorer.laneStats(),
+    };
+    if (previousBest === null || acc > previousBest) bestByLesson.set(lesson.value.id, acc);
+
     transport.stop();
     playing.value = false;
     runComplete.value = true;
@@ -548,6 +573,7 @@ export function useTrainer(
     lesson,
     playing,
     runComplete,
+    runResult,
     bpm,
     bpmLabel,
     guide,
@@ -560,6 +586,7 @@ export function useTrainer(
     isPiano,
     pianoRange,
     lessonPitches,
+    totalLoops,
     loopBeats,
     runBeats,
     play,
