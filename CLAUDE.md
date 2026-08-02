@@ -50,12 +50,20 @@ follower in `useTrainer` that drives tempo via `Transport.setBpm` and phase via
 `Transport.anchorTo`. `docs/ableton-playalong.md` documents it, including the
 MIDI-Clock alternative if CMake ever becomes a problem.
 
-The **trainer redesign** (light + dark, 34px bar, 104px lane gutter, fixed LED
-palette, Geist) has also landed — see the Conventions above for what it changed.
-Its handoff notes list screens that were **not designed**: home / lesson picker,
-piano mode, the count-in, the end-of-run summary, the monitor overlay, and the
-dropdowns' open state. Those currently run on remapped tokens so they follow the
-theme and stay coherent; **ask before designing them properly.**
+The **trainer redesign** has landed in two handoffs. Handoff 02 (turn 10) is the
+current design and supersedes 01 wherever they disagree — note that its own
+§§16-29 reverse several of its earlier sections, so read those last. Every
+screen now has a drawn state: home, both instruments in both orientations, the
+monitor, count-in, import, summary and the dropdowns.
+
+Undrawn edge cases — no MIDI device connected, an empty lesson list, a failed
+import — are **not designed**; ask before inventing them.
+
+Two things were deliberately not built from handoff 02: the summary's "slow to
+84" (§25 drops it) and its "drill snare" action, which would need a drill mode
+that does not exist. The app icon's 16px variant is also not generated — §15
+asks for hand-tuned geometry there rather than a mechanical downscale, so
+`npm run icons` starts at 32px.
 
 ### Next up: M7 — persistence
 

@@ -278,3 +278,43 @@ describe("midiToLesson", () => {
     expect(() => midiToLesson(parsed, "empty.mid")).toThrow(/No notes/);
   });
 });
+
+describe("pad mapping", () => {
+  const clip = () =>
+    buildSmf({
+      ppq: 480,
+      notes: [
+        { tick: 0, pitch: 36, vel: 100 }, // kick
+        { tick: 480, pitch: 38, vel: 100 }, // snare
+        { tick: 960, pitch: 36, vel: 100 },
+        { tick: 1440, pitch: 36, vel: 100 },
+      ],
+    });
+
+  it("reports where each source pitch landed, busiest first", () => {
+    const { analysis } = midiToLesson(parseMidiFile(clip()), "t", { instrument: "pads" });
+    expect(analysis.mapping).toEqual([
+      { pitch: 36, pad: noteToPad(36), count: 3 },
+      { pitch: 38, pad: noteToPad(38), count: 1 },
+    ]);
+  });
+
+  it("honours a reassignment, and says so in the mapping", () => {
+    const parsed = parseMidiFile(clip());
+    const to = 5; // some other pad
+    const { lesson, analysis } = midiToLesson(parsed, "t", {
+      instrument: "pads",
+      padOverrides: { 36: to },
+    });
+    expect(analysis.mapping.find((m) => m.pitch === 36)!.pad).toBe(to);
+    // and the lesson's own notes moved with it
+    const lanes = new Set(lesson.notes.map((n) => noteToPad(n.pitch)));
+    expect(lanes.has(to)).toBe(true);
+    expect(lanes.has(noteToPad(36))).toBe(false);
+  });
+
+  it("has nothing to map for a piano import", () => {
+    const { analysis } = midiToLesson(parseMidiFile(clip()), "t", { instrument: "piano" });
+    expect(analysis.mapping).toEqual([]);
+  });
+});

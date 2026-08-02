@@ -173,6 +173,12 @@ export interface MidiAnalysis {
   looksLikeDrums: boolean;
   /** Distinct pad or key names the generated lesson uses, for the preview. */
   lanes: string[];
+  /**
+   * Where each source pitch ended up, for the import dialog's mapping table.
+   * Pads only — piano keeps the pitch, so there is nothing to reassign.
+   * Sorted by how often the pitch occurs, so the busiest rows come first.
+   */
+  mapping: Array<{ pitch: number; pad: number; count: number }>;
 }
 
 // Pads to fall back to for percussion the GM map doesn't recognize, in a
@@ -187,7 +193,15 @@ const SPARE_PADS = [6, 7, 9, 10, 4, 5, 11, 3, 2, 1, 0, 8, 15, 14, 13, 12];
 export function midiToLesson(
   parsed: ParsedMidi,
   name: string,
-  opts: { bpm?: number; instrument?: InstrumentType } = {},
+  opts: {
+    bpm?: number;
+    instrument?: InstrumentType;
+    /**
+     * Source pitch -> pad index, overriding where the GM map would put it.
+     * The import dialog's mapping table writes these when you reassign a row.
+     */
+    padOverrides?: Readonly<Record<number, number>>;
+  } = {},
 ): { lesson: Lesson; analysis: MidiAnalysis } {
   if (parsed.notes.length === 0) throw new Error("No notes found in this MIDI clip");
 
@@ -214,7 +228,11 @@ export function midiToLesson(
   const spares = SPARE_PADS.filter((p) => !usedPads.has(p));
   const remap = new Map<number, number>();
   let spareI = 0;
+  const overrides = opts.padOverrides ?? {};
   const padPitchFor = (pitch: number): number => {
+    // A reassignment from the dialog wins over anything the map would do.
+    const forced = overrides[pitch];
+    if (forced !== undefined) return PAD_TO_NOTE[forced] ?? pitch;
     if (noteToPad(pitch) !== null) return pitch;
     if (!remap.has(pitch)) {
       const pad = spares.length ? spares[spareI++ % spares.length] : 12;
@@ -242,6 +260,20 @@ export function midiToLesson(
           .map((p) => PADS[p].name)
       : [...new Set(notes.map((n) => n.pitch))].sort((a, b) => a - b).map(noteName);
 
+  // Where each source pitch landed, busiest first — the dialog's table.
+  const counts = new Map<number, number>();
+  for (const n of raw) counts.set(n.pitch, (counts.get(n.pitch) ?? 0) + 1);
+  const mapping =
+    instrument === "pads"
+      ? [...counts.entries()]
+          .map(([pitch, count]) => ({
+            pitch,
+            pad: noteToPad(padPitchFor(pitch)) ?? 12,
+            count,
+          }))
+          .sort((a, b) => b.count - a.count || a.pitch - b.pitch)
+      : [];
+
   const cleanName = name.replace(/\.(mid|midi)$/i, "").slice(0, 40).trim() || "Imported clip";
   const bpm = Math.min(Math.max(Math.round(opts.bpm ?? parsed.bpm ?? 120), 40), 240);
 
@@ -268,6 +300,7 @@ export function midiToLesson(
     noteCount: notes.length,
     looksLikeDrums: isDrums,
     lanes,
+    mapping,
   };
 
   return { lesson, analysis };

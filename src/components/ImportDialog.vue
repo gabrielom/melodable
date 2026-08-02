@@ -10,6 +10,8 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import type { MidiAnalysis } from "@/engine/midi-file";
 import type { InstrumentType } from "@/engine/types";
+import { PADS } from "@/engine/gm";
+import { noteName } from "@/engine/pitch";
 
 const props = defineProps<{
   fileName: string;
@@ -21,8 +23,12 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "confirm", payload: { name: string; bpm: number }): void;
   (e: "instrument", value: InstrumentType): void;
+  (e: "remap", payload: { pitch: number; pad: number }): void;
   (e: "close"): void;
 }>();
+
+/** Every pad, for the mapping table's reassignment control. */
+const padOptions = PADS.map((pad, index) => ({ index, name: pad.name }));
 
 const name = ref(props.fileName.replace(/\.(mid|midi)$/i, "").slice(0, 40));
 const bpm = ref(props.analysis?.bpm ?? 120);
@@ -125,6 +131,35 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
             </div>
           </div>
 
+          <!--
+            Where each source note landed. The GM map gets it right for a
+            standard kit; anything else this is how you fix, without going back
+            to the DAW.
+          -->
+          <div v-if="instrument === 'pads' && analysis.mapping.length" class="field">
+            <span class="flabel">NOTE MAPPING</span>
+            <div class="map">
+              <div class="maprow maphead">
+                <span>NOTE</span><span>NAME</span><span>PAD</span><span class="r">HITS</span>
+              </div>
+              <div v-for="m in analysis.mapping" :key="m.pitch" class="maprow">
+                <span class="num">{{ m.pitch }}</span>
+                <span class="dim">{{ noteName(m.pitch) }}</span>
+                <select
+                  class="padsel"
+                  :value="m.pad"
+                  :aria-label="`Pad for note ${m.pitch}`"
+                  @change="emit('remap', { pitch: m.pitch, pad: Number(($event.target as HTMLSelectElement).value) })"
+                >
+                  <option v-for="o in padOptions" :key="o.index" :value="o.index">
+                    {{ o.name }}
+                  </option>
+                </select>
+                <span class="num r">{{ m.count }}</span>
+              </div>
+            </div>
+          </div>
+
           <div class="field">
             <span class="flabel">{{ instrument === "pads" ? "PADS USED" : "KEYS USED" }}</span>
             <div class="lanes">{{ analysis.lanes.join(" · ") }}</div>
@@ -151,134 +186,231 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
 .backdrop {
   position: fixed;
   inset: 0;
-  background: #06070acc;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-  padding: 24px;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  background: #00000088;
 }
+/* A sheet, like the summary: part of the window rather than a floating card. */
 .panel {
-  width: min(460px, 100%);
-  background: var(--bar);
-  border: 1px solid var(--hair);
-  border-radius: 14px;
-  box-shadow: 0 24px 80px #000000aa;
+  width: 460px;
+  max-width: calc(100% - 32px);
+  max-height: calc(100% - 48px);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--r-field);
+  background: var(--gutter);
+  box-shadow: inset 0 0 0 1px var(--hair), 0 24px 60px #00000066;
   overflow: hidden;
 }
+
 .head {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 15px 18px;
+  padding: 0 14px;
+  height: 34px;
   border-bottom: 1px solid var(--hair);
 }
-.kicker { font-family: var(--mono); font-size: 10px; letter-spacing: 2px; color: var(--head); }
+.kicker {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 1.1px;
+  color: var(--head);
+}
 .close {
-  background: none;
   border: none;
+  background: none;
+  padding: 0;
   color: var(--txt3);
-  font-size: 15px;
+  font-size: 11px;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 8px;
 }
-.close:hover { color: var(--txt); background: var(--active); }
+.close:hover { color: var(--txt); }
 
-.body { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
-.field { display: flex; flex-direction: column; gap: 6px; }
-.flabel { font-family: var(--mono); font-size: 9.5px; letter-spacing: 1.2px; color: var(--txt3); }
-.input {
-  background: var(--active);
-  border: 1px solid var(--hair);
-  border-radius: 9px;
-  padding: 9px 11px;
-  color: var(--txt);
-  font-size: 14px;
-  font-family: var(--sans);
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
 }
-.input:focus { outline: none; border-color: #37d0c455; }
+
+.field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.flabel {
+  font-family: var(--mono);
+  font-size: 7.5px;
+  letter-spacing: 1.2px;
+  color: var(--txt3);
+}
+.input {
+  height: 26px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--r-item);
+  background: var(--track);
+  box-shadow: var(--outline);
+  color: var(--txt);
+  font-family: var(--sans);
+  font-size: 12.5px;
+}
+.input:focus-visible { outline: 1px solid var(--head); outline-offset: 1px; }
+.bpm { width: 68px; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.bpmrow { display: flex; align-items: center; gap: 6px; }
+.unit {
+  font-family: var(--mono);
+  font-size: 7.5px;
+  letter-spacing: 1.2px;
+  color: var(--txt3);
+}
+
 .seg {
+  align-self: flex-start;
   display: inline-flex;
-  gap: 3px;
-  background: #0c0e12;
-  border: 1px solid var(--hair);
-  border-radius: 9px;
-  padding: 3px;
-  width: max-content;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-item);
+  background: var(--track);
+  box-shadow: var(--outline);
 }
 .segbtn {
-  background: none;
+  height: 20px;
+  padding: 0 10px;
   border: none;
+  border-radius: var(--r-item);
+  background: none;
   color: var(--txt2);
-  font-size: 13px;
-  font-weight: 600;
-  padding: 5px 16px;
-  border-radius: 7px;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 1.1px;
   cursor: pointer;
 }
-.segbtn.on { background: var(--active); color: var(--txt); box-shadow: 0 0 0 1px var(--hair); }
+.segbtn.on { background: var(--active); color: var(--active-txt); }
 
-.grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
-.bpmrow { display: flex; align-items: center; gap: 7px; }
-.input.bpm { width: 74px; font-family: var(--mono); }
-.unit { font-family: var(--mono); font-size: 10px; color: var(--txt3); }
-.stat { font-family: var(--mono); font-size: 15px; color: var(--txt); padding-top: 4px; }
-.lanes { font-size: 13px; color: var(--txt2); line-height: 1.5; }
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.stat {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--txt);
+}
+.lanes { font-size: 12px; line-height: 1.45; color: var(--txt2); }
 
+/* Detection banner — warns when the read disagrees with the choice. */
 .detect {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 12.5px;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: var(--r-item);
+  background: var(--track);
+  box-shadow: var(--outline);
+  font-size: 11.5px;
+  line-height: 1.4;
   color: var(--txt2);
-  background: #0c0e12;
-  border: 1px solid var(--hair);
-  border-radius: 10px;
-  padding: 10px 12px;
-  line-height: 1.45;
 }
 .detect .tag {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.5px;
-  color: var(--head);
-  border: 1px solid #37d0c455;
-  border-radius: 20px;
-  padding: 2px 8px;
   flex: none;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--hair);
+  font-family: var(--mono);
+  font-size: 7.5px;
+  letter-spacing: 1.2px;
+  color: var(--head);
 }
-.detect.warn { border-color: #ffb34033; }
-.detect.warn .tag { color: var(--led1); border-color: #ffb34055; }
+.detect.warn .tag { color: var(--led1); border-color: var(--led1); }
 
-.err { padding: 18px; display: flex; flex-direction: column; gap: 8px; }
-.err-title { font-size: 15px; font-weight: 700; color: var(--rate-miss); }
-.err-msg { font-family: var(--mono); font-size: 12px; color: var(--txt2); }
-.err-hint { font-size: 12.5px; color: var(--txt3); line-height: 1.5; }
-.err-hint code { font-family: var(--mono); font-size: 11px; color: var(--txt2); }
+.err { display: flex; flex-direction: column; gap: 7px; padding: 14px; }
+.err-title { font-size: 13px; font-weight: 600; color: var(--rate-miss); }
+.err-msg {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--txt2);
+  word-break: break-word;
+}
+.err-hint { font-size: 11.5px; line-height: 1.45; color: var(--txt3); }
+.err-hint code {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--txt2);
+}
 
 .foot {
+  flex: none;
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
-  padding: 13px 18px;
+  gap: 8px;
+  padding: 10px 14px;
   border-top: 1px solid var(--hair);
 }
 .btn {
-  border: 1px solid var(--hair);
-  background: #1a1e24;
-  border-radius: 10px;
-  padding: 9px 16px;
-  font-size: 13.5px;
-  font-weight: 600;
-  cursor: pointer;
-  color: var(--txt);
-}
-.btn.ghost { background: transparent; color: var(--txt2); }
-.btn.primary {
-  background: linear-gradient(180deg, #37d0c4, #20b3a8);
-  color: #04201d;
+  height: 26px;
+  padding: 0 12px;
   border: none;
-  font-weight: 700;
+  border-radius: var(--r-field);
+  background: none;
+  color: var(--txt2);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 1.1px;
+  cursor: pointer;
+}
+.btn:hover { background: var(--hover); color: var(--txt); }
+.btn.primary { background: var(--start); color: var(--start-txt); }
+.btn.primary:hover { background: var(--start); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+
+/* Mapping table: one row per source note, reassignable. */
+.map {
+  display: flex;
+  flex-direction: column;
+  max-height: 168px;
+  overflow-y: auto;
+  border-radius: var(--r-field);
+  box-shadow: var(--outline);
+}
+.maprow {
+  display: grid;
+  grid-template-columns: 44px 52px 1fr 44px;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 9.5px;
+  color: var(--txt);
+  border-bottom: 1px solid var(--hair);
+}
+.maprow:last-child { border-bottom: none; }
+.maphead {
+  position: sticky;
+  top: 0;
+  background: var(--bar);
+  font-size: 7.5px;
+  letter-spacing: 1.2px;
+  color: var(--txt3);
+}
+.maprow .dim { color: var(--txt3); }
+.maprow .r { text-align: right; }
+.padsel {
+  width: 100%;
+  min-width: 0;
+  border: none;
+  border-radius: var(--r-item);
+  background: var(--track);
+  box-shadow: var(--outline);
+  color: var(--txt);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  padding: 3px 5px;
+  cursor: pointer;
 }
 </style>

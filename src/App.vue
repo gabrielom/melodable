@@ -56,12 +56,15 @@ const importFileName = ref("");
 const importError = ref<string | null>(null);
 const importParsed = ref<ParsedMidi | null>(null);
 const importInstrument = ref<InstrumentType>("pads");
+/** Reassignments made in the dialog's mapping table, by source pitch. */
+const importPadOverrides = ref<Record<number, number>>({});
 
 const importResult = computed(() => {
   if (!importParsed.value) return null;
   try {
     return midiToLesson(importParsed.value, importFileName.value, {
       instrument: importInstrument.value,
+      padOverrides: importPadOverrides.value,
     });
   } catch {
     return null;
@@ -82,6 +85,7 @@ async function onImportFile(e: Event) {
   importFileName.value = file.name;
   importError.value = null;
   importParsed.value = null;
+  importPadOverrides.value = {};
   try {
     const parsed = parseMidiFile(await file.arrayBuffer());
     // Seed the instrument toggle from auto-detection; the user can override.
@@ -103,6 +107,7 @@ function closeImport() {
   importOpen.value = false;
   importParsed.value = null;
   importError.value = null;
+  importPadOverrides.value = {};
 }
 
 const audioReady = ref(false);
@@ -843,6 +848,7 @@ function onVolume(e: Event) {
       :error="importError"
       :instrument="importInstrument"
       @instrument="(i: InstrumentType) => (importInstrument = i)"
+      @remap="(m) => (importPadOverrides = { ...importPadOverrides, [m.pitch]: m.pad })"
       @confirm="confirmImport"
       @close="closeImport"
     />
