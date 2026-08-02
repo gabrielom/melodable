@@ -18,8 +18,11 @@ A Melodics-style timing trainer for **MPC-style pads** and **piano**, where less
 | **M3 — Lesson progression + library** | ✅ done |
 | **M4 — Ableton MIDI import** | ✅ done |
 | **M5 — Piano mode (falling notes)** | ✅ done |
-| M6 — Ableton Link play-along | ⬜ next |
-| M7 — Polish & package | ⬜ |
+| **M6 — Ableton Link play-along** | ✅ done |
+| M7 — Practice history (persistence) | ⬜ next |
+
+The **trainer redesign** (two handoffs) has also landed: light + dark themes, a
+34px transport bar, five bars of music on screen, and every screen drawn.
 
 ### What works right now
 
@@ -30,9 +33,13 @@ A Melodics-style timing trainer for **MPC-style pads** and **piano**, where less
 - **Piano mode:** falling notes aligned to an on-screen keyboard (at least three octaves, pinned to the bottom), poly synth, chord grading — the same transport and scorer as pads.
 - **Two note directions:** vertical (notes fall to a hit line) or horizontal (Melodics-style, scrolling right-to-left onto a playhead). Both keep an "already played" zone so a note stays visible after you strike it.
 - Play from hardware, mouse, or computer keyboard.
-- **Grading:** one-bar count-in, Perfect/Great/Good/Miss against fixed timing windows, notes recolour by rating, plus live accuracy, combo, and last-bar score in the bar.
-- **Loop overview:** the whole pattern at a glance above the lane, with a playhead sweeping it and each note tinted once graded.
-- **Lesson progression:** six built-in pad lessons (Four on the Floor → Tom Fill) plus a piano lesson; two strong bars at/above the lesson's base tempo clear it and advance to the next. Tempo itself is yours to set — the slider, not an algorithm.
+- **Grading:** a four-ring count-in, then **Perfect / Great / Early / Late / Miss** against fixed timing windows. The loose band splits by *direction*, so rushing and dragging read differently — and the end-of-run summary tells you which way each lane drifts.
+- **A lesson is a finite run, not an endless loop.** Every built-in is 16 bars (39–55s); it plays through and ends, and the whole run is scored.
+- **End-of-run summary:** the score, a breakdown bar across all five ratings, and your weakest lanes with the direction they drift.
+- **Run overview:** the whole run at a glance above the lane, one dot per note, with a rectangle marking exactly the slice the lanes are showing.
+- **Two themes**, dark (Maschine-style chassis) and light (one flat Ableton grey), from the toggle in the bar. Follows the OS on first run.
+- **Lesson progression:** six built-in pad lessons (Four on the Floor → Tom Fill) plus a piano lesson; one clean run at/above the lesson's base tempo clears it and advances to the next. Tempo itself is yours to set — the readout you drag, not an algorithm.
+- **Ableton Link:** lock tempo and downbeat to a live Ableton set from the chain toggle in the bar.
 - **Persistent settings:** volume, sound source, metronome, monitor state, pad layout, note direction, and last lesson are saved via the Tauri store plugin (in-app only; browser dev stays in-memory).
 - **Ableton clip import:** drop in a `.mid` clip and it becomes a gradable lesson at its own tempo — native SMF parser (tempo/time-signature meta, running status), auto-detects drums→pads / melodic→piano (overridable), and a preview dialog.
 - **Two instruments, one engine:** pads and piano share the transport and scorer; they differ only in a canvas renderer and a pitch→lane map. Switching instrument jumps to that instrument's lesson.
@@ -50,7 +57,7 @@ A Melodics-style timing trainer for **MPC-style pads** and **piano**, where less
   - macOS: Xcode Command Line Tools
   - Windows: MSVC Build Tools + WebView2
   - Linux: `webkit2gtk-4.1`, `libayatana-appindicator3`, `librsvg2`, plus `libasound2-dev` and `pkg-config` for ALSA MIDI
-- **CMake 3.14+** — only needed from M6 onward (building Ableton Link)
+- **CMake 3.14+** — required: `rusty_link` compiles the Ableton Link C++ library. `brew install cmake` on macOS. To build without it, see the note under *Run it*.
 
 ## Run it
 
@@ -60,6 +67,16 @@ npm run tauri dev
 ```
 
 First run compiles the Rust side and takes a few minutes; after that it's fast and hot-reloads the Vue side.
+
+**No CMake?** Ableton Link is behind a cargo feature, so you can drop it:
+
+```bash
+npm run tauri dev -- --no-default-features
+```
+
+Everything else works; the chain toggle just hides itself.
+
+**Browser-only** — `npm run dev` renders the UI at http://localhost:1420 for quick styling. MIDI, Ableton Link and persistence all need the Tauri shell.
 
 ```bash
 npm test          # vitest
@@ -95,19 +112,19 @@ npm run tauri icon app-icon.png
 
 1. `npm run tauri dev`, open a pad lesson.
 2. Hit **▶ Play** — you get a one-bar count-in (4·3·2·1 over the lanes), then notes travel toward the hit line in the kick/snare/closed-hat lanes.
-3. Strike pads (hardware, keys `z`/`x`/`a`, or mouse) as notes land — notes recolour by rating (amber/teal/blue, red for a miss), a rating pops on the pad, and the bar's accuracy/combo update.
-4. Leave a bar unplayed — everything turns miss-red and the **bar** readout drops.
-5. Toggle **Guide** to hear the target part quietly; drag the **tempo** slider mid-run — the playhead stays continuous.
+3. Strike pads (hardware, keys `z`/`x`/`a`, or mouse) as notes land. Notes ahead of the playhead carry their lane's colour; once struck they take their rating (green/cyan/amber/pink, red for a miss), keep travelling, and fade out at the edge.
+4. Leave a bar unplayed — those notes turn miss-red and accuracy drops.
+5. Toggle **Guide** to hear the target part quietly; drag the **tempo** readout mid-run — the playhead stays continuous.
 
 **Acceptance (from the plan):** falling notes hit the line in time; ratings and combo update; `npm test` passes.
 
 ## Verifying M3
 
 1. `npm run tauri dev`. The **home screen** lists every lesson; pick one and the trainer opens on it (tempo, hint, and lanes update). The **✕** in the bar returns to the list.
-2. Hit **▶ Play** and play well — two strong bars at/above the lesson's base tempo **clear the lesson and advance** to the next one (a toast names it).
+2. Hit **▶ START** and play well. The lesson runs 16 bars and then **ends** on a summary; one clean run at/above the lesson's base tempo **clears it and advances** to the next.
 3. Change the volume or the **Synth/DAW** switch, quit, relaunch — your choice (and the last lesson) is **restored**. (Persistence only applies in the Tauri app, not `npm run dev`.)
 
-**Acceptance:** clearing a lesson advances the progression; the home screen switches lessons; settings survive a relaunch.
+**Acceptance:** clearing a lesson advances the progression; the home screen switches lessons; settings (including the theme) survive a relaunch.
 
 ## Verifying M4
 
@@ -129,6 +146,14 @@ npm run tauri icon app-icon.png
 
 > Imported lessons live for the session. If a controller or Drum Rack sends note numbers the grid doesn't know, the importer places them on spare pads rather than dropping them; extend `GM_TO_PAD` in `src/engine/gm.ts` to place them deliberately.
 
+## Verifying M6
+
+1. In Ableton: **Settings → Link / Tempo / MIDI → Link: On**.
+2. `npm run tauri dev`, then click the **chain icon** in the bar (left of the device menu). It turns teal and shows a peer count.
+3. Hit **▶ START** — the run rides Ableton's grid. **Change Ableton's tempo and the trainer follows.** Dragging Melodable's tempo readout pushes tempo the other way.
+
+**Acceptance (from the plan):** with Ableton running Link, the trainer locks to its tempo and downbeat.
+
 ### Playing along with Ableton (sound from Ableton, tracking in Melodable)
 
 Set the bar's **Synth / DAW** switch to **DAW** and Melodable mutes its own
@@ -148,24 +173,27 @@ src/
 │  ├─ gm.ts       # pad layout (4x4 / 2x8), GM drum map, keyboard bindings
 │  ├─ pitch.ts    # note names + keyboard geometry (shared by every view)
 │  ├─ audio.ts    # Web Audio drum kit + piano voice + metronome
-│  ├─ transport.ts # looped playhead: clock math, count-in, scheduler window
-│  ├─ scoring.ts  # lane-based hit grading, combo, per-loop accuracy
+│  ├─ theme.ts    # the palette as data (canvas can't read CSS variables)
+│  ├─ transport.ts # the playhead: clock math, count-in, run length, scheduler
+│  ├─ scoring.ts  # lane-based grading, combo, run tally + per-lane drift
 │  ├─ adaptive.ts # lesson-clear streak
-│  ├─ midi-clock.ts # midir timestamps -> AudioContext clock
+│  ├─ host-clock.ts # midir / Link timestamps -> AudioContext clock
 │  └─ midi-file.ts  # SMF parser + .mid → Lesson (Ableton import)
-├─ composables/   # useMidi.ts (Rust bridge), useTrainer.ts (session loop)
+├─ composables/   # useMidi, useLink (Rust bridges), useTrainer (session loop)
 ├─ stores/        # Pinia: settings, lessons, persist (Tauri store)
-├─ components/    # HomeScreen, DeviceMenu, MidiMonitor, ImportDialog
+├─ components/    # HomeScreen, DeviceMenu, MidiMonitor, ImportDialog, RunSummary
 ├─ data/lessons/  # built-in lesson JSON
 └─ views/
-   ├─ lane-frame.ts # shared LaneRenderer contract (pads + piano)
-   ├─ Overview.ts   # the loop-at-a-glance strip above the lane
-   ├─ pads/       # PadGrid.vue, PadLanes.ts (canvas lanes, both directions)
+   ├─ lane-frame.ts    # shared LaneRenderer contract (pads + piano)
+   ├─ lane-geometry.ts # five-bar zoom, tempo grid, veil, count-in — shared
+   ├─ Overview.ts      # the run-at-a-glance strip above the lane
+   ├─ pads/       # PadLanes.ts (canvas lanes, both directions)
    └─ piano/      # PianoKeyboard.vue, PianoRoll.ts (canvas lanes, both directions)
 
 src-tauri/src/
 ├─ main.rs        # Tauri builder, state, command registration
-└─ midi.rs        # midir input → `midi://message` events
+├─ midi.rs        # midir input → `midi://message` events
+└─ link.rs        # Ableton Link → `link://state` events (feature-gated)
 ```
 
 ### Two rules worth keeping
@@ -183,4 +211,6 @@ src-tauri/src/
 
 **Audio but no visuals (or vice versa)** — Check the monitor's source dots: amber = hardware, blue = computer keyboard, grey = mouse.
 
-**Browser-only dev** — `npm run dev` renders the UI in a browser for quick styling, but MIDI and persistence need the Tauri shell; the device menu says so when you open it outside Tauri.
+**`tauri dev` fails in `rusty_link`** — that's CMake missing. Install it, or run with `--no-default-features` to build without Ableton Link.
+
+**Browser-only dev** — `npm run dev` renders the UI in a browser for quick styling, but MIDI, Ableton Link and persistence need the Tauri shell; the device menu says so when you open it outside Tauri.
