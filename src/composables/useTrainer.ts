@@ -87,6 +87,11 @@ export function useTrainer(
 
   const targets = computed(() => lessonTargets(lesson.value, laneOf));
 
+  /** Piano: the distinct pitches this lesson asks for — the keys to mark. */
+  const lessonPitches = computed(() =>
+    isPiano.value ? [...new Set(targets.value.map((t) => t.lane))].sort((a, b) => a - b) : [],
+  );
+
   /** Pads: the pad indices this lesson uses, left-to-right. */
   const lanes = computed(() => [...new Set(targets.value.map((t) => t.lane))].sort((a, b) => a - b));
 
@@ -554,6 +559,7 @@ export function useTrainer(
     lanes,
     isPiano,
     pianoRange,
+    lessonPitches,
     loopBeats,
     runBeats,
     play,

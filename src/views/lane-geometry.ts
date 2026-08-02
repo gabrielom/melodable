@@ -148,3 +148,66 @@ export function paintVeil(
   ctx.fillStyle = g;
   ctx.fillRect(rect[0], rect[1], rect[2], rect[3]);
 }
+
+/**
+ * Count-in: one ring per beat of the bar, filling left to right, the current
+ * beat solid and enlarged. Drawn over a wash of the lane area — the transport
+ * bar above stays live.
+ */
+export function paintCountIn(
+  ctx: CanvasRenderingContext2D,
+  opts: {
+    theme: Theme;
+    palette: { txt: string; txt3: string; rating: { early: string } };
+    beats: number;
+    beat: number;
+    reducedMotion: boolean;
+    lessonName: string;
+    w: number;
+    h: number;
+    mono: string;
+    sans: string;
+  },
+): void {
+  const { palette: p, w: W, h: H } = opts;
+  const beats = Math.max(1, Math.round(opts.beats));
+  const done = Math.floor(opts.beat);
+  const frac = opts.beat - done;
+
+  ctx.fillStyle = opts.theme === "light" ? "#cccccc99" : "#0e0e0f99";
+  ctx.fillRect(0, 0, W, H);
+
+  const R = 13;
+  const step = R * 2 + 22;
+  const cx = W / 2 - ((beats - 1) * step) / 2;
+  const cy = H / 2 - 10;
+
+  for (let i = 0; i < beats; i++) {
+    const current = i === done;
+    // The current beat swells across its beat, unless motion is unwelcome.
+    const r = R * (current && !opts.reducedMotion ? 1 + (1 - frac) * 0.18 : 1);
+    ctx.beginPath();
+    ctx.arc(cx + i * step, cy, r, 0, Math.PI * 2);
+    if (i <= done) {
+      ctx.fillStyle = p.rating.early;
+      ctx.globalAlpha = current ? 1 : 0.45;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.strokeStyle = p.txt3;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  }
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = p.txt;
+  ctx.font = `500 12px ${opts.sans}`;
+  ctx.fillText(opts.lessonName, W / 2, cy + R + 26);
+  ctx.fillStyle = p.txt3;
+  ctx.font = `500 8.5px ${opts.mono}`;
+  ctx.fillText("ESC TO STOP", W / 2, cy + R + 46);
+  ctx.textBaseline = "alphabetic";
+  ctx.textAlign = "left";
+}

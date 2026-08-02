@@ -21,7 +21,13 @@
 
 import { ledOf, RADIUS } from "@/engine/theme";
 import { PADS, padPosition } from "@/engine/gm";
-import { paintGrid, paintVeil, pxPerBeat, SEPARATOR_INK } from "@/views/lane-geometry";
+import {
+  paintCountIn,
+  paintGrid,
+  paintVeil,
+  pxPerBeat,
+  SEPARATOR_INK,
+} from "@/views/lane-geometry";
 import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
 
 /** Canvas takes a font shorthand, not a CSS variable — mirrors `--mono`. */
@@ -371,57 +377,20 @@ export class PadLanes implements LaneRenderer {
     ctx.textBaseline = "alphabetic";
   }
 
-  /**
-   * Count-in: one ring per beat of the bar, filling left to right, the current
-   * beat solid and enlarged. Over a wash of the lane area — the bar above
-   * stays live.
-   */
   private countIn(f: LaneFrame, W: number, H: number): void {
     if (!f.countIn) return;
-    const ctx = this.ctx;
-    const p = f.palette;
-    const beats = Math.max(1, Math.round(f.countInBeats));
-    const done = Math.floor(f.countInBeat);
-    const frac = f.countInBeat - done;
-
-    ctx.fillStyle = f.theme === "light" ? "#cccccc99" : "#0e0e0f99";
-    ctx.fillRect(0, 0, W, H);
-
-    const R = 13;
-    const gap = 22;
-    const step = R * 2 + gap;
-    const cx = W / 2 - ((beats - 1) * step) / 2;
-    const cy = H / 2 - 10;
-
-    for (let i = 0; i < beats; i++) {
-      const x = cx + i * step;
-      const current = i === done;
-      // The current beat swells over its beat, unless motion is unwelcome.
-      const grow = current && !f.reducedMotion ? 1 + (1 - frac) * 0.18 : 1;
-      const r = R * grow;
-      ctx.beginPath();
-      ctx.arc(x, cy, r, 0, Math.PI * 2);
-      if (i < done || current) {
-        ctx.fillStyle = p.rating.early;
-        ctx.globalAlpha = current ? 1 : 0.45;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-      } else {
-        ctx.strokeStyle = p.txt3;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-      }
-    }
-
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = p.txt;
-    ctx.font = `500 12px ${SANS}`;
-    ctx.fillText(f.lessonName, W / 2, cy + R + 26);
-    ctx.fillStyle = p.txt3;
-    ctx.font = `500 8.5px ${MONO}`;
-    this.trackedCentered("ESC TO STOP", W / 2, cy + R + 46, 1.2, Infinity);
-    ctx.textBaseline = "alphabetic";
+    paintCountIn(this.ctx, {
+      theme: f.theme,
+      palette: f.palette,
+      beats: f.countInBeats,
+      beat: f.countInBeat,
+      reducedMotion: f.reducedMotion,
+      lessonName: f.lessonName,
+      w: W,
+      h: H,
+      mono: MONO,
+      sans: SANS,
+    });
   }
 
   /**

@@ -8,6 +8,15 @@ import { noteName } from "@/engine/pitch";
 import type { LogRow } from "@/components/midi-log";
 
 defineProps<{ rows: LogRow[] }>();
+
+/** The wire names read as one word; the column wants them spaced. */
+const KIND_LABEL: Record<string, string> = {
+  noteon: "note on",
+  noteoff: "note off",
+  cc: "cc",
+  other: "other",
+};
+const kindLabel = (k: string) => KIND_LABEL[k] ?? k;
 const emit = defineEmits<{ (e: "clear"): void; (e: "collapse"): void }>();
 </script>
 
@@ -31,114 +40,126 @@ const emit = defineEmits<{ (e: "clear"): void; (e: "collapse"): void }>();
       </p>
       <div v-for="r in rows" :key="r.id" class="row" :class="r.kind">
         <span class="kind">
-          <i class="src" :class="r.source" />{{ r.kind }}
+          <i class="src" :class="r.source" />{{ kindLabel(r.kind) }}
         </span>
-        <span class="mono">{{ r.note }} <em>{{ noteName(r.note) }}</em></span>
-        <span class="mono">{{ r.velocity }}</span>
-        <span class="mono">{{ r.channel + 1 }}</span>
-        <span class="mono dim">{{ r.delta > 0 ? r.delta : "—" }}</span>
+        <span>{{ r.note }} <em>{{ noteName(r.note) }}</em></span>
+        <span>{{ r.velocity }}</span>
+        <span>{{ r.channel + 1 }}</span>
+        <span class="dim">{{ r.delta > 0 ? r.delta : "—" }}</span>
       </div>
     </div>
   </section>
 </template>
 
 <style scoped>
+/* Part of the window, not a floating card: it sits on `gutter` with the
+   panel radius, and in light needs the hairline to separate at all. */
 .monitor {
-  border: 1px solid var(--hair);
-  border-radius: 12px;
-  background: var(--bar);
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  min-height: 0;
   overflow: hidden;
+  border-radius: var(--r-panel);
+  background: var(--gutter);
+  box-shadow: var(--outline);
 }
+
 header {
+  height: 26px;
+  flex: none;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 12px 8px;
+  padding: 0 10px;
   border-bottom: 1px solid var(--hair);
 }
 .ttl {
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 1.6px;
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 1.1px;
   color: var(--head);
 }
-.acts { display: inline-flex; align-items: center; gap: 4px; }
-.clear {
-  background: none;
-  border: none;
-  color: var(--txt3);
-  font-size: 11px;
-  cursor: pointer;
-  font-family: var(--mono);
-}
-.clear:hover { color: var(--txt); }
+.acts { display: inline-flex; align-items: center; gap: 8px; }
+.clear,
 .collapse {
-  background: none;
   border: none;
+  background: none;
+  padding: 0;
   color: var(--txt3);
-  font-size: 16px;
-  line-height: 1;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 1.1px;
   cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 6px;
 }
-.collapse:hover { color: var(--txt); background: var(--active); }
+.clear:hover,
+.collapse:hover { color: var(--txt); }
+.collapse { font-size: 11px; letter-spacing: 0; }
 
+/* The grid is the app's own; only the type scale changed. */
 .head,
 .row {
   display: grid;
   grid-template-columns: 1.5fr 1.4fr 0.6fr 0.5fr 0.7fr;
   gap: 6px;
-  padding: 5px 12px;
-  align-items: center;
+  padding: 5px 10px;
+  align-items: baseline;
 }
 .head {
+  flex: none;
   font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 1px;
-  color: var(--txt3);
+  font-size: 7.5px;
+  letter-spacing: 1.2px;
   text-transform: uppercase;
+  color: var(--txt3);
   border-bottom: 1px solid var(--hair);
 }
-.rows {
-  overflow-y: auto;
-  flex: 1;
-  min-height: 0;
+.head span:last-child,
+.row span:last-child { text-align: right; }
+
+.rows { flex: 1; min-height: 0; overflow-y: auto; }
+.empty {
+  margin: 0;
+  padding: 10px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--txt3);
 }
+
 .row {
-  font-size: 12px;
-  border-bottom: 1px solid #1e222a;
-}
-.row.noteon .kind { color: var(--head); }
-.row.noteoff .kind { color: var(--txt3); }
-.row.cc .kind { color: var(--led2); }
-.kind {
   font-family: var(--mono);
-  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-size: 9.5px;
+  color: var(--txt);
+  border-bottom: 1px solid var(--hair);
+}
+.row em { font-style: normal; font-size: 8px; color: var(--txt3); }
+.dim { color: var(--txt3); }
+
+/* The event cell names a message kind, not a rating, so it keeps its own
+   literal hues (see handoff 02 §21). */
+.kind {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-}
-.src {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  display: inline-block;
-  flex: none;
-}
-.src.hardware { background: var(--led1); box-shadow: 0 0 6px var(--led1); }
-.src.keyboard { background: var(--led2); }
-.src.click { background: var(--txt3); }
-.mono { font-family: var(--mono); font-size: 11.5px; }
-.mono em { color: var(--txt3); font-style: normal; font-size: 10.5px; }
-.dim { color: var(--txt3); }
-.empty {
+  gap: 5px;
+  font-size: 8.5px;
+  letter-spacing: 1.1px;
+  text-transform: lowercase;
   color: var(--txt3);
-  font-size: 12.5px;
-  padding: 16px 12px;
-  margin: 0;
 }
+.row.noteon .kind { color: var(--rate-great); }
+.row.cc .kind { color: var(--led2); }
+
+/* Source dot: where the message came from. */
+.src {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--txt3);
+}
+.src.hardware { background: var(--led1); }
+.src.keyboard { background: var(--led2); }
 </style>

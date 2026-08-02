@@ -23,6 +23,8 @@ const props = withDefaults(
     active: Map<number, number>;
     /** transient rating flashes from the scorer (lane === pitch) */
     pops?: RatingPop[];
+    /** The pitches this lesson actually asks for. Only these are named. */
+    used?: number[];
   }>(),
   { lowNote: 48, highNote: 72 },
 );
@@ -56,7 +58,14 @@ const flashColor = (n: number): string | null => {
   return pop ? palette.value.rating[pop.rating] : null;
 };
 
-const isC = (n: number) => n % 12 === 0;
+/**
+ * Melodics names the targets, not the instrument: only the pitches the lesson
+ * uses are labelled and edge-lit, so the player reads four keys rather than a
+ * full nameplate. Derived from the lesson, so an imported clip highlights
+ * whatever it happens to contain.
+ */
+const usedSet = computed(() => new Set(props.used ?? []));
+const isUsed = (n: number) => usedSet.value.has(n);
 </script>
 
 <template>
@@ -66,13 +75,13 @@ const isC = (n: number) => n % 12 === 0;
       v-for="n in whiteNotes"
       :key="n"
       class="white"
-      :class="{ on: active.has(n) }"
+      :class="{ on: active.has(n), used: isUsed(n) }"
       :style="flashColor(n) ? { boxShadow: `inset 0 0 0 2px ${flashColor(n)}, 0 0 16px ${flashColor(n)}` } : {}"
       @pointerdown.prevent="emit('noteOn', n, 100)"
       @pointerup="emit('noteOff', n)"
       @pointerleave="emit('noteOff', n)"
     >
-      <span v-if="isC(n)" class="label">{{ noteName(n) }}</span>
+      <span v-if="isUsed(n)" class="label">{{ noteName(n) }}</span>
     </button>
 
     <!-- black keys overlaid -->
@@ -80,12 +89,14 @@ const isC = (n: number) => n % 12 === 0;
       v-for="n in blackNotes"
       :key="n"
       class="black"
-      :class="{ on: active.has(n) }"
+      :class="{ on: active.has(n), used: isUsed(n) }"
       :style="[blackStyle(n), flashColor(n) ? { boxShadow: `0 0 0 2px ${flashColor(n)}, 0 0 14px ${flashColor(n)}` } : {}]"
       @pointerdown.prevent="emit('noteOn', n, 100)"
       @pointerup="emit('noteOff', n)"
       @pointerleave="emit('noteOff', n)"
-    />
+    >
+      <span v-if="isUsed(n)" class="label black-label">{{ noteName(n) }}</span>
+    </button>
   </div>
 </template>
 
@@ -110,18 +121,26 @@ const isC = (n: number) => n % 12 === 0;
   padding-bottom: 7px;
   transition: background 0.06s, box-shadow 0.06s;
 }
+/* Target keys carry the same amber as a held key: an inset edge on the side
+   facing the roll, plus the pitch name. */
+.white.used { box-shadow: inset 0 3px 0 var(--key-mark); }
+.white.used .label { color: var(--key-mark); font-weight: 500; }
 .white.on {
-  background: var(--head);
-  box-shadow: 0 0 18px color-mix(in srgb, var(--head) 55%, transparent) inset;
+  background: linear-gradient(180deg, #ffd79a 0%, var(--key-mark) 100%);
+  box-shadow: none;
 }
+.white.on .label { color: #2a1a02; }
 .label {
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 8px;
   color: #7b838f;
   pointer-events: none;
 }
 .black {
   position: absolute;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
   top: 0;
   height: 62%;
   background: linear-gradient(180deg, #2b3038 0%, #14171c 88%, #0a0c0f 100%);
@@ -132,8 +151,18 @@ const isC = (n: number) => n % 12 === 0;
   box-shadow: 0 3px 6px rgba(0, 0, 0, 0.6);
   transition: background 0.06s, box-shadow 0.06s;
 }
+.black.used { box-shadow: inset 0 3px 0 var(--key-mark), 0 3px 6px rgba(0, 0, 0, 0.6); }
+.black.used .label { color: var(--key-mark); }
 .black.on {
-  background: var(--head);
-  box-shadow: 0 0 16px color-mix(in srgb, var(--head) 60%, transparent);
+  background: linear-gradient(180deg, #ffd79a 0%, var(--key-mark) 100%);
+}
+.black.on .label { color: #2a1a02; }
+.black-label {
+  position: absolute;
+  bottom: 5px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 8px;
 }
 </style>

@@ -96,6 +96,8 @@
   --led2: #3d9fe6;
   /* Unlit cells of the controller mini-grid. */
   --mini-off: #2e2e30;
+  /* Held key and lesson-target key share one amber (handoff 02 §22). */
+  --key-mark: #f0a129;
   /* Overview strip's viewport rectangle — neutral, never the accent. */
   --view-fill: #1b1b1d;
   --view-edge: #4a4a4e;
@@ -147,6 +149,7 @@
   --led1: #b1720f;
   --led2: #2b6fae;
   --mini-off: #b6b6b6;
+  --key-mark: #a5710d;
   --view-fill: #d4d4d4;
   --view-edge: #8f8f8f;
 

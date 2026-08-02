@@ -125,6 +125,7 @@ const {
   pops,
   isPiano,
   pianoRange,
+  lessonPitches,
   loopBeats,
   play,
   stop,
@@ -484,7 +485,8 @@ function onVolume(e: Event) {
           :class="playing ? 'is-stop' : 'is-start'"
           @click="playing ? stop() : onPlay()"
         >
-          {{ playing ? "■ STOP" : "▶ START" }}
+          <i class="tglyph" :class="playing ? 'sq' : 'tri'" aria-hidden="true" />
+          <span>{{ playing ? "STOP" : "START" }}</span>
         </button>
 
         <i class="divider" />
@@ -746,7 +748,7 @@ function onVolume(e: Event) {
     </header>
 
     <!-- ============================= body ============================= -->
-    <main class="body">
+    <main class="body" :class="{ 'with-monitor': settings.monitorOpen && view === 'trainer' }">
       <HomeScreen
         v-if="view === 'home'"
         :lessons="lessons.lessons"
@@ -770,6 +772,7 @@ function onVolume(e: Event) {
             :active="activeNotes"
             :low-note="pianoRange[0]"
             :high-note="pianoRange[1]"
+            :used="lessonPitches"
             :pops="pops"
             @note-on="(n, v) => noteOn(n, v, 'click')"
             @note-off="noteOff"
@@ -778,8 +781,7 @@ function onVolume(e: Event) {
         </div>
       </section>
 
-      <!-- The monitor is an overlay over the lane, never a permanent column. -->
-      <aside v-if="settings.monitorOpen" class="monitor-overlay">
+      <aside v-if="settings.monitorOpen && view === 'trainer'" class="monitor">
         <MidiMonitor :rows="log" @clear="log = []" @collapse="settings.monitorOpen = false" />
       </aside>
     </main>
@@ -879,6 +881,18 @@ function onVolume(e: Event) {
   border: none;
   border-radius: var(--r-field);
   cursor: pointer;
+}
+/* Drawn, not typed: a `■` glyph centres on the font's baseline and sits
+   visibly high next to the caps of the label. */
+.tglyph { flex: none; display: block; background: currentColor; }
+.tglyph.sq { width: 6px; height: 6px; }
+.tglyph.tri {
+  width: 0;
+  height: 0;
+  background: none;
+  border-left: 7px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
 }
 .transport.is-stop { background: var(--stop); color: var(--stop-txt); }
 .transport.is-start { background: var(--start); color: var(--start-txt); }
@@ -1073,13 +1087,17 @@ function onVolume(e: Event) {
 
 /* ================================ body ================================ */
 
+/* The monitor is a real column, so the lane area reflows into what is left
+   rather than being covered. Nothing else moves. */
 .body {
   flex: 1;
   min-height: 0;
   position: relative;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
 }
+.body.with-monitor { grid-template-columns: minmax(0, 1fr) 268px; }
 
 .stage {
   flex: 1;
@@ -1134,20 +1152,10 @@ function onVolume(e: Event) {
   white-space: nowrap;
 }
 
-/* The monitor floats over the lane instead of taking a column of its own. */
-.monitor-overlay {
-  position: absolute;
-  top: var(--pad-win);
-  right: var(--pad-win);
-  bottom: var(--pad-win);
-  z-index: 30;
-  width: 300px;
-  max-width: calc(100% - var(--pad-win) * 2);
+.monitor {
+  min-width: 0;
   display: flex;
-  border-radius: var(--r-panel);
-  overflow: hidden;
-  background: var(--bar);
-  box-shadow: inset 0 0 0 1px var(--hair), 0 12px 30px #00000055;
+  padding: var(--pad-win) var(--pad-win) var(--pad-win) 0;
 }
 
 /* ============================== responsive ==============================

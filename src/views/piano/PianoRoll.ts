@@ -14,7 +14,7 @@
  */
 
 import { RADIUS } from "@/engine/theme";
-import { paintGrid, paintVeil, pxPerBeat, ROW_INK } from "@/views/lane-geometry";
+import { paintCountIn, paintGrid, paintVeil, pxPerBeat, ROW_INK } from "@/views/lane-geometry";
 import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
 import { countWhiteKeys, isWhiteKey, keyGeometry, noteName, pitchClass } from "@/engine/pitch";
 
@@ -23,6 +23,7 @@ const GUTTER = 46;
 
 /** Canvas takes a font shorthand, not a CSS variable — mirrors the tokens. */
 const MONO = '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
+const SANS = '"Geist", ui-sans-serif, system-ui, sans-serif';
 /** Semitone beds: black-key rows sit a shade darker than white-key rows. */
 const ROW_BLACK = { dark: "#0d0d0e", light: "#c4c4c4" } as const;
 
@@ -272,22 +273,18 @@ export class PianoRoll implements LaneRenderer {
 
   private countIn(f: LaneFrame, W: number, H: number): void {
     if (!f.countIn) return;
-    const ctx = this.ctx;
-    const remaining = Math.ceil(f.countInBeats - f.countInBeat);
-    const frac = f.countInBeat - Math.floor(f.countInBeat);
-    ctx.fillStyle = f.theme === "light" ? "#cccccc99" : "#0e0e0f99";
-    ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = f.palette.head;
-    ctx.globalAlpha = f.reducedMotion ? 1 : 1 - frac * 0.6;
-    ctx.font = `500 56px ${MONO}`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(String(remaining), W / 2, H / 2 - 8);
-    ctx.globalAlpha = 1;
-    ctx.font = `500 8.5px ${MONO}`;
-    ctx.fillStyle = f.palette.txt3;
-    ctx.fillText("COUNT-IN", W / 2, H / 2 + 30);
-    ctx.textBaseline = "alphabetic";
+    paintCountIn(this.ctx, {
+      theme: f.theme,
+      palette: f.palette,
+      beats: f.countInBeats,
+      beat: f.countInBeat,
+      reducedMotion: f.reducedMotion,
+      lessonName: f.lessonName,
+      w: W,
+      h: H,
+      mono: MONO,
+      sans: SANS,
+    });
   }
 
   private roundRect(x: number, y: number, w: number, h: number, r: number): void {
