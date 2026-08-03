@@ -256,3 +256,37 @@ export class Scorer {
     }
   }
 }
+
+/** Inclusive range of repeats that overlap the visible slice of the run. */
+export interface LoopSpan {
+  first: number;
+  last: number;
+}
+
+/**
+ * Which repeats need instances for the lane to be able to draw them.
+ *
+ * The lane shows a fixed number of bars either side of the playhead, and the
+ * pattern is usually shorter than that — a one-bar groove in a five-bar lane
+ * fits five times over. Spawning a fixed "current and next" left the rest of
+ * the track empty, so notes appeared partway across it rather than scrolling
+ * in from the edge.
+ *
+ * `behind`/`ahead` come from the renderer's own last-drawn window, so what is
+ * spawned and what is drawn are derived from the same numbers. The current
+ * repeat and the one after it are always included: during a count-in the
+ * window is not meaningful yet, and a strike landing just before a repeat's
+ * first note still needs that instance to exist to be graded against.
+ */
+export function visibleLoopSpan(
+  absBeat: number,
+  loopBeats: number,
+  behind: number,
+  ahead: number,
+): LoopSpan {
+  const lb = Math.max(1e-9, loopBeats);
+  const current = Math.floor(absBeat / lb);
+  const first = Math.max(0, Math.min(current, Math.floor((absBeat - Math.max(0, behind)) / lb)));
+  const last = Math.max(first, current + 1, Math.floor((absBeat + Math.max(0, ahead)) / lb));
+  return { first, last };
+}

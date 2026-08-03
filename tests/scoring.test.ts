@@ -4,6 +4,7 @@ import {
   classify,
   lessonTargets,
   lessonRepeats,
+  visibleLoopSpan,
   type TargetNote,
 } from "../src/engine/scoring";
 import { TIMING_WINDOWS } from "../src/engine/types";
@@ -299,5 +300,64 @@ describe("run breakdown", () => {
     s.sweepMisses(20);
     expect(s.tally.miss).toBe(4);
     expect(s.laneStats().every((l) => l.accuracy === 0)).toBe(true);
+  });
+});
+
+describe("visibleLoopSpan", () => {
+  // The case that motivated it: a one-bar pattern in a five-bar lane. The
+  // playhead is centred, so the lane reaches 10 beats either way and touches
+  // five repeats at once — "current and next" covered two of them.
+  const BEHIND = 10;
+  const AHEAD = 10;
+
+  it("covers every repeat the lane can see, not just the next one", () => {
+    const s = visibleLoopSpan(20, 4, BEHIND, AHEAD);
+    expect(s.first).toBe(2); // beat 10 falls in repeat 2
+    expect(s.last).toBe(7); // beat 30 falls in repeat 7
+  });
+
+  it("keeps the trailing edge on screen", () => {
+    // Anything pruned before `first` is off the left edge of the lane.
+    const s = visibleLoopSpan(20, 4, BEHIND, AHEAD);
+    const oldestVisibleBeat = 20 - BEHIND;
+    expect(s.first * 4).toBeLessThanOrEqual(oldestVisibleBeat);
+  });
+
+  it("does not run off the start of the run", () => {
+    const s = visibleLoopSpan(2, 4, BEHIND, AHEAD);
+    expect(s.first).toBe(0);
+  });
+
+  it("still includes the current and next repeat when the window is unknown", () => {
+    // First frame, or audio-only: the renderer has not drawn yet. This is the
+    // behaviour the fixed `[loopIndex, loopIndex + 1]` used to guarantee, and
+    // grading a strike just before a repeat's first note depends on it.
+    const s = visibleLoopSpan(9, 4, 0, 0);
+    expect(s.first).toBe(2);
+    expect(s.last).toBe(3);
+  });
+
+  it("spawns the first repeat during the count-in, when absBeat is negative", () => {
+    const s = visibleLoopSpan(-4, 4, BEHIND, AHEAD);
+    expect(s.first).toBe(0);
+    expect(s.last).toBeGreaterThanOrEqual(1);
+  });
+
+  it("handles a pattern longer than the lane", () => {
+    // Eight-bar clip, lane sees ten beats: only the current repeat and its
+    // neighbour are ever in view.
+    const s = visibleLoopSpan(40, 32, BEHIND, AHEAD);
+    expect(s.first).toBe(0);
+    expect(s.last).toBe(2);
+  });
+
+  it("never returns an inverted range", () => {
+    for (const absBeat of [-8, -1, 0, 3, 17, 100]) {
+      for (const loopBeats of [1, 4, 16]) {
+        const s = visibleLoopSpan(absBeat, loopBeats, BEHIND, AHEAD);
+        expect(s.last).toBeGreaterThanOrEqual(s.first);
+        expect(s.first).toBeGreaterThanOrEqual(0);
+      }
+    }
   });
 });

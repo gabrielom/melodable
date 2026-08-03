@@ -13,7 +13,7 @@ import { useLessons } from "@/stores/lessons";
 import type { LinkState, Rating } from "@/engine/types";
 import { Transport, phaseDelta } from "@/engine/transport";
 import { PALETTE } from "@/engine/theme";
-import { Scorer, lessonTargets, lessonRepeats } from "@/engine/scoring";
+import { Scorer, lessonTargets, lessonRepeats, visibleLoopSpan } from "@/engine/scoring";
 import { AdvanceTracker } from "@/engine/adaptive";
 import { HostClock } from "@/engine/host-clock";
 import { noteToPad, PADS } from "@/engine/gm";
@@ -183,6 +183,16 @@ export function useTrainer(
     typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const timeOf = (loopIndex: number, beat: number) => transport.timeOf(loopIndex, beat);
+
+  /**
+   * The repeats worth having instances for right now, from the window the
+   * renderer last drew. With no renderer (audio-only) it falls back to the
+   * current repeat and the next, which is what this used to do unconditionally.
+   */
+  function loopSpan(absBeat: number) {
+    const view = renderer?.visibleBeats();
+    return visibleLoopSpan(absBeat, transport.loopBeats, view?.behind ?? 0, view?.ahead ?? 0);
+  }
 
   /** Build the renderer matching the current lesson's instrument. */
   function buildRenderer(): void {
@@ -415,18 +425,23 @@ export function useTrainer(
         if (guide.value) scheduleGuide(win.from, win.to);
       }
 
-      // Keep the current and next repeat's notes alive (visible through the
-      // count-in), but never spawn past the end of the run.
-      for (const i of [pos.loopIndex, pos.loopIndex + 1]) {
+      // Spawn every repeat the lane can actually see, not a fixed two. The
+      // pattern is usually one bar and the lane shows five, so "current and
+      // next" left most of the track empty and notes popped into existence
+      // mid-lane instead of scrolling in from the edge. Derived from the
+      // renderer's own window so the two can't disagree.
+      const span = loopSpan(pos.absBeat);
+      for (let i = span.first; i <= span.last; i++) {
         if (i < transport.totalLoops) scorer.spawnLoop(i, timeOf);
       }
 
       if (!pos.countIn) {
         if (lastLoop >= 0 && pos.loopIndex > lastLoop) {
           // Close the repeat's tally and let go of notes that have scrolled
-          // well clear of the playhead.
+          // clear of the lane's trailing edge — never nearer than that, or
+          // they would vanish while still on screen.
           scorer.endLoop();
-          scorer.pruneBefore(pos.loopIndex - 1);
+          scorer.pruneBefore(span.first);
         }
         lastLoop = pos.loopIndex;
       }
