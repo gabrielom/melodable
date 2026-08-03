@@ -278,6 +278,50 @@ export interface LoopSpan {
  * window is not meaningful yet, and a strike landing just before a repeat's
  * first note still needs that instance to exist to be graded against.
  */
+/**
+ * The run parked at its first beat, for the lane to draw before the transport
+ * starts — so opening a lesson shows what you are about to play instead of an
+ * empty field.
+ *
+ * These are throwaway instances for a single frame: never graded, never held.
+ * The real ones come from `spawnLoop` once the transport is running, which is
+ * why this does not touch the scorer at all.
+ *
+ * `now` is the clock time the playhead sits at, so beat 0 lands exactly on it
+ * and everything after it falls to the right. That is the same position the
+ * lane reaches the instant the count-in ends.
+ */
+export function previewInstances(
+  targets: readonly TargetNote[],
+  loopBeats: number,
+  totalLoops: number,
+  secPerBeat: number,
+  now: number,
+  aheadBeats: number,
+): NoteInstance[] {
+  const lb = Math.max(1e-9, loopBeats);
+  const ahead = Math.max(0, aheadBeats);
+  const loops = Number.isFinite(totalLoops) ? Math.max(1, Math.floor(totalLoops)) : 1;
+  const lastLoop = Math.min(loops - 1, Math.floor(ahead / lb));
+  const out: NoteInstance[] = [];
+  for (let l = 0; l <= lastLoop; l++) {
+    for (let i = 0; i < targets.length; i++) {
+      const beat = l * lb + targets[i].beat;
+      if (beat > ahead) continue;
+      out.push({
+        id: `${l}:${i}`,
+        lane: targets[i].lane,
+        beat: targets[i].beat,
+        loopIndex: l,
+        time: now + beat * secPerBeat,
+        resolved: false,
+        rating: null,
+      });
+    }
+  }
+  return out;
+}
+
 export function visibleLoopSpan(
   absBeat: number,
   loopBeats: number,

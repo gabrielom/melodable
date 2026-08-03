@@ -13,7 +13,13 @@ import { useLessons } from "@/stores/lessons";
 import type { LinkState, Rating } from "@/engine/types";
 import { Transport, phaseDelta } from "@/engine/transport";
 import { PALETTE } from "@/engine/theme";
-import { Scorer, lessonTargets, lessonRepeats, visibleLoopSpan } from "@/engine/scoring";
+import {
+  Scorer,
+  lessonTargets,
+  lessonRepeats,
+  visibleLoopSpan,
+  previewInstances,
+} from "@/engine/scoring";
 import { AdvanceTracker } from "@/engine/adaptive";
 import { HostClock } from "@/engine/host-clock";
 import { noteToPad, PADS } from "@/engine/gm";
@@ -222,7 +228,20 @@ export function useTrainer(
       countIn: pos?.countIn ?? false,
       countInBeat: pos?.countInBeat ?? 0,
       countInBeats: transport.countInBeats,
-      instances: pos ? scorer.instances : [],
+      // Stopped, the lane previews the run parked at its first beat, so
+      // opening a lesson shows what you are about to play rather than an
+      // empty field. Throwaway instances built per frame — the scorer is not
+      // involved until the transport actually runs.
+      instances: pos
+        ? scorer.instances
+        : previewInstances(
+            targets.value,
+            transport.loopBeats,
+            transport.totalLoops,
+            transport.secPerBeat,
+            now,
+            renderer.visibleBeats().ahead || transport.loopBeats,
+          ),
       reducedMotion,
       palette: palette.value,
       theme: settings.theme,
@@ -461,8 +480,10 @@ export function useTrainer(
       // The run is over: grade whatever is left and come to rest.
       if (pos.finished) finishRun();
     } else {
+      // Parked at the start: the strip shows the viewport rectangle over the
+      // opening bars, which is exactly the slice the lane is previewing.
       drawFrame(now, null);
-      drawOverview(null);
+      drawOverview(0);
     }
 
     raf = requestAnimationFrame(frame);

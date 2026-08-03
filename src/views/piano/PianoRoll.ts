@@ -113,12 +113,6 @@ export class PianoRoll implements LaneRenderer {
       h: H,
     });
 
-    if (!f.playing) {
-      ctx.fillStyle = f.palette.head;
-      ctx.fillRect(0, hitY - 1, W, 2);
-      return this.idle(f, W / 2, hitY - 40);
-    }
-
     // Two passes: white-key notes first so sharps sit above their neighbours.
     for (const blackPass of [false, true]) {
       for (const inst of f.instances) {
@@ -135,11 +129,12 @@ export class PianoRoll implements LaneRenderer {
       }
     }
 
-    paintVeil(ctx, f.palette.lane, [0, H], [0, hitY], [0, hitY, W, H - hitY]);
+    if (f.playing) paintVeil(ctx, f.palette.lane, [0, H], [0, hitY], [0, hitY, W, H - hitY]);
 
     ctx.fillStyle = f.palette.head;
     ctx.fillRect(0, hitY - 1, W, 2);
 
+    if (!f.playing) this.idle(f, W / 2, hitY - 40);
     this.countIn(f, W, H);
   }
 
@@ -187,12 +182,6 @@ export class PianoRoll implements LaneRenderer {
       h: H,
     });
 
-    if (!f.playing) {
-      ctx.fillStyle = f.palette.head;
-      ctx.fillRect(Math.round(hitX) - 1, 0, 2, H);
-      return this.idle(f, trackX + trackW / 2, H / 2);
-    }
-
     // The blob is deliberately taller than a row so the note name fits — rows
     // get thin over a three-octave range. Neighbours overlap slightly, which
     // is how Melodics reads too.
@@ -215,11 +204,14 @@ export class PianoRoll implements LaneRenderer {
     }
     ctx.restore();
 
-    paintVeil(ctx, f.palette.lane, [trackX, 0], [hitX, 0], [trackX, 0, hitX - trackX, H]);
+    if (f.playing) {
+      paintVeil(ctx, f.palette.lane, [trackX, 0], [hitX, 0], [trackX, 0, hitX - trackX, H]);
+    }
 
     ctx.fillStyle = f.palette.head;
     ctx.fillRect(Math.round(hitX) - 1, 0, 2, H);
 
+    if (!f.playing) this.idle(f, trackX + trackW / 2, H / 2);
     this.countIn(f, W, H);
   }
 

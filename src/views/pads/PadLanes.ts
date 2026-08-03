@@ -143,9 +143,11 @@ export class PadLanes implements LaneRenderer {
       h: H,
     });
 
-    if (f.playing) {
-      // Notes: upcoming in the lane LED at full strength, played in their
-      // rating colour. Both scroll with the lane; nothing jumps at the head.
+    // Notes: upcoming in the lane LED at full strength, played in their
+    // rating colour. Both scroll with the lane; nothing jumps at the head.
+    // Drawn whenever there are any, not only while the transport runs — a
+    // stopped lesson previews its opening bars parked at the playhead.
+    if (f.instances.length) {
       ctx.save();
       ctx.beginPath();
       ctx.rect(trackX, 0, trackW, H);
@@ -170,7 +172,11 @@ export class PadLanes implements LaneRenderer {
         );
       }
       ctx.restore();
+    }
 
+    // The played side's wash only means something once something has been
+    // played, so the preview leaves it off.
+    if (f.playing) {
       paintVeil(ctx, p.lane, [trackX, 0], [hitX, 0], [trackX, 0, hitX - trackX, H]);
     }
 
@@ -229,7 +235,7 @@ export class PadLanes implements LaneRenderer {
       h: fieldH,
     });
 
-    if (f.playing) {
+    if (f.instances.length) {
       ctx.save();
       ctx.beginPath();
       ctx.rect(0, 0, W, fieldH);
@@ -254,7 +260,9 @@ export class PadLanes implements LaneRenderer {
         );
       }
       ctx.restore();
+    }
 
+    if (f.playing) {
       // Shorter falloff than horizontal — the played run here is only 76px.
       paintVeil(ctx, p.lane, [0, fieldH], [0, hitY], [0, hitY, W, fieldH - hitY]);
     }

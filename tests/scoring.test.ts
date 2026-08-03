@@ -5,6 +5,7 @@ import {
   lessonTargets,
   lessonRepeats,
   visibleLoopSpan,
+  previewInstances,
   type TargetNote,
 } from "../src/engine/scoring";
 import { TIMING_WINDOWS } from "../src/engine/types";
@@ -359,5 +360,56 @@ describe("visibleLoopSpan", () => {
         expect(s.first).toBeGreaterThanOrEqual(0);
       }
     }
+  });
+});
+
+describe("previewInstances", () => {
+  // Two lanes, notes on beats 0 and 2 of a 4-beat pattern.
+  const pattern: TargetNote[] = [
+    { lane: 12, beat: 0 },
+    { lane: 13, beat: 2 },
+  ];
+  const SPB = 0.5; // 120bpm
+
+  it("parks beat 0 exactly on the playhead", () => {
+    const out = previewInstances(pattern, 4, 8, SPB, 100, 10);
+    expect(out[0].beat).toBe(0);
+    expect(out[0].time).toBeCloseTo(100);
+  });
+
+  it("lays later notes out ahead of it, at the lane's scroll rate", () => {
+    const out = previewInstances(pattern, 4, 8, SPB, 100, 10);
+    const at = (loop: number, beat: number) =>
+      out.find((i) => i.loopIndex === loop && i.beat === beat)!;
+    expect(at(0, 2).time).toBeCloseTo(101); // 2 beats * 0.5s
+    expect(at(1, 0).time).toBeCloseTo(102); // one repeat later
+    expect(at(2, 0).time).toBeCloseTo(104);
+  });
+
+  it("stops at the edge of what the lane can show", () => {
+    const out = previewInstances(pattern, 4, 8, SPB, 100, 5);
+    // beat 6 is past a 5-beat window; beat 4 is not.
+    expect(out.some((i) => i.loopIndex === 1 && i.beat === 0)).toBe(true);
+    expect(out.some((i) => i.loopIndex === 1 && i.beat === 2)).toBe(false);
+  });
+
+  it("never runs past the end of a short run", () => {
+    const out = previewInstances(pattern, 4, 1, SPB, 100, 40);
+    expect(out.every((i) => i.loopIndex === 0)).toBe(true);
+  });
+
+  it("survives an endless run without hanging", () => {
+    const out = previewInstances(pattern, 4, Infinity, SPB, 100, 40);
+    expect(out.length).toBeGreaterThan(0);
+    expect(out.every((i) => i.loopIndex === 0)).toBe(true);
+  });
+
+  it("produces nothing resolved — the preview is never graded", () => {
+    const out = previewInstances(pattern, 4, 8, SPB, 100, 10);
+    expect(out.every((i) => !i.resolved && i.rating === null)).toBe(true);
+  });
+
+  it("is empty for a lesson with no notes", () => {
+    expect(previewInstances([], 4, 8, SPB, 100, 10)).toEqual([]);
   });
 });
