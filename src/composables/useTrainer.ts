@@ -115,11 +115,17 @@ export function useTrainer(
   const lanes = computed(() => [...new Set(targets.value.map((t) => t.lane))].sort((a, b) => a - b));
 
   /**
-   * Piano: the visible key range. Covers the lesson's pitches with a little
-   * padding, then widens symmetrically to at least three octaves so the
-   * keyboard always reads as a real instrument rather than a few stray keys.
+   * Piano: the visible key range — deliberately between the two extremes.
+   *
+   * Showing only the lesson's own keys gives no sense of where the hand sits;
+   * showing all 88 makes a five-note lesson a speck. So: the lesson's pitches
+   * plus a few semitones of air, widened symmetrically to two octaves. Two is
+   * enough context to place the notes on the instrument, and unlike the three
+   * this used to force, it does not leave most of the roll empty — which is
+   * also what made the rows thin and the keys wide.
    */
-  const MIN_PIANO_SPAN = 36; // semitones = 3 octaves
+  const MIN_PIANO_SPAN = 24; // semitones = 2 octaves
+  const PITCH_PAD = 3; // semitones of air either side of the lesson's own notes
   const LOWEST_KEY = 21; // A0
   const HIGHEST_KEY = 108; // C8
 
@@ -131,8 +137,8 @@ export function useTrainer(
       lo = settings.pianoLow;
       hi = settings.pianoHigh;
     } else {
-      lo = Math.min(...pitches) - 2;
-      hi = Math.max(...pitches) + 2;
+      lo = Math.min(...pitches) - PITCH_PAD;
+      hi = Math.max(...pitches) + PITCH_PAD;
     }
 
     const shortfall = MIN_PIANO_SPAN - (hi - lo);

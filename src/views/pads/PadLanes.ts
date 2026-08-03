@@ -48,6 +48,13 @@ const NOTE_H = 14;
 /** Note block when notes fall: a pill inset from the column's edges. */
 const NOTE_V = 8;
 const NOTE_V_INSET = 12;
+/**
+ * Ceiling on that pill's width. A two-lane lesson gets half the window per
+ * column, and a note that simply insets from the column's edges becomes a
+ * 600px slab — the lane reads as a filled bar rather than as a note. Past this
+ * the note stays put and centres in its column instead of growing with it.
+ */
+const NOTE_V_MAX_W = 72;
 /** Vertical: distance from the bottom of the note field to the hit line. */
 const HIT_FROM_BOTTOM = 76;
 
@@ -190,7 +197,6 @@ export class PadLanes implements LaneRenderer {
     ctx.fillStyle = p.head;
     ctx.fillRect(Math.round(hitX) - 1, 0, 2, H);
 
-    if (!f.playing) this.idle(f, trackX + trackW / 2, H / 2);
     this.countIn(f, W, H);
   }
 
@@ -249,11 +255,14 @@ export class PadLanes implements LaneRenderer {
         if (y < -NOTE_V || y > fieldH + NOTE_V) continue;
         const x = li * (laneW + LANE_GAP);
         const inset = Math.min(NOTE_V_INSET, Math.max(0, (laneW - 8) / 2));
+        // Inset from the column, but never wider than the cap — then centred,
+        // so a two-lane lesson gets a note rather than a bar.
+        const noteW = Math.min(NOTE_V_MAX_W, laneW - inset * 2);
         this.note(
           f,
-          x + inset,
+          x + (laneW - noteW) / 2,
           y - NOTE_V / 2,
-          laneW - inset * 2,
+          noteW,
           NOTE_V,
           inst.resolved ? p.rating[inst.rating!] : ledOf(p, li),
           NOTE_V / 2, // pill
@@ -275,7 +284,6 @@ export class PadLanes implements LaneRenderer {
     ctx.fillStyle = p.head;
     ctx.fillRect(0, Math.round(hitY) - 1, W, 2);
 
-    if (!f.playing) this.idle(f, W / 2, hitY / 2);
     this.countIn(f, W, fieldH);
   }
 
@@ -375,15 +383,6 @@ export class PadLanes implements LaneRenderer {
     ctx.fill();
   }
 
-  private idle(f: LaneFrame, cx: number, cy: number): void {
-    const ctx = this.ctx;
-    ctx.fillStyle = f.palette.txt3;
-    ctx.font = `500 8.5px ${MONO}`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    this.trackedCentered("PRESS START FOR THE COUNT-IN", cx, cy, 1.1, Infinity);
-    ctx.textBaseline = "alphabetic";
-  }
 
   private countIn(f: LaneFrame, W: number, H: number): void {
     if (!f.countIn) return;
@@ -420,26 +419,6 @@ export class PadLanes implements LaneRenderer {
     }
   }
 
-  /** Same, centred on `cx`. */
-  private trackedCentered(
-    text: string,
-    cx: number,
-    y: number,
-    spacing: number,
-    maxWidth: number,
-  ): void {
-    const ctx = this.ctx;
-    const prev = ctx.textAlign;
-    ctx.textAlign = "left";
-    const width = (s: string) => ctx.measureText(s).width + spacing * Math.max(0, s.length - 1);
-    let s = text;
-    if (width(s) > maxWidth) {
-      while (s.length > 1 && width(s + "…") > maxWidth) s = s.slice(0, -1);
-      s += "…";
-    }
-    this.tracked(s, cx - width(s) / 2, y, spacing, Infinity);
-    ctx.textAlign = prev;
-  }
 
   private roundRect(x: number, y: number, w: number, h: number, r: number): void {
     const ctx = this.ctx;

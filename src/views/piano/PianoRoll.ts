@@ -29,6 +29,12 @@ const MONO = '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
 const SANS = '"Geist", ui-sans-serif, system-ui, sans-serif';
 /** Semitone beds: black-key rows sit a shade darker than white-key rows. */
 const ROW_BLACK = { dark: "#0d0d0e", light: "#c4c4c4" } as const;
+/**
+ * Ceiling on a falling note's width. Key columns widen as the visible range
+ * narrows, and a note sized to its key becomes a slab over a two-octave
+ * lesson. Matches the pads view's cap so the two instruments agree.
+ */
+const NOTE_V_MAX_W = 72;
 
 export class PianoRoll implements LaneRenderer {
   private ctx: CanvasRenderingContext2D;
@@ -125,7 +131,10 @@ export class PianoRoll implements LaneRenderer {
         const g = keyGeometry(inst.lane, low, whiteWidth);
         // A slim block on the key's own column; the keyboard below names the
         // pitches this lesson uses, so the note doesn't have to carry a label.
-        this.note(f, g.x + 1, y - 4, g.width - 2, 8, inst, 4);
+        // Capped and centred on the key: a narrow range makes keys wide, and a
+        // note that just fills its key turns into a slab.
+        const w = Math.min(NOTE_V_MAX_W, g.width - 2);
+        this.note(f, g.x + (g.width - w) / 2, y - 4, w, 8, inst, 4);
       }
     }
 
@@ -134,7 +143,6 @@ export class PianoRoll implements LaneRenderer {
     ctx.fillStyle = f.palette.head;
     ctx.fillRect(0, hitY - 1, W, 2);
 
-    if (!f.playing) this.idle(f, W / 2, hitY - 40);
     this.countIn(f, W, H);
   }
 
@@ -211,7 +219,6 @@ export class PianoRoll implements LaneRenderer {
     ctx.fillStyle = f.palette.head;
     ctx.fillRect(Math.round(hitX) - 1, 0, 2, H);
 
-    if (!f.playing) this.idle(f, trackX + trackW / 2, H / 2);
     this.countIn(f, W, H);
   }
 
@@ -249,13 +256,6 @@ export class PianoRoll implements LaneRenderer {
     ctx.textBaseline = "alphabetic";
   }
 
-  private idle(f: LaneFrame, cx: number, cy: number): void {
-    const ctx = this.ctx;
-    ctx.fillStyle = f.palette.txt3;
-    ctx.font = `500 8.5px ${MONO}`;
-    ctx.textAlign = "center";
-    ctx.fillText("PRESS START FOR THE COUNT-IN", cx, cy);
-  }
 
   private countIn(f: LaneFrame, W: number, H: number): void {
     if (!f.countIn) return;
