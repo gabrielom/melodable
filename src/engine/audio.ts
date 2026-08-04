@@ -76,6 +76,34 @@ export class AudioEngine {
     return this.buses ? this.buses[bus] : this.master!;
   }
 
+  /**
+   * Drop anything already queued on these buses.
+   *
+   * The metronome and the guide part are scheduled up to a second ahead of
+   * the playhead, so they are sitting in the audio graph with future start
+   * times long before you hear them. Stopping the transport stops *adding* to
+   * that queue; it does not empty it, which is why the click used to carry on
+   * for a beat or two after Stop.
+   *
+   * Rather than track and chase every scheduled source, the bus node itself
+   * is replaced: disconnecting the old one takes everything still pointing at
+   * it out of the graph in one move, and a fresh node takes over at the same
+   * level. The orphans finish silently and are collected. Deliberately not
+   * used on "notes" — your own hits are immediate, and a stray tail there
+   * would be a note you actually played.
+   */
+  cancelScheduled(...buses: Bus[]): void {
+    if (!this.ctx || !this.master || !this.buses) return;
+    for (const b of buses) {
+      const old = this.buses[b];
+      old.disconnect();
+      const fresh = this.ctx.createGain();
+      fresh.gain.value = old.gain.value;
+      fresh.connect(this.master);
+      this.buses[b] = fresh;
+    }
+  }
+
   // ---------------------------------------------------------------- helpers
 
   private makeNoise(ctx: AudioContext): AudioBuffer {

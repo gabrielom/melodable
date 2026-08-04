@@ -333,6 +333,9 @@ export function useTrainer(
   function stop(): void {
     transport.stop();
     playing.value = false;
+    // The click and the guide are queued ahead of the playhead; without this
+    // they keep sounding for a beat or two after the transport has stopped.
+    audio.cancelScheduled("metronome", "guide");
   }
 
   /**
@@ -346,6 +349,7 @@ export function useTrainer(
     runRatings.clear();
     transport.stop();
     playing.value = false;
+    audio.cancelScheduled("metronome", "guide");
     transport = new Transport({
       bpm: lesson.value.bpm,
       bars: lesson.value.bars,
@@ -566,6 +570,7 @@ export function useTrainer(
 
     transport.stop();
     playing.value = false;
+    audio.cancelScheduled("metronome", "guide");
     runComplete.value = true;
 
     if (advanceTracker.update(acc, transport.bpm, lesson.value.bpm)) {
