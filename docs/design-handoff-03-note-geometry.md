@@ -174,6 +174,17 @@ drawings will not match without them.
 
 5. **"PRESS START FOR THE COUNT-IN" is gone.** The preview says it better.
 
+6. **The vertical piano playhead was wrong and is now fixed.** The app had it
+   centred in the roll; `10f` puts it 108px up from the roll's bottom — 211 of
+   a 319px roll. It now reads from a fixed offset, the same shape of rule the
+   pads view already used for its own 76px. Nothing to change in the drawings;
+   the app has come to them.
+
+   Note that this is a *fixed* offset rather than a fraction of the roll, so
+   the landing strip below the line stays the same size at any window height.
+   Every frame is 500px tall, so the drawings cannot distinguish the two — if
+   it was meant to be proportional, say so.
+
 ## Open questions for design
 
 1. ~~Sharps in a 26px circle~~ — **resolved**: the accidental is set smaller
@@ -186,3 +197,12 @@ drawings will not match without them.
    the horizontal one?
 3. **Pads horizontal is a 28px square with a 1–2px corner.** At double the old
    size, is that still the right corner treatment, or should it round more?
+
+4. **The horizontal playhead sits in a different place in the drawings than in
+   the app, and has been left alone deliberately.** Both `10b` and `10e` put
+   it at x=590 — dead centre of the 1180px *frame*. The piano matches, having
+   no gutter. The pads view does not: it centres the line on the *track*,
+   after the 128px label gutter, which lands at 654. So the drawing gives the
+   pads view 462px of history and 590px of future, where the app gives it 526
+   of each. Which is intended? The app's version is being kept until you say
+   otherwise.

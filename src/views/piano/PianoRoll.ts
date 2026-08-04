@@ -38,6 +38,20 @@ const ROW_BLACK = { dark: "#0d0d0e", light: "#c4c4c4" } as const;
  */
 const NOTE_DIAMETER = 26;
 /**
+ * Vertical: distance from the bottom of the roll to the hit line — the same
+ * shape of rule the pads view uses, and taken from the handoff's `10f piano
+ * vertical` frame, where the roll is 319px tall and the line sits at 211,
+ * i.e. 108 up from its bottom. It is deliberately not centred: a falling-note
+ * view needs most of its height for what is coming, and only a landing strip
+ * for what has just gone.
+ *
+ * A fixed offset rather than a fraction, so the landing strip stays the same
+ * size whatever the window height — which is also how the pads view reads its
+ * own `HIT_FROM_BOTTOM`. Every handoff frame is 500px tall, so the drawings
+ * cannot distinguish the two; this follows the existing convention.
+ */
+const HIT_FROM_BOTTOM = 108;
+/**
  * Size of the letter inside the note. Large enough to be read at a glance
  * rather than squinted at — it is the one piece of text that tells you which
  * key to press.
@@ -112,11 +126,11 @@ export class PianoRoll implements LaneRenderer {
     const low = f.lowNote;
     const high = f.highNote;
     const whiteWidth = W / Math.max(1, countWhiteKeys(low, high));
-    // Centred, like the pads view: half the visible span either side.
-    const hitY = Math.round(H / 2);
+    // Low in the field, like the pads view — not centred. More of the roll
+    // is given to what is coming than to what has just passed.
+    const hitY = Math.round(Math.max(0, H - HIT_FROM_BOTTOM));
     const beatPx = pxPerBeat(H, f.beatsPerBar);
-    const halfBeats = H / 2 / beatPx;
-    this.window = { behind: halfBeats, ahead: halfBeats };
+    this.window = { behind: (H - hitY) / beatPx, ahead: hitY / beatPx };
     const pxPerSec = beatPx / f.secPerBeat;
 
     for (let note = low; note <= high; note++) {
@@ -138,8 +152,8 @@ export class PianoRoll implements LaneRenderer {
     paintGrid(ctx, {
       theme: f.theme,
       instrument: "piano",
-      from: f.absBeat - halfBeats,
-      to: f.absBeat + halfBeats,
+      from: f.absBeat - this.window.behind,
+      to: f.absBeat + this.window.ahead,
       beatsPerBar: f.beatsPerBar,
       posOf: (beat) => hitY - (beat - f.absBeat) * beatPx,
       axis: "horizontal-lines",
