@@ -405,6 +405,20 @@ const {
 
 const heldKeys = new Set<string>();
 
+/**
+ * Whether a Space keystroke is the transport's to take. Anything already
+ * focused that does something with Space keeps it: a text field, a button
+ * (Space activates it), and the tempo readout (Space opens it for typing).
+ * Otherwise Space belongs to the transport, the way it does in a DAW.
+ */
+function spaceIsTransport(e: KeyboardEvent): boolean {
+  const el = e.target as HTMLElement | null;
+  if (!el) return true;
+  if (el.isContentEditable) return false;
+  if (["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(el.tagName)) return false;
+  return el.getAttribute("role") !== "slider";
+}
+
 function onKeyDown(e: KeyboardEvent) {
   // Escape closes whichever bar menu is open, then stops the run.
   if (e.key === "Escape" && openMenu.value) {
@@ -415,6 +429,26 @@ function onKeyDown(e: KeyboardEvent) {
     stop();
     return;
   }
+  // Space starts and stops the run. Held down it must still swallow the key,
+  // or the page scrolls under the lane — but it only toggles on the first
+  // press. Not while the import sheet is up: it owns the screen.
+  if (
+    e.key === " " &&
+    !e.metaKey &&
+    !e.ctrlKey &&
+    !e.altKey &&
+    view.value === "trainer" &&
+    !importOpen.value &&
+    spaceIsTransport(e)
+  ) {
+    e.preventDefault();
+    if (!e.repeat) {
+      if (playing.value) stop();
+      else void onPlay();
+    }
+    return;
+  }
+
   if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
   const key = e.key.toLowerCase();
   if (heldKeys.has(key)) return;
