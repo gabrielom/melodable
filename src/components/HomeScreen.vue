@@ -125,25 +125,26 @@ h1 {
 }
 
 /*
- * The card is a fixed object, not a flexible one. Measured off the handoff's
- * "10a home" frame: a 1180px screen, 14px of body padding either side, four
- * columns and an 8px gap gives (1152 - 24) / 4 = 282px, and its two rows come
- * out at 196.5px. Those are the numbers here.
+ * Sizes from the handoff's "10a home" frame: a 1180px screen with 14px of
+ * body padding either side, four columns and an 8px gap gives
+ * (1152 - 24) / 4 = 282px, and its two rows measure 196.5.
  *
- * So the tracks are `282px`, not `minmax(282px, 1fr)`: `auto-fill` lays down
- * as many whole columns as the width allows and the remainder stays empty,
- * which is what makes resizing add and remove columns instead of stretching
- * every card. `align-content: start` does the same for rows — without it a
- * short library would stretch its one row down the whole stage.
+ * The two axes are deliberately different. 282px is the column's *minimum*,
+ * so cards share out whatever width is going and a resize adds or drops a
+ * column rather than leaving a ragged margin. The height is a flat 196px and
+ * does not negotiate: rows would otherwise stretch to divide the stage, so a
+ * library of three lessons would draw three enormous cards.
+ *
+ * `align-content: start` keeps the rows packed at the top once they no longer
+ * fill the height.
  */
 .grid {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, 282px);
+  grid-template-columns: repeat(auto-fill, minmax(282px, 1fr));
   grid-auto-rows: 196px;
   align-content: start;
-  justify-content: start;
   gap: 8px;
   overflow-y: auto;
 }
