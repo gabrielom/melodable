@@ -11,7 +11,7 @@ import { computed, onMounted, onUnmounted, ref, watch, type Ref } from "vue";
 import { useSettings } from "@/stores/settings";
 import { useLessons } from "@/stores/lessons";
 import type { LinkState, Rating } from "@/engine/types";
-import { Transport, phaseDelta } from "@/engine/transport";
+import { Transport, phaseDelta, START_DELAY } from "@/engine/transport";
 import { PALETTE } from "@/engine/theme";
 import {
   Scorer,
@@ -219,6 +219,17 @@ export function useTrainer(
   }
 
   /**
+   * Where the playhead sits while stopped: the first beat of the count-in, not
+   * the first beat of the run. During a count-in the transport's `absBeat`
+   * climbs from `-countInBeats` to 0, so parking there means pressing Start
+   * changes nothing about where the notes are drawn — they simply begin to
+   * move. Anchoring at 0 instead put the opening note under the playhead and
+   * then threw it a bar to the right the moment the count-in began.
+   */
+  const idleAbsBeat = () =>
+    -transport.countInBeats - START_DELAY / transport.secPerBeat;
+
+  /**
    * The idle preview's instances, rebuilt only when the lesson, the run length
    * or the lane's window actually changes. The list is stable and only the
    * times are rewritten each frame, so sitting on the lesson screen does not
@@ -229,7 +240,10 @@ export function useTrainer(
   function previewFrame(now: number): readonly NoteInstance[] {
     if (!renderer) return [];
     const ahead = renderer.visibleBeats().ahead || transport.loopBeats;
-    const key = `${lesson.value.id}|${transport.loopBeats}|${transport.totalLoops}|${Math.ceil(ahead)}`;
+    // The count-in occupies the first stretch of the visible window, so only
+    // the remainder of it can hold run content.
+    const runAhead = Math.max(0, ahead - transport.countInBeats);
+    const key = `${lesson.value.id}|${transport.loopBeats}|${transport.totalLoops}|${Math.ceil(runAhead)}`;
     if (!previewCache || previewCache.key !== key) {
       previewCache = {
         key,
@@ -239,7 +253,7 @@ export function useTrainer(
           transport.totalLoops,
           transport.secPerBeat,
           0,
-          ahead,
+          runAhead,
         ),
       };
     }
@@ -247,7 +261,10 @@ export function useTrainer(
     // since `secPerBeat` is read here rather than baked into the list.
     const spb = transport.secPerBeat;
     const lb = transport.loopBeats;
-    for (const i of previewCache.list) i.time = now + (i.loopIndex * lb + i.beat) * spb;
+    const offset = -idleAbsBeat();
+    for (const i of previewCache.list) {
+      i.time = now + (offset + i.loopIndex * lb + i.beat) * spb;
+    }
     return previewCache.list;
   }
 
@@ -261,7 +278,7 @@ export function useTrainer(
     renderer.draw({
       now,
       secPerBeat: transport.secPerBeat,
-      absBeat: pos?.absBeat ?? 0,
+      absBeat: pos?.absBeat ?? idleAbsBeat(),
       beatsPerBar: transport.beatsPerBar,
       lessonName: lesson.value.name,
       playing: pos !== null,
@@ -514,10 +531,11 @@ export function useTrainer(
       // The run is over: grade whatever is left and come to rest.
       if (pos.finished) finishRun();
     } else {
-      // Parked at the start: the strip shows the viewport rectangle over the
-      // opening bars, which is exactly the slice the lane is previewing.
+      // Parked one count-in before the run: the strip's rectangle is clamped
+      // to the run, so it still covers exactly the slice of it the lane is
+      // previewing — which now starts at beat 0 rather than behind it.
       drawFrame(now, null);
-      drawOverview(0);
+      drawOverview(idleAbsBeat());
     }
 
     raf = requestAnimationFrame(frame);

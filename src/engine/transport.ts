@@ -20,6 +20,14 @@
 const JUMP_BEATS = 0.25;
 
 /**
+ * Scheduling lead-in before the count-in's first beat, so the opening click
+ * is never scheduled in the past. Exported because the idle preview parks the
+ * playhead exactly where `start` will place it, and that includes this — miss
+ * it and the notes twitch a few pixels the moment Start is pressed.
+ */
+export const START_DELAY = 0.15;
+
+/**
  * Beats the playhead keeps running past the last repeat before the run is
  * called finished, so the final note can still be struck late and is seen to
  * resolve rather than vanishing with the transport.
@@ -122,7 +130,7 @@ export class Transport {
    * Begin playback: a short scheduling delay, then the count-in bar, then
    * loop 0. `now` is the current clock reading.
    */
-  start(now: number, delay = 0.15): void {
+  start(now: number, delay = START_DELAY): void {
     this.playing = true;
     this.anchorLoop = 0;
     this.anchorTime = now + delay + this.countInBeats * this.secPerBeat;
