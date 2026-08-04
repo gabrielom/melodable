@@ -878,7 +878,7 @@ watch(
         </div>
       </span>
 
-      <button class="ico" title="Import a MIDI clip from Ableton" @click="openImport">⇪</button>
+      <button class="ico glyph-lg" title="Import a MIDI clip from Ableton" @click="openImport">⇪</button>
       <input
         ref="fileInput"
         type="file"
@@ -1052,7 +1052,23 @@ watch(
   letter-spacing: 1.1px;
 }
 
+/* The reference draws these two symbols a shade larger than the ✕ — they are
+   open outlines where it is a solid stroke, so they need the extra pixel to
+   carry the same weight on screen. */
+.ico.glyph-lg,
+.ico.mon {
+  font-size: 10px;
+}
+
 .ico {
+  /*
+   * Regular, not the 500 the shared rule sets, matching the reference. These
+   * buttons hold Unicode symbols — ✕ ⇪ ◐ ☀ ▤ — that Geist Mono does not
+   * carry, so they come from a fallback face that has no medium weight and
+   * synthesises one. Same thickened-outline problem as a missing SemiBold,
+   * just at 9px.
+   */
+  font-weight: 400;
   width: 20px;
   height: 20px;
   flex: none;
@@ -1123,6 +1139,9 @@ watch(
   font-size: 9.5px;
   font-weight: 500;
   line-height: 1;
+  /* Untracked, as in the reference. The shared control rule adds 1.1px, which
+     on a numeric readout just spaces the digits out and widens the field. */
+  letter-spacing: normal;
   color: var(--txt);
   /* Pinned to the widest reading, "160.0". The readout used to size to its
      content, so the whole bar shifted when the tempo crossed 100 — and the
@@ -1144,6 +1163,8 @@ watch(
 .tempo .unit {
   font-family: var(--mono);
   font-size: 9.5px;
+  /* Lighter than the value it labels — the reference leaves this at 400. */
+  font-weight: 400;
   letter-spacing: 1.2px;
   line-height: 1;
   color: var(--txt3);
@@ -1210,6 +1231,9 @@ watch(
   white-space: nowrap;
 }
 .seg-i.icon {
+  /* Regular, like `.ico`: these are Unicode symbols from a fallback face, and
+     a medium weight there is synthesised rather than drawn. */
+  font-weight: 400;
   width: 20px;
   padding: 0;
   justify-content: center;

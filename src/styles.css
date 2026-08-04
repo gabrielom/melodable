@@ -22,6 +22,20 @@
   font-weight: 500;
   font-display: swap;
 }
+/*
+ * SemiBold is not decoration — the design asks for 600 on the home heading,
+ * the lesson-card names and the summary's title. Without a real face here the
+ * browser takes the 500 and synthesises the extra weight by thickening its
+ * outlines, which is what made those headings look ragged next to the
+ * reference. Synthesis is invisible to `measureText` (500, 600 and 700 all
+ * reported the same advance width) but very visible on screen.
+ */
+@font-face {
+  font-family: "Geist";
+  src: url("./assets/fonts/Geist-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
 @font-face {
   font-family: "Geist Mono";
   src: url("./assets/fonts/GeistMono-Regular.woff2") format("woff2");
