@@ -132,6 +132,7 @@ export class PianoRoll implements LaneRenderer {
       h: H,
     });
 
+    this.beginLabels(8.5);
     // Two passes: white-key notes first so sharps sit above their neighbours.
     for (const blackPass of [false, true]) {
       for (const inst of f.instances) {
@@ -152,9 +153,10 @@ export class PianoRoll implements LaneRenderer {
         this.note(f, x, y - NOTE_V_H / 2, w, NOTE_V_H, inst, NOTE_V_H / 2);
         // Skipped when the column is too narrow to hold the text — a clip
         // spanning most of the keyboard leaves black keys around 14px.
-        if (w >= LABEL_MIN_W) this.label(f, noteName(inst.lane), x + w / 2, y, 8.5);
+        if (w >= LABEL_MIN_W) this.label(f, noteName(inst.lane), x + w / 2, y);
       }
     }
+    this.endLabels();
 
     if (f.playing) paintVeil(ctx, f.palette.lane, [0, H], [0, hitY], [0, hitY, W, H - hitY]);
 
@@ -217,6 +219,7 @@ export class PianoRoll implements LaneRenderer {
     ctx.beginPath();
     ctx.rect(trackX, 0, trackW, H);
     ctx.clip();
+    this.beginLabels(8.5);
     for (const inst of f.instances) {
       if (inst.lane < low || inst.lane > high) continue;
       if (f.countIn && inst.time < f.now) continue;
@@ -226,8 +229,9 @@ export class PianoRoll implements LaneRenderer {
       // Deliberately taller than a row, with a full pill radius, so the note
       // name always fits — rows get thin over a three-octave range.
       this.note(f, x - noteW / 2, y, noteW, h, inst, h / 2);
-      this.label(f, noteName(inst.lane), x, y + h / 2, 8.5);
+      this.label(f, noteName(inst.lane), x, y + h / 2);
     }
+    this.endLabels();
     ctx.restore();
 
     if (f.playing) {
@@ -263,15 +267,29 @@ export class PianoRoll implements LaneRenderer {
     }
   }
 
-  /** The note's name, written on the note so you know which key to press. */
-  private label(f: LaneFrame, text: string, cx: number, cy: number, size: number): void {
+  /**
+   * Text state for a run of note labels. Assigning `ctx.font` re-parses the
+   * font string and re-resolves the family, which is one of the more
+   * expensive things you can do per call on a 2D context — so it is set once
+   * around the note loop rather than once per note.
+   */
+  private beginLabels(size: number): void {
     const ctx = this.ctx;
-    ctx.fillStyle = f.theme === "light" ? "#e9e9ea" : "#0b0b0c";
     ctx.font = `500 ${size}px ${MONO}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
+  }
+
+  private endLabels(): void {
+    this.ctx.textBaseline = "alphabetic";
+    this.ctx.textAlign = "left";
+  }
+
+  /** The note's name, written on the note so you know which key to press. */
+  private label(f: LaneFrame, text: string, cx: number, cy: number): void {
+    const ctx = this.ctx;
+    ctx.fillStyle = f.theme === "light" ? "#e9e9ea" : "#0b0b0c";
     ctx.fillText(text, cx, cy + 0.5);
-    ctx.textBaseline = "alphabetic";
   }
 
 

@@ -19,6 +19,7 @@ import {
   lessonRepeats,
   visibleLoopSpan,
   previewInstances,
+  type NoteInstance,
 } from "@/engine/scoring";
 import { AdvanceTracker } from "@/engine/adaptive";
 import { HostClock } from "@/engine/host-clock";
@@ -217,6 +218,39 @@ export function useTrainer(
     overview?.resize();
   }
 
+  /**
+   * The idle preview's instances, rebuilt only when the lesson, the run length
+   * or the lane's window actually changes. The list is stable and only the
+   * times are rewritten each frame, so sitting on the lesson screen does not
+   * allocate a fresh set of objects sixty times a second.
+   */
+  let previewCache: { key: string; list: NoteInstance[] } | null = null;
+
+  function previewFrame(now: number): readonly NoteInstance[] {
+    if (!renderer) return [];
+    const ahead = renderer.visibleBeats().ahead || transport.loopBeats;
+    const key = `${lesson.value.id}|${transport.loopBeats}|${transport.totalLoops}|${Math.ceil(ahead)}`;
+    if (!previewCache || previewCache.key !== key) {
+      previewCache = {
+        key,
+        list: previewInstances(
+          targets.value,
+          transport.loopBeats,
+          transport.totalLoops,
+          transport.secPerBeat,
+          0,
+          ahead,
+        ),
+      };
+    }
+    // Re-anchored to the clock each frame; also picks up a tempo change,
+    // since `secPerBeat` is read here rather than baked into the list.
+    const spb = transport.secPerBeat;
+    const lb = transport.loopBeats;
+    for (const i of previewCache.list) i.time = now + (i.loopIndex * lb + i.beat) * spb;
+    return previewCache.list;
+  }
+
   /** The frame handed to whichever renderer is active this tick. */
   function drawFrame(
     now: number,
@@ -236,18 +270,8 @@ export function useTrainer(
       countInBeats: transport.countInBeats,
       // Stopped, the lane previews the run parked at its first beat, so
       // opening a lesson shows what you are about to play rather than an
-      // empty field. Throwaway instances built per frame — the scorer is not
-      // involved until the transport actually runs.
-      instances: pos
-        ? scorer.instances
-        : previewInstances(
-            targets.value,
-            transport.loopBeats,
-            transport.totalLoops,
-            transport.secPerBeat,
-            now,
-            renderer.visibleBeats().ahead || transport.loopBeats,
-          ),
+      // empty field. The scorer is not involved until the transport runs.
+      instances: pos ? scorer.instances : previewFrame(now),
       reducedMotion,
       palette: palette.value,
       theme: settings.theme,
