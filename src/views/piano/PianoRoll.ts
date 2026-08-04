@@ -33,18 +33,23 @@ const ROW_BLACK = { dark: "#0d0d0e", light: "#c4c4c4" } as const;
  * Diameter of a falling note, in both orientations. It is a circle, so this
  * governs both axes at once — no separate width cap against wide key columns,
  * and no separate height to clear a thin row. Whichever axis carries time, it
- * works out at roughly a quarter note at the five-bar zoom, so consecutive
- * eighths overlap by about half: the cost of a note this size, and deliberate,
- * because the note has to read first.
+ * covers a little under a quarter note at the five-bar zoom, so consecutive
+ * eighths still touch.
  */
-const NOTE_DIAMETER = 32;
+const NOTE_DIAMETER = 26;
 /**
- * Below this the note's letter is dropped rather than spilled onto its
- * neighbours. The widest one is a sharp, "C#", measured at 11px in 8.5px
- * Geist Mono, so 15 leaves 2px either side. It was 20 while the label also
- * carried the octave.
+ * Size of the letter inside the note. Large enough to be read at a glance
+ * rather than squinted at — it is the one piece of text that tells you which
+ * key to press.
  */
-const LABEL_MIN_W = 15;
+const LABEL_SIZE = 17;
+/**
+ * Below this the letter is dropped rather than spilled outside the circle.
+ * The widest is a sharp, "C#", measured at 20.4px at `LABEL_SIZE`, so 25
+ * leaves a couple of pixels either side. In practice this only bites on an
+ * imported clip wide enough to squeeze the black keys.
+ */
+const LABEL_MIN_W = 25;
 
 export class PianoRoll implements LaneRenderer {
   private ctx: CanvasRenderingContext2D;
@@ -129,7 +134,7 @@ export class PianoRoll implements LaneRenderer {
       h: H,
     });
 
-    this.beginLabels(8.5);
+    this.beginLabels(LABEL_SIZE);
     // Two passes: white-key notes first so sharps sit above their neighbours.
     for (const blackPass of [false, true]) {
       for (const inst of f.instances) {
@@ -212,7 +217,7 @@ export class PianoRoll implements LaneRenderer {
     ctx.beginPath();
     ctx.rect(trackX, 0, trackW, H);
     ctx.clip();
-    this.beginLabels(8.5);
+    this.beginLabels(LABEL_SIZE);
     for (const inst of f.instances) {
       if (inst.lane < low || inst.lane > high) continue;
       if (f.countIn && inst.time < f.now) continue;
