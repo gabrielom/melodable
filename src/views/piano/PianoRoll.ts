@@ -30,18 +30,13 @@ const SANS = '"Geist", ui-sans-serif, system-ui, sans-serif';
 /** Semitone beds: black-key rows sit a shade darker than white-key rows. */
 const ROW_BLACK = { dark: "#0d0d0e", light: "#c4c4c4" } as const;
 /**
- * Ceiling on a falling note's width. Key columns widen as the visible range
- * narrows, and a note sized to its key becomes a slab over a two-octave
- * lesson. Matches the pads view's cap so the two instruments agree.
+ * Diameter of a falling note. It is a circle, so this governs both axes: the
+ * width no longer needs a cap against wide key columns, because the diameter
+ * is the cap. On the time axis it works out at roughly a quarter note at the
+ * five-bar zoom, so consecutive eighths overlap by about half — the cost of a
+ * note this size, and deliberate: the note has to read first.
  */
-const NOTE_V_MAX_W = 144;
-/**
- * Height of that note — its extent along the time axis. At the five-bar zoom
- * this is roughly a quarter note, so consecutive eighths overlap by about
- * half. That is the cost of a note this size and it is deliberate: the note
- * has to read first, and a piano lesson's notes are rarely that dense.
- */
-const NOTE_V_H = 32;
+const NOTE_DIAMETER = 32;
 /**
  * Below this the note's letter is dropped rather than spilled onto its
  * neighbours. The widest one is a sharp, "C#", measured at 11px in 8.5px
@@ -142,21 +137,20 @@ export class PianoRoll implements LaneRenderer {
         if (inst.lane < low || inst.lane > high) continue;
         if (f.countIn && inst.time < f.now) continue;
         const y = hitY - (inst.time - f.now) * pxPerSec;
-        // Cull on the note's own size, so a taller note is not clipped off
+        // Cull on the note's own size, so a larger note is not clipped off
         // the edge before it has fully left the field.
-        if (y < -NOTE_V_H || y > H + NOTE_V_H) continue;
+        if (y < -NOTE_DIAMETER || y > H + NOTE_DIAMETER) continue;
         const g = keyGeometry(inst.lane, low, whiteWidth);
-        // A pill on the key's own column, capped and centred: a narrow range
-        // makes keys wide, and a note that just fills its key turns into a
-        // slab. Tall enough to carry its own name, the way the horizontal
-        // view does — the keyboard tells you where the key is, the label
-        // tells you which one without having to trace down the column.
-        const w = Math.min(NOTE_V_MAX_W, g.width - 2);
-        const x = g.x + (g.width - w) / 2;
-        this.note(f, x, y - NOTE_V_H / 2, w, NOTE_V_H, inst, NOTE_V_H / 2);
-        // Skipped when the column is too narrow to hold the text — a clip
-        // spanning most of the keyboard leaves black keys around 14px.
-        if (w >= LABEL_MIN_W) this.label(f, pitchLetter(inst.lane), x + w / 2, y);
+        // A circle centred on the key's own column. It shrinks to the key
+        // when the key is narrower than the diameter, so a clip spanning the
+        // whole board still keeps its notes inside their own columns. The
+        // keyboard says where the key is; the letter says which one, without
+        // having to trace down the column.
+        const d = Math.min(NOTE_DIAMETER, g.width - 2);
+        const x = g.x + (g.width - d) / 2;
+        this.note(f, x, y - d / 2, d, d, inst, d / 2);
+        // Skipped when the circle is too small to hold the text.
+        if (d >= LABEL_MIN_W) this.label(f, pitchLetter(inst.lane), x + d / 2, y);
       }
     }
     this.endLabels();
