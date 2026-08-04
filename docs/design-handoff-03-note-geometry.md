@@ -94,6 +94,7 @@ now does too.
 | text | `C4` — letter and octave | **`C`** — letter only |
 | size | 8.5px | **17px** |
 | weight | 500 medium | **700 bold** |
+| accidental | same size as the letter | **11px, raised 4px, 1px gap** |
 | face | Geist Mono | unchanged |
 | colour | light `#e9e9ea`, dark `#0b0b0c` | unchanged |
 
@@ -102,17 +103,21 @@ says which octave, so printing it was saying the same thing twice. **The
 keyboard still names its keys in full** (`C4`, `E4`, `G4`) — that is where the
 octave belongs, and it is unchanged.
 
-**Dropped when it will not fit.** Below a 25px circle the letter is not drawn
-at all rather than spilled outside it. 25 is derived: the widest label is a
-sharp, `C#`, which measures 20.4px at 17px in Geist Mono, leaving a couple of
-pixels either side. In practice this only triggers on an imported clip wide
-enough to squeeze the black keys.
+**A sharp is set as an accidental, not as a second letter.** `C#` is a 17px
+bold `C` with an 11px `#` beside it, raised 4px, 1px of gap, and the pair
+centred in the circle as a unit. The accidental qualifies the letter rather
+than standing beside it as an equal — which is also how it is set in type.
 
-**Sharps are tight.** 20.4px of text inside a 26px circle leaves roughly a
-pixel either side where the glyph is widest. It stays inside, and no built-in
-lesson has accidentals, but that is the limit of this pairing — if you want
-comfortable sharps, either the circle grows or the letter shrinks. Worth a
-decision.
+This is what resolved the crowding: at one size the pair measured 20.4px in a
+26px circle, roughly a pixel of clearance at the widest point. Set as an
+accidental it measures **17.8px** — 10.2 of letter, 1 of gap, 6.6 of sharp —
+so a sharp note now sits as comfortably in its circle as a natural one.
+
+**Dropped when it will not fit.** Below a **22px** circle the label is not
+drawn at all rather than spilled outside it, derived from that 17.8px plus a
+couple of pixels either side. It was 25 while the sharp was full size. In
+practice this only triggers on an imported clip wide enough to squeeze the
+black keys.
 
 ## 6. Consequence: notes touch sooner
 
@@ -171,8 +176,9 @@ drawings will not match without them.
 
 ## Open questions for design
 
-1. **Sharps in a 26px circle** (§5) — live with roughly a pixel of clearance,
-   grow the circle, or shrink the letter?
+1. ~~Sharps in a 26px circle~~ — **resolved**: the accidental is set smaller
+   and raised (§5), which brings the label from 20.4px to 17.8px and makes the
+   question moot.
 2. **Vertical piano overlap** (§6) — quarters clear by 2.7px and eighths
    overlap by 11.7px, because that roll has half the spacing the horizontal
    one does. Accept the chaining, shrink the circle on the time axis only

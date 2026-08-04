@@ -44,18 +44,33 @@ const NOTE_DIAMETER = 26;
  */
 const LABEL_SIZE = 17;
 /**
+ * The sharp beside it, and how it sits: smaller than the letter and raised,
+ * the way an accidental is set in type. It qualifies the letter rather than
+ * standing beside it as an equal, and at full size "C#" nearly fills the
+ * circle it is written in.
+ */
+const ACCIDENTAL_SIZE = 11;
+const ACCIDENTAL_GAP = 1;
+const ACCIDENTAL_RISE = 4;
+/**
  * Below this the letter is dropped rather than spilled outside the circle.
- * The widest is a sharp, "C#", measured at 20.4px at `LABEL_SIZE`, so 25
- * leaves a couple of pixels either side. In practice this only bites on an
+ * The widest label is a sharp: 10.2px of letter, the 1px gap and 6.6px of
+ * accidental, so 17.8px, and 22 leaves a couple of pixels either side. It was
+ * 25 while the sharp was a second full-size character at 20.4px — setting the
+ * accidental smaller bought back the room. In practice this only bites on an
  * imported clip wide enough to squeeze the black keys.
  */
-const LABEL_MIN_W = 25;
+const LABEL_MIN_W = 22;
 
 export class PianoRoll implements LaneRenderer {
   private ctx: CanvasRenderingContext2D;
   private dpr = 1;
   /** Timeline on screen at the last draw, for the overview's viewport rect. */
   private window: VisibleWindow = { behind: 0, ahead: 0 };
+  /** Label widths, measured once — the two sizes are constants. */
+  private metrics: { letter: number; sharp: number } | null = null;
+  /** Accidentals from this frame's notes, drawn together in `endLabels`. */
+  private sharps: Array<{ x: number; y: number }> = [];
 
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext("2d")!;
@@ -277,20 +292,61 @@ export class PianoRoll implements LaneRenderer {
   private beginLabels(size: number): void {
     const ctx = this.ctx;
     ctx.font = `700 ${size}px ${MONO}`;
-    ctx.textAlign = "center";
+    ctx.textAlign = "left";
     ctx.textBaseline = "middle";
+    this.metrics ??= {
+      letter: ctx.measureText("C").width,
+      // Measured at the accidental's own size, then restored below.
+      sharp: ((): number => {
+        ctx.font = `700 ${ACCIDENTAL_SIZE}px ${MONO}`;
+        const w = ctx.measureText("#").width;
+        ctx.font = `700 ${size}px ${MONO}`;
+        return w;
+      })(),
+    };
+    this.sharps.length = 0;
   }
 
+  /**
+   * Flush the accidentals collected during the note loop. They are drawn here,
+   * in one pass, rather than beside their letters — switching `ctx.font` per
+   * note is exactly the cost `beginLabels` exists to avoid, so the size change
+   * happens twice a frame instead of twice a sharp.
+   */
   private endLabels(): void {
-    this.ctx.textBaseline = "alphabetic";
-    this.ctx.textAlign = "left";
+    const ctx = this.ctx;
+    if (this.sharps.length) {
+      ctx.font = `700 ${ACCIDENTAL_SIZE}px ${MONO}`;
+      for (const s of this.sharps) ctx.fillText("#", s.x, s.y);
+      this.sharps.length = 0;
+    }
+    ctx.textBaseline = "alphabetic";
+    ctx.textAlign = "left";
   }
 
-  /** The note's name, written on the note so you know which key to press. */
+  /**
+   * The note's letter, written on the note so you know which key to press.
+   *
+   * A sharp is set smaller and raised beside the letter rather than being a
+   * second full-size character: "C#" at one size is nearly as wide as the
+   * circle holding it, and the accidental is a qualifier on the letter, not
+   * its equal. The pair is centred as a unit, so a sharp note reads as
+   * balanced in its circle as a natural one.
+   */
   private label(f: LaneFrame, text: string, cx: number, cy: number): void {
     const ctx = this.ctx;
+    const m = this.metrics!;
     ctx.fillStyle = f.theme === "light" ? "#e9e9ea" : "#0b0b0c";
-    ctx.fillText(text, cx, cy + 0.5);
+
+    if (text.length === 1) {
+      ctx.fillText(text, cx - m.letter / 2, cy + 0.5);
+      return;
+    }
+
+    const total = m.letter + ACCIDENTAL_GAP + m.sharp;
+    const x = cx - total / 2;
+    ctx.fillText(text[0], x, cy + 0.5);
+    this.sharps.push({ x: x + m.letter + ACCIDENTAL_GAP, y: cy - ACCIDENTAL_RISE });
   }
 
 
