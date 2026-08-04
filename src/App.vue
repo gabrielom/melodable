@@ -14,7 +14,7 @@ import { useLessons } from "@/stores/lessons";
 import { useMidi } from "@/composables/useMidi";
 import { useLink } from "@/composables/useLink";
 import { useTrainer } from "@/composables/useTrainer";
-import { AudioEngine } from "@/engine/audio";
+import { AudioEngine, type Bus } from "@/engine/audio";
 import { PADS, PAD_KEY_MAP, PIANO_KEY_MAP, noteToPad } from "@/engine/gm";
 import { parseMidiFile, midiToLesson, type ParsedMidi } from "@/engine/midi-file";
 import type { MidiMessage, InstrumentType } from "@/engine/types";
@@ -176,7 +176,6 @@ const MAX_LOG = 60;
 async function ensureAudio() {
   if (audioReady.value) return;
   await audio.init();
-  audio.setVolume(settings.volume);
   audioReady.value = audio.ready;
 }
 
@@ -566,11 +565,38 @@ watch(
   { immediate: true },
 );
 
-function onVolume(e: Event) {
+/**
+ * The three faders, in the order they appear in the popover: what you play,
+ * the part playing along with you, then the click.
+ */
+const MIXER: ReadonlyArray<{ bus: Bus; key: "volNotes" | "volGuide" | "volMetronome"; label: string }> = [
+  { bus: "notes", key: "volNotes", label: "YOUR NOTES" },
+  { bus: "guide", key: "volGuide", label: "GUIDE NOTES" },
+  { bus: "metronome", key: "volMetronome", label: "METRONOME" },
+];
+
+function setBusVolume(row: (typeof MIXER)[number], e: Event) {
   const v = Number((e.target as HTMLInputElement).value) / 100;
-  settings.volume = v;
-  audio.setVolume(v);
+  settings[row.key] = v;
+  audio.setBusVolume(row.bus, v);
 }
+
+/** The icon reads the loudest fader, and shows muted only when all are down. */
+const loudestBus = computed(() =>
+  Math.max(settings.volNotes, settings.volGuide, settings.volMetronome),
+);
+
+// Push the stored levels into the engine — before `init` they are held and
+// applied when the context opens, so hydration order does not matter.
+watch(
+  () => [settings.volNotes, settings.volGuide, settings.volMetronome] as const,
+  ([n, g, m]) => {
+    audio.setBusVolume("notes", n);
+    audio.setBusVolume("guide", g);
+    audio.setBusVolume("metronome", m);
+  },
+  { immediate: true },
+);
 
 </script>
 
@@ -818,32 +844,37 @@ function onVolume(e: Event) {
         <button
           class="ico"
           :class="{ on: volMenuOpen }"
-          :title="`Volume — ${Math.round(settings.volume * 100)}%`"
-          aria-label="Volume"
+          title="Mixer — your notes, the guide part and the click"
+          aria-label="Mixer"
           :aria-expanded="volMenuOpen"
           @click="toggleMenu('volume')"
         >
           <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
             <path d="M3 6.2h2.3L8.4 3.6v8.8L5.3 9.8H3z" fill="currentColor" />
-            <path v-if="settings.volume > 0" d="M10.6 6a2.9 2.9 0 0 1 0 4" fill="none"
+            <path v-if="loudestBus > 0" d="M10.6 6a2.9 2.9 0 0 1 0 4" fill="none"
                   stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-            <path v-if="settings.volume > 0.5" d="M12.4 4.3a5.4 5.4 0 0 1 0 7.4" fill="none"
+            <path v-if="loudestBus > 0.5" d="M12.4 4.3a5.4 5.4 0 0 1 0 7.4" fill="none"
                   stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-            <path v-if="settings.volume === 0" d="M11 6.2 14 9.8M14 6.2 11 9.8" fill="none"
+            <path v-if="loudestBus === 0" d="M11 6.2 14 9.8M14 6.2 11 9.8" fill="none"
                   stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
           </svg>
         </button>
 
         <div v-if="volMenuOpen" class="menu vol-menu" data-tauri-drag-region="false">
-          <div class="menu-head">VOLUME <b class="num">{{ Math.round(settings.volume * 100) }}</b></div>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            aria-label="Volume"
-            :value="Math.round(settings.volume * 100)"
-            @input="onVolume"
-          />
+          <div v-for="row in MIXER" :key="row.bus" class="vol-row">
+            <div class="menu-head">
+              {{ row.label }}
+              <b class="num">{{ Math.round(settings[row.key] * 100) }}</b>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              :aria-label="row.label"
+              :value="Math.round(settings[row.key] * 100)"
+              @input="setBusVolume(row, $event)"
+            />
+          </div>
         </div>
       </span>
 
@@ -1125,7 +1156,10 @@ function onVolume(e: Event) {
 .ico.on { background: var(--active); color: var(--active-txt); }
 /* Right-anchored: this control sits near the window edge, so a left-anchored
    panel would hang off-screen. */
-.menu.vol-menu { left: auto; right: 0; width: 160px; padding: 4px 10px 10px; }
+.menu.vol-menu { left: auto; right: 0; width: 172px; padding: 4px 10px 10px; }
+/* Three faders stacked; the gap is what separates one row's label from the
+   row above it, so the reading belongs to the right slider. */
+.vol-row + .vol-row { margin-top: 9px; }
 .vol-menu .menu-head { display: flex; justify-content: space-between; padding-left: 0; padding-right: 0; }
 .vol-menu .menu-head b { color: var(--txt); font-weight: 500; font-size: 9.5px; }
 .vol-menu input {

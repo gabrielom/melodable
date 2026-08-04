@@ -25,7 +25,11 @@ export type LaneOrientation = "vertical" | "horizontal";
  */
 interface SettingsSnapshot {
   theme: Theme;
-  volume: number;
+  /** Superseded by the three bus levels; still read so old stores migrate. */
+  volume?: number;
+  volNotes: number;
+  volGuide: number;
+  volMetronome: number;
   soundOutput: SoundOutput;
   metronome: boolean;
   monitorOpen: boolean;
@@ -52,7 +56,15 @@ export const useSettings = defineStore("settings", () => {
    * with the store plugin instead.
    */
   const theme = ref<Theme>(systemTheme());
-  const volume = ref(0.9);
+  /**
+   * One level per audio bus. Three faders rather than one because they
+   * compete: the click has to cut through while you are learning the pattern
+   * and get out of the way once you are not, and the guide part belongs
+   * under your own playing rather than level with it.
+   */
+  const volNotes = ref(0.9);
+  const volGuide = ref(0.6);
+  const volMetronome = ref(0.9);
   const soundOutput = ref<SoundOutput>("internal");
   /** Metronome click, count-in included. Off when the DAW provides the click. */
   const metronome = ref(true);
@@ -79,7 +91,16 @@ export const useSettings = defineStore("settings", () => {
   void persistGet<SettingsSnapshot>("settings").then((saved) => {
     if (saved) {
       if (saved.theme === "dark" || saved.theme === "light") theme.value = saved.theme;
-      if (typeof saved.volume === "number") volume.value = saved.volume;
+      // A store written before the split has one level; seed all three from
+      // it so an upgrade does not silently reset the player's volume.
+      if (typeof saved.volume === "number") {
+        volNotes.value = saved.volume;
+        volGuide.value = saved.volume;
+        volMetronome.value = saved.volume;
+      }
+      if (typeof saved.volNotes === "number") volNotes.value = saved.volNotes;
+      if (typeof saved.volGuide === "number") volGuide.value = saved.volGuide;
+      if (typeof saved.volMetronome === "number") volMetronome.value = saved.volMetronome;
       if (saved.soundOutput) soundOutput.value = saved.soundOutput;
       if (typeof saved.metronome === "boolean") metronome.value = saved.metronome;
       if (typeof saved.monitorOpen === "boolean") monitorOpen.value = saved.monitorOpen;
@@ -94,12 +115,14 @@ export const useSettings = defineStore("settings", () => {
   // Persist on change. Guarded so the async hydrate above doesn't get
   // clobbered by an initial write before it lands.
   watch(
-    [theme, volume, soundOutput, metronome, monitorOpen, padLayout, laneOrientation, pianoLow, pianoHigh],
+    [theme, volNotes, volGuide, volMetronome, soundOutput, metronome, monitorOpen, padLayout, laneOrientation, pianoLow, pianoHigh],
     () => {
     if (!hydrated.value) return;
     void persistSet("settings", {
       theme: theme.value,
-      volume: volume.value,
+      volNotes: volNotes.value,
+      volGuide: volGuide.value,
+      volMetronome: volMetronome.value,
       soundOutput: soundOutput.value,
       metronome: metronome.value,
       monitorOpen: monitorOpen.value,
@@ -114,7 +137,9 @@ export const useSettings = defineStore("settings", () => {
   return {
     instrument,
     theme,
-    volume,
+    volNotes,
+    volGuide,
+    volMetronome,
     soundOutput,
     metronome,
     monitorOpen,

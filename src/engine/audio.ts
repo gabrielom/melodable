@@ -9,10 +9,23 @@
 
 import type { DrumType } from "./gm";
 
+/**
+ * The three things that make sound, each on its own fader. They are separate
+ * because they compete: the click has to cut through while you are learning
+ * and get out of the way once you are not, and the guide part needs to sit
+ * under your own playing rather than alongside it.
+ */
+export type Bus = "notes" | "guide" | "metronome";
+
+export const BUSES: readonly Bus[] = ["notes", "guide", "metronome"];
+
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  private buses: Record<Bus, GainNode> | null = null;
   private noiseBuffer: AudioBuffer | null = null;
+  /** Levels set before `init` — kept so hydration order cannot lose them. */
+  private pending: Record<Bus, number> = { notes: 1, guide: 1, metronome: 1 };
 
   /** Must be called from a user gesture (browsers block autoplay). */
   async init(): Promise<void> {
@@ -22,8 +35,17 @@ export class AudioEngine {
         (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.ctx = new Ctor({ latencyHint: "interactive" });
       this.master = this.ctx.createGain();
+      // Fixed headroom. There is no master fader in the UI; the three buses
+      // below are what the player actually adjusts.
       this.master.gain.value = 0.9;
       this.master.connect(this.ctx.destination);
+      const bus = () => {
+        const g = this.ctx!.createGain();
+        g.connect(this.master!);
+        return g;
+      };
+      this.buses = { notes: bus(), guide: bus(), metronome: bus() };
+      for (const b of BUSES) this.buses[b].gain.value = this.pending[b];
       this.noiseBuffer = this.makeNoise(this.ctx);
     }
     if (this.ctx.state === "suspended") await this.ctx.resume();
@@ -38,8 +60,20 @@ export class AudioEngine {
     return this.ctx ? this.ctx.currentTime : 0;
   }
 
-  setVolume(v: number): void {
-    if (this.master) this.master.gain.value = Math.max(0, Math.min(1, v));
+  /**
+   * Level for one bus, 0..1. Safe to call before `init` — the value is held
+   * and applied when the context is created, so settings that hydrate before
+   * the first user gesture are not lost.
+   */
+  setBusVolume(bus: Bus, v: number): void {
+    const level = Math.max(0, Math.min(1, v));
+    this.pending[bus] = level;
+    if (this.buses) this.buses[bus].gain.value = level;
+  }
+
+  /** Where a voice should land. Falls back to master before `init`. */
+  private out(bus: Bus): GainNode {
+    return this.buses ? this.buses[bus] : this.master!;
   }
 
   // ---------------------------------------------------------------- helpers
@@ -81,10 +115,10 @@ export class AudioEngine {
    * Fire a drum voice. `at` defaults to now; pass a future time to schedule
    * (the metronome and guide track rely on this).
    */
-  playDrum(type: DrumType, at?: number, vol = 1): void {
+  playDrum(type: DrumType, at?: number, vol = 1, bus: Bus = "notes"): void {
     if (!this.ctx || !this.master) return;
     const t = at ?? this.ctx.currentTime;
-    const out = this.master;
+    const out = this.out(bus);
 
     const tom = (f0: number, f1: number, dec: number) => {
       const o = this.ctx!.createOscillator();
@@ -241,7 +275,7 @@ export class AudioEngine {
    * with a fast attack and a long-ish decay. Good enough to practise against;
    * swap for samples later if you want realism.
    */
-  playNote(midi: number, at?: number, vol = 1, duration = 0.9): void {
+  playNote(midi: number, at?: number, vol = 1, duration = 0.9, bus: Bus = "notes"): void {
     if (!this.ctx || !this.master) return;
     const t = at ?? this.ctx.currentTime;
     const freq = 440 * Math.pow(2, (midi - 69) / 12);
@@ -253,7 +287,7 @@ export class AudioEngine {
     amp.gain.exponentialRampToValueAtTime(0.12 * vol, t + 0.16);
     amp.gain.exponentialRampToValueAtTime(0.0001, t + duration);
     lp.connect(amp);
-    amp.connect(this.master);
+    amp.connect(this.out(bus));
 
     const partials: Array<[number, number, OscillatorType]> = [
       [1, 1.0, "triangle"],
@@ -288,7 +322,7 @@ export class AudioEngine {
     g.gain.exponentialRampToValueAtTime(accent ? 0.28 : 0.16, t + 0.001);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
     o.connect(g);
-    g.connect(this.master);
+    g.connect(this.out("metronome"));
     o.start(t);
     o.stop(t + 0.05);
   }

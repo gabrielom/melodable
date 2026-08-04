@@ -521,8 +521,10 @@ export function useTrainer(
 
   /** A guide note for a lane: the drum voice for pads, the pitch for piano. */
   function guideVoice(lane: number, at: number): void {
-    if (isPiano.value) audio.playNote(lane, at, 0.4);
-    else audio.playDrum(PADS[lane].type, at, 0.45);
+    // Its own bus, so the guide can sit under your playing without dragging
+    // your own hits down with it.
+    if (isPiano.value) audio.playNote(lane, at, 0.4, 0.9, "guide");
+    else audio.playDrum(PADS[lane].type, at, 0.45, "guide");
   }
 
   /** Play the target part quietly so the player can hear what to aim for. */
