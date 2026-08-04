@@ -48,6 +48,19 @@
   font-weight: 500;
   font-display: swap;
 }
+/*
+ * Bold is used by the canvas alone — the letter inside a piano note. Same
+ * rule as Geist SemiBold: ship the face rather than let the browser thicken
+ * the 500 for us. Note that canvas does not trigger a webfont download, so
+ * this one is loaded explicitly at startup (see `main.ts`); without that the
+ * first draws would silently fall back to a system mono.
+ */
+@font-face {
+  font-family: "Geist Mono";
+  src: url("./assets/fonts/GeistMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
 
 :root {
   --sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;

@@ -276,7 +276,7 @@ export class PianoRoll implements LaneRenderer {
    */
   private beginLabels(size: number): void {
     const ctx = this.ctx;
-    ctx.font = `500 ${size}px ${MONO}`;
+    ctx.font = `700 ${size}px ${MONO}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
   }
