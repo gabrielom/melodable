@@ -43,10 +43,10 @@ const LED_EDGE = 3;
 /** Hairline between lanes. */
 const LANE_GAP = 1;
 /** Note block, horizontal. */
-const NOTE_W = 14;
-const NOTE_H = 14;
+const NOTE_W = 28;
+const NOTE_H = 28;
 /** Note block when notes fall: a pill inset from the column's edges. */
-const NOTE_V = 8;
+const NOTE_V = 16;
 const NOTE_V_INSET = 12;
 /**
  * Ceiling on that pill's width. A two-lane lesson gets half the window per
@@ -54,7 +54,7 @@ const NOTE_V_INSET = 12;
  * 600px slab — the lane reads as a filled bar rather than as a note. Past this
  * the note stays put and centres in its column instead of growing with it.
  */
-const NOTE_V_MAX_W = 72;
+const NOTE_V_MAX_W = 144;
 /** Vertical: distance from the bottom of the note field to the hit line. */
 const HIT_FROM_BOTTOM = 76;
 

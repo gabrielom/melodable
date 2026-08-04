@@ -34,14 +34,14 @@ const ROW_BLACK = { dark: "#0d0d0e", light: "#c4c4c4" } as const;
  * narrows, and a note sized to its key becomes a slab over a two-octave
  * lesson. Matches the pads view's cap so the two instruments agree.
  */
-const NOTE_V_MAX_W = 72;
+const NOTE_V_MAX_W = 144;
 /**
- * Height of that note — its extent along the time axis. Deep enough to seat
- * the 8.5px name, which is the whole reason it is not the 8px sliver it was.
- * At the five-bar zoom this is about an eighth note, so eighths sit edge to
- * edge and anything faster overlaps, same as the horizontal view.
+ * Height of that note — its extent along the time axis. At the five-bar zoom
+ * this is roughly a quarter note, so consecutive eighths overlap by about
+ * half. That is the cost of a note this size and it is deliberate: the note
+ * has to read first, and a piano lesson's notes are rarely that dense.
  */
-const NOTE_V_H = 16;
+const NOTE_V_H = 32;
 /**
  * Below this the note's letter is dropped rather than spilled onto its
  * neighbours. The widest one is a sharp, "C#", measured at 11px in 8.5px
@@ -142,7 +142,9 @@ export class PianoRoll implements LaneRenderer {
         if (inst.lane < low || inst.lane > high) continue;
         if (f.countIn && inst.time < f.now) continue;
         const y = hitY - (inst.time - f.now) * pxPerSec;
-        if (y < -30 || y > H + 30) continue;
+        // Cull on the note's own size, so a taller note is not clipped off
+        // the edge before it has fully left the field.
+        if (y < -NOTE_V_H || y > H + NOTE_V_H) continue;
         const g = keyGeometry(inst.lane, low, whiteWidth);
         // A pill on the key's own column, capped and centred: a narrow range
         // makes keys wide, and a note that just fills its key turns into a
@@ -214,8 +216,8 @@ export class PianoRoll implements LaneRenderer {
     // The blob is deliberately taller than a row so the note name fits — rows
     // get thin over a three-octave range. Neighbours overlap slightly, which
     // is how Melodics reads too.
-    const noteW = 16;
-    const h = 26;
+    const noteW = 32;
+    const h = 52;
     ctx.save();
     ctx.beginPath();
     ctx.rect(trackX, 0, trackW, H);
