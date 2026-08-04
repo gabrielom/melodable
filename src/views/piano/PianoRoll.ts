@@ -30,11 +30,12 @@ const SANS = '"Geist", ui-sans-serif, system-ui, sans-serif';
 /** Semitone beds: black-key rows sit a shade darker than white-key rows. */
 const ROW_BLACK = { dark: "#0d0d0e", light: "#c4c4c4" } as const;
 /**
- * Diameter of a falling note. It is a circle, so this governs both axes: the
- * width no longer needs a cap against wide key columns, because the diameter
- * is the cap. On the time axis it works out at roughly a quarter note at the
- * five-bar zoom, so consecutive eighths overlap by about half — the cost of a
- * note this size, and deliberate: the note has to read first.
+ * Diameter of a falling note, in both orientations. It is a circle, so this
+ * governs both axes at once — no separate width cap against wide key columns,
+ * and no separate height to clear a thin row. Whichever axis carries time, it
+ * works out at roughly a quarter note at the five-bar zoom, so consecutive
+ * eighths overlap by about half: the cost of a note this size, and deliberate,
+ * because the note has to read first.
  */
 const NOTE_DIAMETER = 32;
 /**
@@ -207,11 +208,6 @@ export class PianoRoll implements LaneRenderer {
       h: H,
     });
 
-    // The blob is deliberately taller than a row so the note name fits — rows
-    // get thin over a three-octave range. Neighbours overlap slightly, which
-    // is how Melodics reads too.
-    const noteW = 32;
-    const h = 52;
     ctx.save();
     ctx.beginPath();
     ctx.rect(trackX, 0, trackW, H);
@@ -222,11 +218,14 @@ export class PianoRoll implements LaneRenderer {
       if (f.countIn && inst.time < f.now) continue;
       const x = hitX + (inst.time - f.now) * pxPerSec;
       if (x < trackX - 50 || x > W + 50) continue;
-      const y = rowY(inst.lane) + (rowH - h) / 2;
-      // Deliberately taller than a row, with a full pill radius, so the note
-      // name always fits — rows get thin over a three-octave range.
-      this.note(f, x - noteW / 2, y, noteW, h, inst, h / 2);
-      this.label(f, pitchLetter(inst.lane), x, y + h / 2);
+      // Centred on its row, the same circle the vertical view draws. It is
+      // deliberately bigger than a row — rows get thin over two octaves — so
+      // neighbouring semitones overlap slightly, which is how Melodics reads
+      // too, and it keeps the note legible with its letter inside.
+      const cy = rowY(inst.lane) + rowH / 2;
+      const d = NOTE_DIAMETER;
+      this.note(f, x - d / 2, cy - d / 2, d, d, inst, d / 2);
+      this.label(f, pitchLetter(inst.lane), x, cy);
     }
     this.endLabels();
     ctx.restore();
