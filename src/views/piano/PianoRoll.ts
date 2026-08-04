@@ -35,6 +35,19 @@ const ROW_BLACK = { dark: "#0d0d0e", light: "#c4c4c4" } as const;
  * lesson. Matches the pads view's cap so the two instruments agree.
  */
 const NOTE_V_MAX_W = 72;
+/**
+ * Height of that note — its extent along the time axis. Deep enough to seat
+ * the 8.5px name, which is the whole reason it is not the 8px sliver it was.
+ * At the five-bar zoom this is about an eighth note, so eighths sit edge to
+ * edge and anything faster overlaps, same as the horizontal view.
+ */
+const NOTE_V_H = 16;
+/**
+ * Below this the note name is dropped rather than spilled onto its
+ * neighbours. The widest label over A0–C8 is a sharp like "C#4", measured at
+ * 16px in 8.5px Geist Mono, so 20 leaves 2px either side.
+ */
+const LABEL_MIN_W = 20;
 
 export class PianoRoll implements LaneRenderer {
   private ctx: CanvasRenderingContext2D;
@@ -129,12 +142,17 @@ export class PianoRoll implements LaneRenderer {
         const y = hitY - (inst.time - f.now) * pxPerSec;
         if (y < -30 || y > H + 30) continue;
         const g = keyGeometry(inst.lane, low, whiteWidth);
-        // A slim block on the key's own column; the keyboard below names the
-        // pitches this lesson uses, so the note doesn't have to carry a label.
-        // Capped and centred on the key: a narrow range makes keys wide, and a
-        // note that just fills its key turns into a slab.
+        // A pill on the key's own column, capped and centred: a narrow range
+        // makes keys wide, and a note that just fills its key turns into a
+        // slab. Tall enough to carry its own name, the way the horizontal
+        // view does — the keyboard tells you where the key is, the label
+        // tells you which one without having to trace down the column.
         const w = Math.min(NOTE_V_MAX_W, g.width - 2);
-        this.note(f, g.x + (g.width - w) / 2, y - 4, w, 8, inst, 4);
+        const x = g.x + (g.width - w) / 2;
+        this.note(f, x, y - NOTE_V_H / 2, w, NOTE_V_H, inst, NOTE_V_H / 2);
+        // Skipped when the column is too narrow to hold the text — a clip
+        // spanning most of the keyboard leaves black keys around 14px.
+        if (w >= LABEL_MIN_W) this.label(f, noteName(inst.lane), x + w / 2, y, 8.5);
       }
     }
 
