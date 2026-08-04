@@ -1191,6 +1191,11 @@ watch(
   box-shadow: var(--outline);
 }
 .seg-wrap { position: relative; display: inline-flex; }
+/* This wrapper sits inside the seg's 2px padding, so `.menu`'s top offset
+   starts 2px lower than it does for the device and mixer wrappers, which are
+   direct children of the bar. Pull it back so all three panels hang from the
+   same line. */
+.seg-wrap .menu { top: 23px; }
 .seg-i {
   height: var(--seg-item-h);
   display: inline-flex;

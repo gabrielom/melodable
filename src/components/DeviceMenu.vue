@@ -106,7 +106,14 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.wrap { position: relative; }
+/*
+ * `inline-flex`, not the default block. As a block this wrapper laid its
+ * button out on a text baseline, so the line box added descender space under
+ * it: 22px tall for a 20px control, and the button rode 1px below every other
+ * control in the bar. The volume wrapper next door already does this, which
+ * is why only this one drifted.
+ */
+.wrap { position: relative; display: inline-flex; align-items: center; }
 
 /* Face chip: 20px like every other bar control, LED dot showing connection. */
 .trigger {
