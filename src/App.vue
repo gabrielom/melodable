@@ -8,7 +8,7 @@
  * route through the same scorer; hardware hits are graded at their midir
  * timestamp mapped onto the audio clock, never at handler time.
  */
-import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
 import { useSettings, type PadLayout } from "@/stores/settings";
 import { useLessons } from "@/stores/lessons";
 import { useMidi } from "@/composables/useMidi";
@@ -211,19 +211,62 @@ function applyTempo(v: number) {
   void proposeLinkTempo(clamped);
 }
 
+/**
+ * How far the pointer may wander before a press counts as a drag rather than
+ * a click. Also stops a one-pixel tremor on mousedown from nudging the tempo.
+ */
+const TEMPO_DRAG_SLOP = 3;
+
+const tempoEditing = ref(false);
+const tempoDraft = ref("");
+const tempoInput = ref<HTMLInputElement | null>(null);
+
+/** Click the readout to type a tempo outright, instead of dragging to it. */
+function beginTempoEdit() {
+  tempoDraft.value = bpmLabel.value.toFixed(1);
+  tempoEditing.value = true;
+  void nextTick(() => {
+    tempoInput.value?.focus();
+    tempoInput.value?.select();
+  });
+}
+
+function commitTempoEdit() {
+  if (!tempoEditing.value) return;
+  tempoEditing.value = false;
+  // Accept a comma decimal, and a bare "120" as readily as "120.0".
+  const v = Number.parseFloat(tempoDraft.value.replace(",", "."));
+  if (Number.isFinite(v)) applyTempo(v);
+}
+
+function cancelTempoEdit() {
+  tempoEditing.value = false;
+}
+
 function onTempoDragStart(e: PointerEvent) {
+  if (tempoEditing.value) return;
   const el = e.currentTarget as HTMLElement;
+  const startX = e.clientX;
   const startY = e.clientY;
   const startBpm = bpm.value;
+  let dragging = false;
   el.setPointerCapture(e.pointerId);
 
-  const move = (ev: PointerEvent) =>
+  const move = (ev: PointerEvent) => {
+    if (!dragging) {
+      const moved = Math.abs(ev.clientY - startY) + Math.abs(ev.clientX - startX);
+      if (moved <= TEMPO_DRAG_SLOP) return;
+      dragging = true;
+    }
     applyTempo(startBpm + (startY - ev.clientY) / TEMPO_PX_PER_BPM);
+  };
   const up = (ev: PointerEvent) => {
     el.releasePointerCapture(ev.pointerId);
     el.removeEventListener("pointermove", move);
     el.removeEventListener("pointerup", up);
     el.removeEventListener("pointercancel", up);
+    // A press that never turned into a drag is a click: open the field.
+    if (!dragging && ev.type === "pointerup") beginTempoEdit();
   };
   el.addEventListener("pointermove", move);
   el.addEventListener("pointerup", up);
@@ -232,6 +275,13 @@ function onTempoDragStart(e: PointerEvent) {
 
 /** Keyboard equivalent, so the control isn't mouse-only. */
 function onTempoKey(e: KeyboardEvent) {
+  // While typing, the arrows belong to the caret.
+  if (tempoEditing.value) return;
+  if (e.key === "Enter" || e.key === " ") {
+    beginTempoEdit();
+    e.preventDefault();
+    return;
+  }
   const step = e.shiftKey ? 0.1 : 1;
   if (e.key === "ArrowUp" || e.key === "ArrowRight") applyTempo(bpm.value + step);
   else if (e.key === "ArrowDown" || e.key === "ArrowLeft") applyTempo(bpm.value - step);
@@ -528,20 +578,33 @@ function onVolume(e: Event) {
 
         <i class="divider" />
 
-        <!-- Drag up/down to scrub the tempo; arrow keys step it. -->
+        <!-- Drag up/down to scrub the tempo, click to type one, arrows step. -->
         <div
           class="field tempo"
+          :class="{ editing: tempoEditing }"
           role="slider"
           tabindex="0"
           :aria-valuenow="bpmLabel"
           aria-valuemin="50"
           aria-valuemax="160"
           aria-label="Tempo"
-          :title="`Tempo — ${bpmLabel} BPM. Drag to change.`"
+          :title="`Tempo — ${bpmLabel} BPM. Click to type, drag to scrub.`"
           @pointerdown="onTempoDragStart"
           @keydown="onTempoKey"
         >
-          <span class="num tempo-val">{{ bpmLabel.toFixed(1) }}</span>
+          <input
+            v-if="tempoEditing"
+            ref="tempoInput"
+            v-model="tempoDraft"
+            class="num tempo-val tempo-input"
+            type="text"
+            inputmode="decimal"
+            aria-label="Tempo in BPM"
+            @keydown.enter.prevent.stop="commitTempoEdit"
+            @keydown.esc.prevent.stop="cancelTempoEdit"
+            @blur="commitTempoEdit"
+          />
+          <span v-else class="num tempo-val">{{ bpmLabel.toFixed(1) }}</span>
           <span class="unit">BPM</span>
         </div>
 
@@ -991,7 +1054,28 @@ function onVolume(e: Event) {
   cursor: ns-resize;
   touch-action: none;
 }
-.tempo-val { font-size: 9.5px; font-weight: 500; line-height: 1; color: var(--txt); }
+.tempo-val {
+  font-size: 9.5px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--txt);
+  /* Pinned to the widest reading, "160.0". The readout used to size to its
+     content, so the whole bar shifted when the tempo crossed 100 — and the
+     window floor is measured against this width. Mono plus tabular numerals
+     means 5ch is exactly five digits, so the input can match it and opening
+     the field moves nothing. */
+  display: inline-block;
+  width: 5ch;
+  text-align: right;
+}
+.tempo-input {
+  padding: 0;
+  border: none;
+  background: none;
+  outline: none;
+  caret-color: var(--head);
+}
+.tempo.editing { cursor: text; }
 .tempo .unit {
   font-family: var(--mono);
   font-size: 9.5px;
