@@ -151,13 +151,16 @@ export function paintVeil(
 
 /**
  * Count-in: one ring per beat of the bar, filling left to right, the current
- * beat solid and enlarged. Drawn over a wash of the lane area — the transport
- * bar above stays live.
+ * beat solid and enlarged.
+ *
+ * Drawn straight over the lane, with nothing dimming it. There used to be a
+ * wash across the whole canvas behind these rings, which also greyed out the
+ * notes — the very thing you are counting yourself in to play. The rings sit
+ * in the middle of the field and read perfectly well without it.
  */
 export function paintCountIn(
   ctx: CanvasRenderingContext2D,
   opts: {
-    theme: Theme;
     palette: { txt: string; txt3: string; rating: { early: string } };
     beats: number;
     beat: number;
@@ -173,9 +176,6 @@ export function paintCountIn(
   const beats = Math.max(1, Math.round(opts.beats));
   const done = Math.floor(opts.beat);
   const frac = opts.beat - done;
-
-  ctx.fillStyle = opts.theme === "light" ? "#cccccc99" : "#0e0e0f99";
-  ctx.fillRect(0, 0, W, H);
 
   const R = 13;
   const step = R * 2 + 22;

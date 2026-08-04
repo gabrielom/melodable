@@ -296,7 +296,6 @@ export class PianoRoll implements LaneRenderer {
   private countIn(f: LaneFrame, W: number, H: number): void {
     if (!f.countIn) return;
     paintCountIn(this.ctx, {
-      theme: f.theme,
       palette: f.palette,
       beats: f.countInBeats,
       beat: f.countInBeat,
