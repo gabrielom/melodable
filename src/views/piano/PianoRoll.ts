@@ -16,7 +16,7 @@
 import { RADIUS } from "@/engine/theme";
 import { paintCountIn, paintGrid, paintVeil, pxPerBeat, ROW_INK } from "@/views/lane-geometry";
 import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
-import { countWhiteKeys, isWhiteKey, keyGeometry, noteName, pitchClass } from "@/engine/pitch";
+import { countWhiteKeys, isWhiteKey, keyGeometry, pitchLetter, pitchClass } from "@/engine/pitch";
 
 /**
  * No gutter: the rotated keyboard sits beside the roll and names the pitches,
@@ -43,11 +43,12 @@ const NOTE_V_MAX_W = 72;
  */
 const NOTE_V_H = 16;
 /**
- * Below this the note name is dropped rather than spilled onto its
- * neighbours. The widest label over A0–C8 is a sharp like "C#4", measured at
- * 16px in 8.5px Geist Mono, so 20 leaves 2px either side.
+ * Below this the note's letter is dropped rather than spilled onto its
+ * neighbours. The widest one is a sharp, "C#", measured at 11px in 8.5px
+ * Geist Mono, so 15 leaves 2px either side. It was 20 while the label also
+ * carried the octave.
  */
-const LABEL_MIN_W = 20;
+const LABEL_MIN_W = 15;
 
 export class PianoRoll implements LaneRenderer {
   private ctx: CanvasRenderingContext2D;
@@ -153,7 +154,7 @@ export class PianoRoll implements LaneRenderer {
         this.note(f, x, y - NOTE_V_H / 2, w, NOTE_V_H, inst, NOTE_V_H / 2);
         // Skipped when the column is too narrow to hold the text — a clip
         // spanning most of the keyboard leaves black keys around 14px.
-        if (w >= LABEL_MIN_W) this.label(f, noteName(inst.lane), x + w / 2, y);
+        if (w >= LABEL_MIN_W) this.label(f, pitchLetter(inst.lane), x + w / 2, y);
       }
     }
     this.endLabels();
@@ -229,7 +230,7 @@ export class PianoRoll implements LaneRenderer {
       // Deliberately taller than a row, with a full pill radius, so the note
       // name always fits — rows get thin over a three-octave range.
       this.note(f, x - noteW / 2, y, noteW, h, inst, h / 2);
-      this.label(f, noteName(inst.lane), x, y + h / 2);
+      this.label(f, pitchLetter(inst.lane), x, y + h / 2);
     }
     this.endLabels();
     ctx.restore();

@@ -25,6 +25,15 @@ export function noteName(note: number): string {
   return `${NAMES[pitchClass(note)]}${Math.floor(note / 12) - 1}`;
 }
 
+/**
+ * Just the letter: "C", "F#". What a falling note carries — the octave is
+ * already obvious from which key the note is sitting over, so printing it on
+ * the note itself is noise. The keyboard keeps the full name.
+ */
+export function pitchLetter(note: number): string {
+  return NAMES[pitchClass(note)];
+}
+
 /** How many white keys lie in [low, high] inclusive. */
 export function countWhiteKeys(low: number, high: number): number {
   let n = 0;
