@@ -309,8 +309,15 @@ export class PianoRoll implements LaneRenderer {
     });
   }
 
-  private roundRect(x: number, y: number, w: number, h: number, r: number): void {
+  private roundRect(x: number, y: number, w: number, h: number, radius: number): void {
     const ctx = this.ctx;
+    // Clamp to what the box can actually hold. `arcTo` does not do this: ask
+    // for more than half the shorter side and the two corner arcs overlap,
+    // the path doubles back, and the note renders as a pointed lens with a
+    // spike off each end. Callers ask for `h / 2` meaning "fully rounded
+    // ends", and on a 16x26 note that is wider than the box allows. Native
+    // `ctx.roundRect` and CSS `border-radius` both clamp the same way.
+    const r = Math.max(0, Math.min(radius, w / 2, h / 2));
     ctx.beginPath();
     ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r);

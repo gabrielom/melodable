@@ -420,8 +420,13 @@ export class PadLanes implements LaneRenderer {
   }
 
 
-  private roundRect(x: number, y: number, w: number, h: number, r: number): void {
+  private roundRect(x: number, y: number, w: number, h: number, radius: number): void {
     const ctx = this.ctx;
+    // Clamp, as `arcTo` will not: a radius over half the shorter side makes
+    // the corner arcs overlap and the path double back, drawing a pointed
+    // lens with a spike off each end instead of a rounded box. Nothing here
+    // asks for one today, but the piano's notes did.
+    const r = Math.max(0, Math.min(radius, w / 2, h / 2));
     ctx.beginPath();
     ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r);
