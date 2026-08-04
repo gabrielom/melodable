@@ -124,13 +124,26 @@ h1 {
   color: var(--txt3);
 }
 
-/* Four columns is what 1180px yields; the real rule keeps it responsive. */
+/*
+ * The card is a fixed object, not a flexible one. Measured off the handoff's
+ * "10a home" frame: a 1180px screen, 14px of body padding either side, four
+ * columns and an 8px gap gives (1152 - 24) / 4 = 282px, and its two rows come
+ * out at 196.5px. Those are the numbers here.
+ *
+ * So the tracks are `282px`, not `minmax(282px, 1fr)`: `auto-fill` lays down
+ * as many whole columns as the width allows and the remainder stays empty,
+ * which is what makes resizing add and remove columns instead of stretching
+ * every card. `align-content: start` does the same for rows — without it a
+ * short library would stretch its one row down the whole stage.
+ */
 .grid {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  grid-auto-rows: minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fill, 282px);
+  grid-auto-rows: 196px;
+  align-content: start;
+  justify-content: start;
   gap: 8px;
   overflow-y: auto;
 }
@@ -194,8 +207,15 @@ h1 {
   font-size: 11.5px;
   line-height: 1.45;
   color: var(--txt2);
-  /* Keeps the footers on a line across the row whatever the hint's length. */
+  /* Two lines, always: the min-height reserves the second one so footers line
+     up across a row, and the clamp stops a longer hint from pushing the
+     footer past the bottom of a card that no longer grows to fit it. Every
+     hint in the handoff is one or two lines. */
   min-height: 33px;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  display: -webkit-box;
+  overflow: hidden;
   text-wrap: pretty;
 }
 
@@ -203,7 +223,10 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  margin-top: auto;
+  /* The handoff's 5px, not `auto`. `auto` pinned the footer to the bottom of
+     the card and left the slack in the middle; the drawing runs the content
+     straight down from the top and leaves the slack underneath. */
+  margin-top: 5px;
   padding-top: 8px;
   border-top: 1px solid var(--hair);
 }
