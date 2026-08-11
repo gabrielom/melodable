@@ -9,8 +9,9 @@
  *
  * - The playhead is **centred** in the note field, one continuous line across
  *   the whole stack, painted above the lane separators.
- * - **Ahead of it** notes carry their lane's LED at full strength — what is
- *   coming has to be the most readable thing on screen.
+ * - **Ahead of it** notes carry their lane's hue, dimmed: a target says *what*
+ *   to hit, and dimming keeps a whole field of them from shouting over the
+ *   handful that have been judged.
  * - **Behind it** they carry the colour they were graded, keep travelling, and
  *   dissolve into a veil as they reach the far edge. They never vanish at the
  *   playhead.
@@ -19,9 +20,10 @@
  *   content.
  */
 
-import { ledOf, RADIUS } from "@/engine/theme";
+import { hueOf, RADIUS } from "@/engine/theme";
 import { PADS, padPosition } from "@/engine/gm";
 import {
+  noteInk,
   paintCountIn,
   paintGrid,
   paintVeil,
@@ -29,6 +31,13 @@ import {
   SEPARATOR_INK,
 } from "@/views/lane-geometry";
 import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
+import { TIMING_WINDOWS } from "@/engine/types";
+
+/** Per-lane label state for one frame — see `laneState`. */
+interface LaneState {
+  busy: Set<number>;
+  lit: Set<number>;
+}
 
 /** Canvas takes a font shorthand, not a CSS variable — mirrors `--mono`. */
 const MONO = '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
@@ -122,14 +131,14 @@ export class PadLanes implements LaneRenderer {
     this.window = { behind: halfBeats, ahead: halfBeats };
 
     const xOfBeat = (beat: number) => hitX + (beat - f.absBeat) * beatPx;
-    const busy = new Set(f.instances.map((i) => i.lane));
+    const state = this.laneState(f);
 
     this.gutterHits = [];
     lanes.forEach((pad, li) => {
       const y = li * (laneH + LANE_GAP);
       this.gutterHits.push({ pad, x0: 0, x1: GUTTER, y0: y, y1: y + laneH });
 
-      this.gutter(f, 0, y, GUTTER, laneH, pad, li, "horizontal", busy.has(pad));
+      this.gutter(f, 0, y, GUTTER, laneH, pad, li, "horizontal", state);
 
       // note bed, then the tempo grid ruled over it
       ctx.fillStyle = p.lane;
@@ -164,19 +173,10 @@ export class PadLanes implements LaneRenderer {
       for (const inst of f.instances) {
         const li = lanes.indexOf(inst.lane);
         if (li < 0) continue;
-        // Nothing has been played during the count-in, so the past stays empty.
-        if (f.countIn && inst.time < f.now) continue;
         const x = hitX + (inst.time - f.now) * (beatPx / f.secPerBeat);
         if (x < trackX - NOTE_W || x > W + NOTE_W) continue;
         const y = li * (laneH + LANE_GAP);
-        this.note(
-          f,
-          x - NOTE_W / 2,
-          y + (laneH - size) / 2,
-          NOTE_W,
-          size,
-          inst.resolved ? p.rating[inst.rating!] : ledOf(p, li),
-        );
+        this.note(f, x - NOTE_W / 2, y + (laneH - size) / 2, NOTE_W, size, noteInk(f, inst, li));
       }
       ctx.restore();
     }
@@ -214,7 +214,7 @@ export class PadLanes implements LaneRenderer {
 
     // Notes fall, so a later beat sits higher up the screen.
     const yOfBeat = (beat: number) => hitY - (beat - f.absBeat) * beatPx;
-    const busy = new Set(f.instances.map((i) => i.lane));
+    const state = this.laneState(f);
 
     this.gutterHits = [];
     lanes.forEach((pad, li) => {
@@ -224,7 +224,7 @@ export class PadLanes implements LaneRenderer {
       // The label tile sits at the bottom, LED on its outer edge — the same
       // place it occupies in the horizontal gutter.
       this.gutterHits.push({ pad, x0: x, x1: x + laneW, y0: fieldH, y1: H });
-      this.gutter(f, x, fieldH, laneW, TILE_H, pad, li, "vertical", busy.has(pad));
+      this.gutter(f, x, fieldH, laneW, TILE_H, pad, li, "vertical", state);
     });
 
     paintGrid(ctx, {
@@ -250,7 +250,6 @@ export class PadLanes implements LaneRenderer {
       for (const inst of f.instances) {
         const li = lanes.indexOf(inst.lane);
         if (li < 0) continue;
-        if (f.countIn && inst.time < f.now) continue;
         const y = hitY - (inst.time - f.now) * (beatPx / f.secPerBeat);
         if (y < -NOTE_V || y > fieldH + NOTE_V) continue;
         const x = li * (laneW + LANE_GAP);
@@ -264,7 +263,7 @@ export class PadLanes implements LaneRenderer {
           y - NOTE_V / 2,
           noteW,
           NOTE_V,
-          inst.resolved ? p.rating[inst.rating!] : ledOf(p, li),
+          noteInk(f, inst, li),
           NOTE_V / 2, // pill
         );
       }
@@ -293,6 +292,11 @@ export class PadLanes implements LaneRenderer {
    * A lane's label block: the LED on its outer edge, the controller mini-grid,
    * then the drum name. Identical content in both orientations — only the edge
    * the LED sits on differs.
+   *
+   * The strip, the lit mini-grid cell and every unplayed note in the lane are
+   * the same dimmed tint, and provably so — that is what lets you scan the
+   * stack without a legend. Full strength is reserved for a lane that is
+   * sounding right now, which is the one thing the strip has to shout.
    */
   private gutter(
     f: LaneFrame,
@@ -303,14 +307,15 @@ export class PadLanes implements LaneRenderer {
     pad: number,
     li: number,
     orientation: "horizontal" | "vertical",
-    active: boolean,
+    state: LaneState,
   ): void {
     const ctx = this.ctx;
     const p = f.palette;
     ctx.fillStyle = p.gutter;
     ctx.fillRect(x, y, w, h);
 
-    ctx.fillStyle = ledOf(p, li);
+    const hue = hueOf(p, "pads", li);
+    ctx.fillStyle = state.lit.has(pad) ? hue.full : hue.dim;
     if (orientation === "horizontal") ctx.fillRect(x, y, LED_EDGE, h);
     else ctx.fillRect(x, y + h - LED_EDGE, w, LED_EDGE);
 
@@ -326,7 +331,7 @@ export class PadLanes implements LaneRenderer {
     const cy = orientation === "horizontal" ? y + h / 2 : y + (h - LED_EDGE) / 2;
     const gridRight = this.miniGrid(f, pad, li, inner + 10, cy);
 
-    ctx.fillStyle = f.playing && !active ? p.txt2 : p.txt;
+    ctx.fillStyle = f.playing && !state.busy.has(pad) ? p.txt2 : p.txt;
     ctx.font = `500 8.5px ${MONO}`;
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
@@ -348,11 +353,34 @@ export class PadLanes implements LaneRenderer {
     const y0 = cy - gh / 2;
     for (let r = 0; r < pos.rows; r++) {
       for (let c = 0; c < pos.cols; c++) {
-        ctx.fillStyle = r === pos.row && c === pos.col ? ledOf(f.palette, li) : f.palette.miniOff;
+        ctx.fillStyle =
+          r === pos.row && c === pos.col ? hueOf(f.palette, "pads", li).dim : f.palette.miniOff;
         ctx.fillRect(x0 + c * CELL_STEP, y0 + r * CELL_STEP, CELL, CELL);
       }
     }
     return x0 + gw;
+  }
+
+  /**
+   * What each lane's label block has to say about itself this frame.
+   *
+   * `busy` — the lane has notes anywhere in the visible window; a lane with
+   * nothing to play has its name dimmed rather than reading as equally live.
+   * `lit` — the lane has a note *at* the playhead, so it is sounding now. That
+   * is the one thing that earns the LED at full strength, and it makes the
+   * strip pulse with the part the way a controller's own pads do.
+   *
+   * Both in one pass over the instances: this runs every frame, and the pair
+   * of Sets is already more allocation than a draw wants.
+   */
+  private laneState(f: LaneFrame): LaneState {
+    const busy = new Set<number>();
+    const lit = new Set<number>();
+    for (const i of f.instances) {
+      busy.add(i.lane);
+      if (f.playing && Math.abs(i.time - f.now) <= TIMING_WINDOWS.loose) lit.add(i.lane);
+    }
+    return { busy, lit };
   }
 
   /** Pad under a point on the canvas, for click-to-play. Null elsewhere. */

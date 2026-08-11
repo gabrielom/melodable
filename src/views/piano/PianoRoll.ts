@@ -14,7 +14,14 @@
  */
 
 import { RADIUS } from "@/engine/theme";
-import { paintCountIn, paintGrid, paintVeil, pxPerBeat, ROW_INK } from "@/views/lane-geometry";
+import {
+  noteInk,
+  paintCountIn,
+  paintGrid,
+  paintVeil,
+  pxPerBeat,
+  ROW_INK,
+} from "@/views/lane-geometry";
 import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
 import { countWhiteKeys, isWhiteKey, keyGeometry, pitchLetter, pitchClass } from "@/engine/pitch";
 
@@ -170,7 +177,8 @@ export class PianoRoll implements LaneRenderer {
         const black = !isWhiteKey(inst.lane);
         if (black !== blackPass) continue;
         if (inst.lane < low || inst.lane > high) continue;
-        if (f.countIn && inst.time < f.now) continue;
+        // §2.4: notes behind the playhead stay on screen during the count-in. They
+        // simply wear their tint like everything else — nothing has been judged.
         const y = hitY - (inst.time - f.now) * pxPerSec;
         // Cull on the note's own size, so a larger note is not clipped off
         // the edge before it has fully left the field.
@@ -183,7 +191,7 @@ export class PianoRoll implements LaneRenderer {
         // having to trace down the column.
         const d = Math.min(NOTE_DIAMETER, g.width - 2);
         const x = g.x + (g.width - d) / 2;
-        this.note(f, x, y - d / 2, d, d, inst, d / 2);
+        this.note(f, x, y - d / 2, d, d, noteInk(f, inst, this.rankOf(f, inst.lane)), d / 2);
         // Skipped when the circle is too small to hold the text.
         if (d >= LABEL_MIN_W) this.label(f, pitchLetter(inst.lane), x + d / 2, y);
       }
@@ -249,7 +257,8 @@ export class PianoRoll implements LaneRenderer {
     this.beginLabels(LABEL_SIZE);
     for (const inst of f.instances) {
       if (inst.lane < low || inst.lane > high) continue;
-      if (f.countIn && inst.time < f.now) continue;
+      // §2.4: notes behind the playhead stay on screen during the count-in. They
+      // simply wear their tint like everything else — nothing has been judged.
       const x = hitX + (inst.time - f.now) * pxPerSec;
       if (x < trackX - 50 || x > W + 50) continue;
       // Centred on its row, the same circle the vertical view draws. It is
@@ -258,7 +267,7 @@ export class PianoRoll implements LaneRenderer {
       // too, and it keeps the note legible with its letter inside.
       const cy = rowY(inst.lane) + rowH / 2;
       const d = NOTE_DIAMETER;
-      this.note(f, x - d / 2, cy - d / 2, d, d, inst, d / 2);
+      this.note(f, x - d / 2, cy - d / 2, d, d, noteInk(f, inst, this.rankOf(f, inst.lane)), d / 2);
       this.label(f, pitchLetter(inst.lane), x, cy);
     }
     this.endLabels();
@@ -276,20 +285,28 @@ export class PianoRoll implements LaneRenderer {
 
   // ---------------------------------------------------------------- parts
 
+  /**
+   * Where a pitch sits in the lesson's own low-to-high order, which is what
+   * picks its hue. A chord then reads as distinct voices rather than one
+   * block of colour. Falls back to the first hue for a pitch the lesson never
+   * asks for — an imported clip can put one on screen.
+   */
+  private rankOf(f: LaneFrame, pitch: number): number {
+    return Math.max(0, f.hueOrder.indexOf(pitch));
+  }
+
   private note(
     f: LaneFrame,
     x: number,
     y: number,
     w: number,
     h: number,
-    inst: LaneFrame["instances"][number],
+    colour: string,
     radius?: number,
   ): void {
     const ctx = this.ctx;
     const r = radius ?? RADIUS[f.theme].note;
-    // Piano has no pad LEDs, so everything still to come takes one instrument
-    // colour; only what has been played wears a rating.
-    ctx.fillStyle = inst.resolved ? f.palette.rating[inst.rating!] : f.palette.instrument;
+    ctx.fillStyle = colour;
     if (r <= 0) ctx.fillRect(x, y, w, h);
     else {
       this.roundRect(x, y, w, h, r);

@@ -14,7 +14,7 @@
 
 import type { TargetNote } from "@/engine/scoring";
 import type { VisibleWindow } from "@/views/lane-frame";
-import { ledOf, RADIUS, type Palette, type Theme } from "@/engine/theme";
+import { hueOf, RADIUS, type Palette, type Theme } from "@/engine/theme";
 import type { InstrumentType, Rating } from "@/engine/types";
 
 export interface OverviewFrame {
@@ -160,29 +160,35 @@ export class Overview {
     const ctx = this.ctx;
     const p = f.palette;
 
-    // Piano maps pitch to a row; pads map the lane's screen position.
-    const order =
-      f.instrument === "piano"
-        ? [...new Set(f.targets.map((t) => t.lane))].sort((a, b) => b - a)
-        : f.padLanes;
+    // Piano maps pitch to a row, highest at the top so the strip reads the
+    // way the roll does; pads map the lane's screen position.
+    const piano = f.instrument === "piano";
+    const order = piano
+      ? [...new Set(f.targets.map((t) => t.lane))].sort((a, b) => b - a)
+      : f.padLanes;
     const rows = Math.max(1, order.length);
     const rowH = H / rows;
     const rowOf = (lane: number) => {
       const i = order.indexOf(lane);
       return i < 0 ? rows - 1 : i;
     };
+    /**
+     * Hues are assigned low-to-high for piano, but the rows run high-to-low,
+     * so the two indices are mirror images. Pads have only the one order.
+     */
+    const hueIndex = (row: number) => (piano ? rows - 1 - row : row);
 
     for (let r = 0; r < repeats; r++) {
       f.targets.forEach((t, i) => {
         const rating = f.ratings.get(`${r}:${i}`);
-        // Graded notes wear their rating; everything still to come wears the
-        // lane's own colour. Same rule as the lanes below.
+        const row = rowOf(t.lane);
+        // Graded notes wear their rating; everything still to come wears its
+        // lane's dimmed hue. The same rule, and the same values, as the lanes
+        // below — the strip is a miniature of them, not its own language.
         ctx.fillStyle = rating
           ? p.rating[rating]
-          : f.instrument === "piano"
-            ? p.instrument
-            : ledOf(p, rowOf(t.lane));
-        const y = rowOf(t.lane) * rowH + (rowH - DOT) / 2;
+          : hueOf(p, f.instrument, hueIndex(row)).dim;
+        const y = row * rowH + (rowH - DOT) / 2;
         ctx.fillRect(Math.round(xOf(r * loop + t.beat)), Math.round(y), DOT, DOT);
       });
     }

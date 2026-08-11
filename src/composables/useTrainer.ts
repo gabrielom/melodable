@@ -293,6 +293,8 @@ export function useTrainer(
       palette: palette.value,
       theme: settings.theme,
       orientation: settings.laneOrientation,
+      instrument: lesson.value.instrument,
+      hueOrder: isPiano.value ? lessonPitches.value : lanes.value,
       padLanes: lanes.value,
       padLayout: settings.padLayout,
       lowNote: pianoRange.value[0],

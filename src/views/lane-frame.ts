@@ -11,6 +11,7 @@
 
 import type { NoteInstance } from "@/engine/scoring";
 import type { Palette, Theme } from "@/engine/theme";
+import type { InstrumentType } from "@/engine/types";
 import type { LaneOrientation, PadLayout } from "@/stores/settings";
 
 export interface LaneFrame {
@@ -39,6 +40,24 @@ export interface LaneFrame {
 
   /** Notes fall top-to-bottom, or scroll right-to-left onto a playhead. */
   orientation: LaneOrientation;
+
+  /**
+   * Which of the two views this is. The renderer knows already, but the shared
+   * colour rule doesn't — pads and piano take the same hue list in a different
+   * order, so `noteInk` has to be told which.
+   */
+  instrument: InstrumentType;
+
+  /**
+   * The lanes this lesson uses, in the order that assigns hues: pad indices
+   * left-to-right, or the piano's distinct pitches low-to-high. A lane's
+   * *position* in this list picks its colour — not its pad number or its
+   * pitch — so a lane keeps the same hue from one lesson to the next.
+   *
+   * Separate from `padLanes` because that also decides which columns exist,
+   * a job the piano gives to `lowNote`/`highNote` instead.
+   */
+  hueOrder: number[];
 
   /** Pads: pad indices in use, left-to-right. */
   padLanes: number[];

@@ -8,7 +8,7 @@
  * way it drifted. "You rush the snare" is something you can act on.
  */
 import { computed } from "vue";
-import { PALETTE, ledOf } from "@/engine/theme";
+import { PALETTE, hueOf } from "@/engine/theme";
 import { useSettings } from "@/stores/settings";
 import { PADS } from "@/engine/gm";
 import { noteName } from "@/engine/pitch";
@@ -78,10 +78,13 @@ const weakest = computed(() => props.lanes.filter((l) => l.accuracy < 1).slice(0
 
 const laneName = (lane: number) =>
   props.instrument === "piano" ? noteName(lane) : PADS[lane].name.toUpperCase();
-const laneColour = (lane: number) => {
-  const i = props.laneOrder.indexOf(lane);
-  return props.instrument === "piano" ? palette.value.instrument : ledOf(palette.value, i < 0 ? 0 : i);
-};
+/**
+ * The lane's own hue, dimmed — the same swatch it wears in the lane stack and
+ * the overview strip, so a row here is recognisable as that lane rather than
+ * needing to be read.
+ */
+const laneColour = (lane: number) =>
+  hueOf(palette.value, props.instrument, Math.max(0, props.laneOrder.indexOf(lane))).dim;
 /** Which way a lane drifted, when it clearly leant one way. */
 const drift = (l: { early: number; late: number }): Rating | null => {
   if (l.early === l.late) return null;

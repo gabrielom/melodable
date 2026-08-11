@@ -8,7 +8,35 @@
  * disagree with what is actually on screen.
  */
 
-import type { Theme } from "@/engine/theme";
+import { hueOf, type Theme } from "@/engine/theme";
+import type { NoteInstance } from "@/engine/scoring";
+import type { LaneFrame } from "@/views/lane-frame";
+
+/**
+ * The colour a note wears, and the one rule both renderers obey.
+ *
+ * A note is either a **target** — it takes its lane's hue, dimmed, and says
+ * *what* to hit — or a **result**, in which case it takes its timing colour
+ * and says *how well*. The two palettes share no value, so a dimmed target can
+ * never be misread as a judgement.
+ *
+ * The switch is `resolved` rather than which side of the playhead the note is
+ * on. They amount to the same line, and only `resolved` is answerable: a note
+ * sitting exactly on the playhead has no result yet — it is still there to be
+ * struck — so there is no timing colour to give it.
+ *
+ * During the count-in nothing has been judged at all, so everything takes its
+ * tint whatever the scorer says. A count-in showing greens and ambers would be
+ * showing results that do not exist.
+ */
+export function noteInk(
+  f: Pick<LaneFrame, "palette" | "instrument" | "countIn">,
+  inst: Pick<NoteInstance, "resolved" | "rating">,
+  laneIndex: number,
+): string {
+  if (inst.resolved && inst.rating && !f.countIn) return f.palette.rating[inst.rating];
+  return hueOf(f.palette, f.instrument, laneIndex).dim;
+}
 
 /**
  * Bars of music visible across the lane at once. Melodics shows about five;
