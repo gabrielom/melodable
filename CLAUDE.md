@@ -80,3 +80,49 @@ streaks, a session log. Notes:
 - `AdvanceTracker` (`src/engine/adaptive.ts`) already tracks the lesson-clear streak
   in memory — that is the natural thing to persist first.
 - Don't reintroduce automatic tempo changes; tempo stays hand-set on the bar.
+
+### After M7: M8 — the intermittent input delay
+
+Parked deliberately until everything else is built, because it is a
+troubleshooting milestone and not a feature: **do not start it early, and do not
+"fix" it in passing while working on something else.**
+
+The report, twice, in the user's words: *"there is once again a delay when I am
+playing the notes, sometimes it happens. sometimes not."*
+
+What is known:
+
+- **The render loop is not the cause.** Measured with a worker posting messages
+  into the running app at an irregular cadence — the same shape of arrival a
+  MIDI event has. It waits 2-4ms at p99 to be picked up, in all four views, and
+  no frame exceeded 32ms. The probe lives in the scratchpad as `inputlag.mjs`;
+  rebuild it from that description if it is gone.
+- An earlier round of this was "fixed" by cutting per-frame canvas cost and the
+  user confirmed the delay went. Given the measurement above, treat that as
+  unexplained rather than as a precedent — it may have been coincidence.
+
+**Start with data, not with a fix.** Nothing in the app currently reveals what
+the MIDI path is doing, and a whole commit of plausible-sounding changes was
+written and reverted for exactly that reason. The first step is a throwaway
+instrument: log every incoming message's kind and its arrival gap
+(`audio.now` minus the midir timestamp mapped through `HostClock`) while the
+user plays the way that provokes it. That separates the three cases at once —
+what the controller actually sends and how fast, whether note-ons are arriving
+late, and whether they arrive on time but sound late.
+
+Unverified candidates, to check against that data rather than to act on first:
+
+- `midir`'s `Ignore::All` only filters sysex, clock and active sensing.
+  Aftertouch and pitch bend come through, and they are continuous — a
+  pressure-sensitive pad reports for as long as it is held. Every message costs
+  a serialization, a hop to the app's main thread and an `evaluateJavaScript`
+  into the webview, and a note-on waits behind that queue. If it is this, thin
+  the stream; **do not drop those messages — the user wants aftertouch.**
+- `pushLog` does a reactive write and rebuilds a 60-element array for every
+  message, including with the monitor closed and nothing mounted to read it.
+- `triggerPad`/`noteOn` `await ensureAudio()` before sounding the voice, and an
+  `await` yields even on an already-resolved promise, so the voice is scheduled
+  a microtask after the handler returns.
+
+Ask the user which it is — the sound arriving late, or the flash and the grade —
+before assuming. The two have different causes.
