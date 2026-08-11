@@ -70,7 +70,11 @@
   --bar-h: 34px;
   --ctl-h: 20px;
   --seg-item-h: 16px;
-  --overview-h: 22px;
+  /* Half again taller than it was: at 22px, eight rows of dots had under 3px
+     each and the strip read as hatching rather than as a miniature of the
+     lanes. The rows are inset from both edges (see `Overview`), which costs
+     6 of the 33 and is what stops the outer lanes touching the border. */
+  --overview-h: 33px;
   --gutter-w: 104px;
   --elapsed-w: 96px;
   --pad-win: 6px;

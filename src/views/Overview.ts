@@ -1,5 +1,5 @@
 /**
- * The run at a glance: a 22px strip above the lane holding every note of the
+ * The run at a glance: a 33px strip above the lane holding every note of the
  * whole run — the pattern laid out once per repeat, end to end.
  *
  * It is a true miniature, not a decoration: one dot per note, in its lane's
@@ -42,8 +42,38 @@ export interface OverviewFrame {
   theme: Theme;
 }
 
-/** Note dot, px. Small enough that a 2.75px row never becomes a solid line. */
+/** Note dot, px. Small enough that a thin row never becomes a solid line. */
 const DOT = 2;
+/**
+ * Gap kept clear above the first row of dots and below the last.
+ *
+ * The rows are spread across what is left rather than each sitting centred in
+ * an equal slice, so the outermost lanes never touch the strip's border — the
+ * top row used to sit 1px in and the bottom one flush against the edge, which
+ * read as clipping. The spacing between rows falls out of the same span, so it
+ * adapts to however many lanes a lesson has: eight in pads, three or four in
+ * the piano views.
+ */
+const ROW_INSET = 3;
+
+/**
+ * Top edge of a lane's row of dots, in a strip `height` tall.
+ *
+ * Rows are spread between the two insets rather than each centred in an equal
+ * slice: the first sits exactly `ROW_INSET` from the top and the last ends
+ * exactly `ROW_INSET` from the bottom, whatever the lane count. A single lane
+ * has no span to spread over, so it centres.
+ *
+ * The inset gives way before the dot does: a strip too short to hold both
+ * margins keeps the dots inside itself rather than hanging them over the edge.
+ * That only bites while the canvas is being sized, but a draw can land there.
+ */
+export function rowTop(row: number, rows: number, height: number): number {
+  const inset = Math.min(ROW_INSET, Math.max(0, (height - DOT) / 2));
+  const span = Math.max(0, height - inset * 2 - DOT);
+  if (rows <= 1) return inset + span / 2;
+  return inset + (Math.min(row, rows - 1) / (rows - 1)) * span;
+}
 /** Downbeat tick ink — the same values the lane's separators use. */
 const TICK_INK = { dark: "#ffffff1f", light: "#00000026" } as const;
 
@@ -167,7 +197,6 @@ export class Overview {
       ? [...new Set(f.targets.map((t) => t.lane))].sort((a, b) => b - a)
       : f.padLanes;
     const rows = Math.max(1, order.length);
-    const rowH = H / rows;
     const rowOf = (lane: number) => {
       const i = order.indexOf(lane);
       return i < 0 ? rows - 1 : i;
@@ -188,8 +217,7 @@ export class Overview {
         ctx.fillStyle = rating
           ? p.rating[rating]
           : hueOf(p, f.instrument, hueIndex(row)).dim;
-        const y = row * rowH + (rowH - DOT) / 2;
-        ctx.fillRect(Math.round(xOf(r * loop + t.beat)), Math.round(y), DOT, DOT);
+        ctx.fillRect(Math.round(xOf(r * loop + t.beat)), Math.round(rowTop(row, rows, H)), DOT, DOT);
       });
     }
   }
