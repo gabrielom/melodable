@@ -729,7 +729,41 @@ watch(
         </button>
       </div>
 
-      <div v-if="view === 'trainer'" class="seg" role="group" aria-label="Instrument">
+      <span v-if="view === 'home'" class="wordmark">MELODABLE</span>
+
+      <div class="spacer" />
+      <span v-if="view === 'trainer'" class="title">{{ lesson.name }}</span>
+      <div class="spacer" />
+
+      <span v-if="view === 'home'" class="count num">
+        {{ lessons.lessons.length }}<i>LESSONS</i>
+      </span>
+
+      <span v-if="view === 'trainer'" class="scores">
+        <span class="score" :title="runComplete ? 'Accuracy for the last run' : 'Accuracy so far'">
+          <i class="k">ACC</i>
+          <b class="num v-acc" :class="{ idle: !playing && !runComplete }">
+            {{ playing || runComplete ? accuracy : "—" }}
+          </b>
+        </span>
+        <span class="score" :title="runComplete ? 'Best combo in the last run' : 'Current combo'">
+          <i class="k">CMB</i>
+          <b class="num v-cmb" :class="{ idle: !playing && !runComplete }">
+            {{ playing || runComplete ? combo : "—" }}
+          </b>
+        </span>
+        <span class="score best" title="Best combo this session">
+          <i class="k">BEST</i>
+          <b class="num v-best">{{ bestCombo }}</b>
+        </span>
+      </span>
+
+      <i class="divider" />
+
+      <!-- Which instrument you practise is a decision made before a run, not
+           during one, so it lives on the home bar rather than the trainer's.
+           The trainer's freed width goes to the loop-overview strip. -->
+      <div v-if="view === 'home'" class="seg" role="group" aria-label="Instrument">
         <span ref="padMenuRoot" class="seg-wrap">
           <button
             class="seg-i"
@@ -766,37 +800,6 @@ watch(
           PIANO
         </button>
       </div>
-
-      <span v-if="view === 'home'" class="wordmark">MELODABLE</span>
-
-      <div class="spacer" />
-      <span v-if="view === 'trainer'" class="title">{{ lesson.name }}</span>
-      <div class="spacer" />
-
-      <span v-if="view === 'home'" class="count num">
-        {{ lessons.lessons.length }}<i>LESSONS</i>
-      </span>
-
-      <span v-if="view === 'trainer'" class="scores">
-        <span class="score" :title="runComplete ? 'Accuracy for the last run' : 'Accuracy so far'">
-          <i class="k">ACC</i>
-          <b class="num v-acc" :class="{ idle: !playing && !runComplete }">
-            {{ playing || runComplete ? accuracy : "—" }}
-          </b>
-        </span>
-        <span class="score" :title="runComplete ? 'Best combo in the last run' : 'Current combo'">
-          <i class="k">CMB</i>
-          <b class="num v-cmb" :class="{ idle: !playing && !runComplete }">
-            {{ playing || runComplete ? combo : "—" }}
-          </b>
-        </span>
-        <span class="score best" title="Best combo this session">
-          <i class="k">BEST</i>
-          <b class="num v-best">{{ bestCombo }}</b>
-        </span>
-      </span>
-
-      <i class="divider" />
 
       <!-- Ableton Link (M6) isn't in the redesign's control list; it sits with
            the other external-gear controls. -->

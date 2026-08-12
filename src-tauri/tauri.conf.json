@@ -16,7 +16,7 @@
         "title": "Rhythm Trainer",
         "width": 1280,
         "height": 780,
-        "minWidth": 1216,
+        "minWidth": 1082,
         "minHeight": 620,
         "resizable": true,
         "fullscreen": false,
