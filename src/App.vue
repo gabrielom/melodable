@@ -26,6 +26,7 @@ import ImportDialog from "@/components/ImportDialog.vue";
 import RunSummary from "@/components/RunSummary.vue";
 import type { LogRow } from "@/components/midi-log";
 import PianoKeyboard from "@/views/piano/PianoKeyboard.vue";
+import BarTooltip from "@/components/BarTooltip.vue";
 
 const settings = useSettings();
 const lessons = useLessons();
@@ -639,7 +640,7 @@ watch(
          of this file). -->
     <header class="bar" :class="{ 'menu-open': openMenu !== null }" data-tauri-drag-region="deep">
       <template v-if="view === 'trainer'">
-        <button class="ico" title="Back to lessons" aria-label="Back to lessons" @click="goHome">
+        <button class="ico" data-tip="Back to lessons" aria-label="Back to lessons" @click="goHome">
           ✕
         </button>
 
@@ -664,7 +665,7 @@ watch(
           aria-valuemin="50"
           aria-valuemax="160"
           aria-label="Tempo"
-          :title="`Tempo — ${bpmLabel} BPM. Click to type, drag to scrub.`"
+          :data-tip="`Tempo — ${bpmLabel} BPM. Click to type, drag to scrub.`"
           @pointerdown="onTempoDragStart"
           @keydown="onTempoKey"
         >
@@ -689,7 +690,7 @@ watch(
             class="seg-i"
             :class="{ on: guide }"
             :aria-pressed="guide"
-            title="Play the target part quietly as a guide"
+            data-tip="Play the target part quietly as a guide"
             @click="guide = !guide"
           >
             GUIDE
@@ -698,7 +699,7 @@ watch(
             class="seg-i"
             :class="{ on: settings.metronome }"
             :aria-pressed="settings.metronome"
-            title="Metronome click, count-in included"
+            data-tip="Metronome click, count-in included"
             @click="settings.metronome = !settings.metronome"
           >
             CLICK
@@ -712,7 +713,7 @@ watch(
         <button
           class="seg-i icon"
           :class="{ on: settings.laneOrientation === 'vertical' }"
-          title="Notes fall top to bottom"
+          data-tip="Notes fall top to bottom"
           aria-label="Falling notes"
           @click="settings.laneOrientation = 'vertical'"
         >
@@ -721,7 +722,7 @@ watch(
         <button
           class="seg-i icon"
           :class="{ on: settings.laneOrientation === 'horizontal' }"
-          title="Notes scroll right to left"
+          data-tip="Notes scroll right to left"
           aria-label="Scrolling notes"
           @click="settings.laneOrientation = 'horizontal'"
         >
@@ -740,19 +741,19 @@ watch(
       </span>
 
       <span v-if="view === 'trainer'" class="scores">
-        <span class="score" :title="runComplete ? 'Accuracy for the last run' : 'Accuracy so far'">
+        <span class="score" :data-tip="runComplete ? 'Accuracy for the last run' : 'Accuracy so far'">
           <i class="k">ACC</i>
           <b class="num v-acc" :class="{ idle: !playing && !runComplete }">
             {{ playing || runComplete ? accuracy : "—" }}
           </b>
         </span>
-        <span class="score" :title="runComplete ? 'Best combo in the last run' : 'Current combo'">
+        <span class="score" :data-tip="runComplete ? 'Best combo in the last run' : 'Current combo'">
           <i class="k">CMB</i>
           <b class="num v-cmb" :class="{ idle: !playing && !runComplete }">
             {{ playing || runComplete ? combo : "—" }}
           </b>
         </span>
-        <span class="score best" title="Best combo this session">
+        <span class="score best" data-tip="Best combo this session">
           <i class="k">BEST</i>
           <b class="num v-best">{{ bestCombo }}</b>
         </span>
@@ -808,7 +809,7 @@ watch(
         class="ico link"
         :class="{ on: linkOn }"
         :aria-pressed="linkOn"
-        :title="
+        :data-tip="
           linkOn
             ? `Ableton Link on — ${linkPeers} peer(s). Tempo and downbeat follow the session.`
             : 'Ableton Link — lock tempo and downbeat to Ableton'
@@ -844,7 +845,7 @@ watch(
         <button
           class="seg-i"
           :class="{ on: settings.soundOutput === 'internal' }"
-          title="Melodable's built-in synth plays your hits"
+          data-tip="Melodable's built-in synth plays your hits"
           @click="settings.soundOutput = 'internal'"
         >
           SYNTH
@@ -852,7 +853,7 @@ watch(
         <button
           class="seg-i"
           :class="{ on: settings.soundOutput === 'external' }"
-          title="Silent: your DAW (Ableton) makes the sound while Melodable tracks timing"
+          data-tip="Silent: your DAW (Ableton) makes the sound while Melodable tracks timing"
           @click="settings.soundOutput = 'external'"
         >
           DAW
@@ -863,7 +864,7 @@ watch(
         <button
           class="ico"
           :class="{ on: volMenuOpen }"
-          title="Mixer — your notes, the guide part and the click"
+          data-tip="Mixer — your notes, the guide part and the click"
           aria-label="Mixer"
           :aria-expanded="volMenuOpen"
           @click="toggleMenu('volume')"
@@ -897,7 +898,16 @@ watch(
         </div>
       </span>
 
-      <button class="ico glyph-lg" title="Import a MIDI clip from Ableton" @click="openImport">⇪</button>
+      <!-- `data-tip` is a tooltip, not a name: a glyph-only button still needs
+           an `aria-label` of its own now that `title` is gone. -->
+      <button
+        class="ico glyph-lg"
+        data-tip="Import a MIDI clip from Ableton"
+        aria-label="Import a MIDI clip"
+        @click="openImport"
+      >
+        ⇪
+      </button>
       <input
         ref="fileInput"
         type="file"
@@ -912,7 +922,7 @@ watch(
         <button
           class="seg-i icon"
           :class="{ on: settings.theme === 'dark' }"
-          title="Dark theme"
+          data-tip="Dark theme"
           aria-label="Dark theme"
           @click="settings.theme = 'dark'"
         >
@@ -921,7 +931,7 @@ watch(
         <button
           class="seg-i icon"
           :class="{ on: settings.theme === 'light' }"
-          title="Light theme"
+          data-tip="Light theme"
           aria-label="Light theme"
           @click="settings.theme = 'light'"
         >
@@ -932,7 +942,7 @@ watch(
       <button
         class="ico mon"
         :class="{ on: settings.monitorOpen }"
-        title="Show or hide the MIDI monitor"
+        data-tip="Show or hide the MIDI monitor"
         aria-label="Toggle MIDI monitor"
         @click="settings.monitorOpen = !settings.monitorOpen"
       >
@@ -1013,6 +1023,10 @@ watch(
       @confirm="confirmImport"
       @close="closeImport"
     />
+
+    <!-- Last, and outside the bar, so it is clipped by nothing and painted
+         over everything. It finds its own targets by `data-tip`. -->
+    <BarTooltip :suppressed="openMenu !== null" />
   </div>
 </template>
 

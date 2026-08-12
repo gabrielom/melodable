@@ -8,8 +8,9 @@ except the four things below.
 Three of these are places the implementation **knowingly departed** from 05,
 each because following it literally produced something worse or impossible.
 Each needs a decision from you so the drawings and the app say the same thing.
-The fourth is two corrections to `11a`, already decided. The fifth is a control
-that has been in the app since M6 and has never appeared in any frame.
+The fourth is two corrections to `11a`, already decided. The last two are
+things the app has that no frame has ever shown: the Ableton Link toggle, and
+the bar's tooltips.
 
 Every number here is a computed value read out of the running app or measured
 off your own frames, not an intention. Where a frame was measured it says so.
@@ -213,6 +214,36 @@ in a browser and was **29px short** (20px control + 9px gap). Corrected: the
 trainer bar needs **1100px** and `minWidth` is now **1111**, not 1082. Same
 class of mistake as the device chip reading "NO DEVICE" at 91px instead of its
 116px cap — both are now forced when measuring.
+
+---
+
+## 6. Tooltips are ours now, and they have never been drawn either
+
+The bar's controls are mostly 20px glyphs, and a tooltip is the only thing that
+says what one does. We had been using the platform's own (`title`), and in
+WKWebView it is not dependable: it arrives late, often not at all, and
+sometimes flashes and disappears. The markup was not at fault — every control
+carries its text and nothing overlaps them.
+
+So the bar no longer uses `title`. It uses `data-tip`, and we draw the tip.
+What is there now, built from existing tokens:
+
+| | |
+|---|---|
+| **surface** | `--gutter` fill, `--hair` hairline inset, `0 6px 16px #00000055` drop |
+| **type** | `--sans` 11px, `--txt`, 1.35 line-height |
+| **box** | 4px / 7px padding, `--r-field` radius, `max-width: 260px`, wraps and balances |
+| **position** | centred under the control, 6px below it, clamped 8px from the window edges; flips above if it would fall off the bottom |
+| **timing** | 450ms before the first one appears; then the bar stays "warm" for 400ms, so sliding along it names each control instantly instead of making you wait at every one |
+| **dismissal** | leaving the control, any click, any key, the window losing focus, a resize, or one of the bar's panels opening |
+
+The warm period is the part worth keeping whatever else changes — it is what
+makes a dense row of glyphs feel readable rather than sticky.
+
+**Please draw it in the turn-12 frames**, ideally on one of the trainer ones
+with a tip open over a glyph. If tips should look different — a darker surface
+than `--gutter`, an arrow, a different delay — say so; this is a developer's
+guess like the Link toggle, and it is now on every screen.
 
 ---
 

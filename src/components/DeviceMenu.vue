@@ -61,7 +61,7 @@ onUnmounted(() => {
     <button
       class="trigger"
       :class="{ live: connectedIndex !== null, open }"
-      :title="connectedIndex !== null ? `Connected: ${connectedName}` : 'Choose a MIDI input'"
+      :data-tip="connectedIndex !== null ? `Connected: ${connectedName}` : 'Choose a MIDI input'"
       @click="toggle"
     >
       <i class="dot" />
