@@ -15,9 +15,14 @@
 
 import { RADIUS } from "@/engine/theme";
 import {
+  HOLD_CLEARANCE,
+  holdFill,
+  holdFloor,
+  holdLength,
   noteInk,
   paintCountIn,
   paintGrid,
+  paintHold,
   paintVeil,
   pxPerBeat,
   ROW_INK,
@@ -82,6 +87,18 @@ const ACCIDENTAL_RISE = 4;
  * imported clip wide enough to squeeze the black keys.
  */
 const LABEL_MIN_W = 22;
+/**
+ * A hold's bar across the axis that isn't time: narrower than the 26px head
+ * it grows from, so the head still reads as the note and the bar as its tail.
+ */
+const BAR_ACROSS = 18;
+const BAR_RADIUS = 4;
+/**
+ * How far the slot reaches back behind its own head. The head is a 26px
+ * circle, so 12 sits inside it — the cap is never seen, and without it the
+ * head would show the slot's 2px channel through its middle.
+ */
+const HEAD_CAP = 12;
 
 export class PianoRoll implements LaneRenderer {
   private ctx: CanvasRenderingContext2D;
@@ -170,6 +187,35 @@ export class PianoRoll implements LaneRenderer {
       h: H,
     });
 
+    // Bars first, all of them, so every head sits above every slot.
+    for (const inst of f.instances) {
+      if (inst.duration <= 0) continue;
+      if (inst.lane < low || inst.lane > high) continue;
+      const y = hitY - (inst.time - f.now) * pxPerSec;
+      if (y < -NOTE_DIAMETER || y > H + NOTE_DIAMETER) continue;
+      const g = keyGeometry(inst.lane, low, whiteWidth);
+      const d = Math.min(NOTE_DIAMETER, g.width - 2);
+      const bw = Math.min(BAR_ACROSS, d);
+      const len = holdLength(
+        inst.duration * beatPx,
+        this.roomAhead(f, inst, low, whiteWidth, (i) => hitY - (i.time - f.now) * pxPerSec, d, true),
+        y - d / 2 < 0 || y + d / 2 > H,
+        holdFloor("falling", HEAD_CAP),
+      );
+      if (len === null) continue;
+      paintHold(this.ctx, {
+        x: g.x + (g.width - bw) / 2,
+        y: y - len,
+        w: bw,
+        h: len,
+        headEnd: "bottom",
+        headCap: HEAD_CAP,
+        radius: BAR_RADIUS,
+        colour: noteInk(f, inst, this.rankOf(f, inst.lane)),
+        fill: holdFill(inst, f.now),
+      });
+    }
+
     this.beginLabels(LABEL_SIZE);
     // Two passes: white-key notes first so sharps sit above their neighbours.
     for (const blackPass of [false, true]) {
@@ -254,6 +300,34 @@ export class PianoRoll implements LaneRenderer {
     ctx.beginPath();
     ctx.rect(trackX, 0, trackW, H);
     ctx.clip();
+
+    // Bars under every head, so a bar reaching a neighbour passes behind it.
+    for (const inst of f.instances) {
+      if (inst.duration <= 0) continue;
+      if (inst.lane < low || inst.lane > high) continue;
+      const x = hitX + (inst.time - f.now) * pxPerSec;
+      if (x < trackX - 50 || x > W + 50) continue;
+      const cy = rowY(inst.lane) + rowH / 2;
+      const len = holdLength(
+        inst.duration * beatPx,
+        this.roomAheadRows(f, inst, rowY, rowH, (i) => hitX + (i.time - f.now) * pxPerSec),
+        x - NOTE_DIAMETER / 2 < trackX || x + NOTE_DIAMETER / 2 > W,
+        holdFloor("scrolling", HEAD_CAP),
+      );
+      if (len === null) continue;
+      paintHold(ctx, {
+        x,
+        y: cy - BAR_ACROSS / 2,
+        w: len,
+        h: BAR_ACROSS,
+        headEnd: "left",
+        headCap: HEAD_CAP,
+        radius: BAR_RADIUS,
+        colour: noteInk(f, inst, this.rankOf(f, inst.lane)),
+        fill: holdFill(inst, f.now),
+      });
+    }
+
     this.beginLabels(LABEL_SIZE);
     for (const inst of f.instances) {
       if (inst.lane < low || inst.lane > high) continue;
@@ -293,6 +367,60 @@ export class PianoRoll implements LaneRenderer {
    */
   private rankOf(f: LaneFrame, pitch: number): number {
     return Math.max(0, f.hueOrder.indexOf(pitch));
+  }
+
+  /**
+   * Vertical: room a hold has before the next head it would run into.
+   *
+   * "Whose band it would cross" is a real test here, not just a pitch match —
+   * a sharp's column overlaps its neighbours', so a bar running up the C#
+   * column can collide with a head on C or D. Compares the drawn columns.
+   */
+  private roomAhead(
+    f: LaneFrame,
+    inst: LaneFrame["instances"][number],
+    low: number,
+    whiteWidth: number,
+    posOf: (i: LaneFrame["instances"][number]) => number,
+    headSize: number,
+    reverse: boolean,
+  ): number {
+    const mine = keyGeometry(inst.lane, low, whiteWidth);
+    const here = posOf(inst);
+    let room = Infinity;
+    for (const other of f.instances) {
+      if (other === inst || other.time <= inst.time) continue;
+      const theirs = keyGeometry(other.lane, low, whiteWidth);
+      if (theirs.x + theirs.width <= mine.x || theirs.x >= mine.x + mine.width) continue;
+      const gap = reverse ? here - posOf(other) : posOf(other) - here;
+      room = Math.min(room, gap - headSize / 2 - HOLD_CLEARANCE);
+    }
+    return room;
+  }
+
+  /**
+   * Horizontal: the same test against rows. The 26px circle is taller than a
+   * row once the range opens past an octave or so, so a note genuinely
+   * overlaps its neighbours and an exact-row check would miss the collision.
+   */
+  private roomAheadRows(
+    f: LaneFrame,
+    inst: LaneFrame["instances"][number],
+    rowY: (pitch: number) => number,
+    rowH: number,
+    posOf: (i: LaneFrame["instances"][number]) => number,
+  ): number {
+    const myTop = rowY(inst.lane) + rowH / 2 - BAR_ACROSS / 2;
+    const myBottom = myTop + BAR_ACROSS;
+    const here = posOf(inst);
+    let room = Infinity;
+    for (const other of f.instances) {
+      if (other === inst || other.time <= inst.time) continue;
+      const theirTop = rowY(other.lane) + rowH / 2 - NOTE_DIAMETER / 2;
+      if (theirTop + NOTE_DIAMETER <= myTop || theirTop >= myBottom) continue;
+      room = Math.min(room, posOf(other) - here - NOTE_DIAMETER / 2 - HOLD_CLEARANCE);
+    }
+    return room;
   }
 
   private note(

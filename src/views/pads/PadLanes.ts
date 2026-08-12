@@ -23,9 +23,14 @@
 import { hueOf, RADIUS } from "@/engine/theme";
 import { PADS, padPosition } from "@/engine/gm";
 import {
+  HOLD_CLEARANCE,
+  holdFill,
+  holdFloor,
+  holdLength,
   noteInk,
   paintCountIn,
   paintGrid,
+  paintHold,
   paintVeil,
   pxPerBeat,
   SEPARATOR_INK,
@@ -66,6 +71,12 @@ const NOTE_V_INSET = 12;
 const NOTE_V_MAX_W = 144;
 /** Vertical: distance from the bottom of the note field to the hit line. */
 const HIT_FROM_BOTTOM = 76;
+/**
+ * How far a hold's slot reaches back behind its own head, in the scrolling
+ * view. Half the 28px note, so the cap ends exactly at the head's centre and
+ * the slot's opening is never visible.
+ */
+const HEAD_CAP = 14;
 
 /** Controller mini-grid: 3px cells, 1px gaps. */
 const CELL = 3;
@@ -170,10 +181,40 @@ export class PadLanes implements LaneRenderer {
       ctx.clip();
 
       const size = Math.min(NOTE_H, Math.max(5, laneH - 4));
+      const pxPerSec = beatPx / f.secPerBeat;
+      // Bars under the heads, so a head always sits on top of its own slot
+      // and on any neighbour's bar that reaches it.
+      for (const inst of f.instances) {
+        if (inst.duration <= 0) continue;
+        const li = lanes.indexOf(inst.lane);
+        if (li < 0) continue;
+        const x = hitX + (inst.time - f.now) * pxPerSec;
+        if (x < trackX - NOTE_W || x > W + NOTE_W) continue;
+        const len = holdLength(
+          inst.duration * beatPx,
+          this.roomAhead(f, inst, (i) => hitX + (i.time - f.now) * pxPerSec, NOTE_W),
+          x - NOTE_W / 2 < trackX || x + NOTE_W / 2 > W,
+          holdFloor("scrolling", HEAD_CAP),
+        );
+        if (len === null) continue;
+        const y = li * (laneH + LANE_GAP);
+        paintHold(ctx, {
+          x,
+          y: y + (laneH - size) / 2,
+          w: len,
+          h: size,
+          headEnd: "left",
+          headCap: HEAD_CAP,
+          radius: RADIUS[f.theme].note,
+          colour: noteInk(f, inst, li),
+          fill: holdFill(inst, f.now),
+        });
+      }
+
       for (const inst of f.instances) {
         const li = lanes.indexOf(inst.lane);
         if (li < 0) continue;
-        const x = hitX + (inst.time - f.now) * (beatPx / f.secPerBeat);
+        const x = hitX + (inst.time - f.now) * pxPerSec;
         if (x < trackX - NOTE_W || x > W + NOTE_W) continue;
         const y = li * (laneH + LANE_GAP);
         this.note(f, x - NOTE_W / 2, y + (laneH - size) / 2, NOTE_W, size, noteInk(f, inst, li));
@@ -247,25 +288,48 @@ export class PadLanes implements LaneRenderer {
       ctx.rect(0, 0, W, fieldH);
       ctx.clip();
 
+      const pxPerSec = beatPx / f.secPerBeat;
+      const inset = Math.min(NOTE_V_INSET, Math.max(0, (laneW - 8) / 2));
+      // Inset from the column, but never wider than the cap — then centred,
+      // so a two-lane lesson gets a note rather than a bar.
+      const noteW = Math.min(NOTE_V_MAX_W, laneW - inset * 2);
+      const xOfLane = (li: number) => li * (laneW + LANE_GAP) + (laneW - noteW) / 2;
+
+      for (const inst of f.instances) {
+        if (inst.duration <= 0) continue;
+        const li = lanes.indexOf(inst.lane);
+        if (li < 0) continue;
+        const y = hitY - (inst.time - f.now) * pxPerSec;
+        if (y < -NOTE_V || y > fieldH + NOTE_V) continue;
+        const len = holdLength(
+          inst.duration * beatPx,
+          this.roomAhead(f, inst, (i) => hitY - (i.time - f.now) * pxPerSec, NOTE_V, true),
+          y - NOTE_V / 2 < 0 || y + NOTE_V / 2 > fieldH,
+          holdFloor("falling", 0),
+        );
+        if (len === null) continue;
+        paintHold(ctx, {
+          x: xOfLane(li),
+          y: y - len,
+          w: noteW,
+          h: len,
+          headEnd: "bottom",
+          // No head cap: the pill is only 16px, so a 14px cap would be half
+          // uncovered and show as a gap under the note. The walls carry the
+          // pill's own corners instead.
+          headCap: 0,
+          radius: NOTE_V / 2,
+          colour: noteInk(f, inst, li),
+          fill: holdFill(inst, f.now),
+        });
+      }
+
       for (const inst of f.instances) {
         const li = lanes.indexOf(inst.lane);
         if (li < 0) continue;
-        const y = hitY - (inst.time - f.now) * (beatPx / f.secPerBeat);
+        const y = hitY - (inst.time - f.now) * pxPerSec;
         if (y < -NOTE_V || y > fieldH + NOTE_V) continue;
-        const x = li * (laneW + LANE_GAP);
-        const inset = Math.min(NOTE_V_INSET, Math.max(0, (laneW - 8) / 2));
-        // Inset from the column, but never wider than the cap — then centred,
-        // so a two-lane lesson gets a note rather than a bar.
-        const noteW = Math.min(NOTE_V_MAX_W, laneW - inset * 2);
-        this.note(
-          f,
-          x + (laneW - noteW) / 2,
-          y - NOTE_V / 2,
-          noteW,
-          NOTE_V,
-          noteInk(f, inst, li),
-          NOTE_V / 2, // pill
-        );
+        this.note(f, xOfLane(li), y - NOTE_V / 2, noteW, NOTE_V, noteInk(f, inst, li), NOTE_V / 2);
       }
       ctx.restore();
     }
@@ -381,6 +445,31 @@ export class PadLanes implements LaneRenderer {
       if (f.playing && Math.abs(i.time - f.now) <= TIMING_WINDOWS.loose) lit.add(i.lane);
     }
     return { busy, lit };
+  }
+
+  /**
+   * Room a hold has before it runs into the next head in its lane.
+   *
+   * Lanes are separate rows here, so "whose band it would cross" is simply
+   * "same lane" — the piano has the harder version of this, where a note is
+   * taller than its row. `posOf` maps an instance to the time axis, and
+   * `reverse` is for the falling view, where later means a smaller y.
+   */
+  private roomAhead(
+    f: LaneFrame,
+    inst: LaneFrame["instances"][number],
+    posOf: (i: LaneFrame["instances"][number]) => number,
+    headSize: number,
+    reverse = false,
+  ): number {
+    const here = posOf(inst);
+    let room = Infinity;
+    for (const other of f.instances) {
+      if (other === inst || other.lane !== inst.lane || other.time <= inst.time) continue;
+      const gap = reverse ? here - posOf(other) : posOf(other) - here;
+      room = Math.min(room, gap - headSize / 2 - HOLD_CLEARANCE);
+    }
+    return room;
   }
 
   /** Pad under a point on the canvas, for click-to-play. Null elsewhere. */
