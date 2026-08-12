@@ -898,9 +898,12 @@ watch(
         </div>
       </span>
 
-      <!-- `data-tip` is a tooltip, not a name: a glyph-only button still needs
-           an `aria-label` of its own now that `title` is gone. -->
+      <!-- Home only: importing a clip adds a lesson to the library, which is
+           a thing you do while choosing one, not mid-run. `data-tip` is a
+           tooltip, not a name, so a glyph-only button still needs its own
+           `aria-label` now that `title` is gone. -->
       <button
+        v-if="view === 'home'"
         class="ico glyph-lg"
         data-tip="Import a MIDI clip from Ableton"
         aria-label="Import a MIDI clip"

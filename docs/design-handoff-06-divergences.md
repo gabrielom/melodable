@@ -3,12 +3,12 @@
 This one goes app → design. Handoff 05 is **built**: sustained notes end to end,
 the fourteen instrument hues with the target/result split, the 33px overview
 strip, and the instrument switch moved to the home bar. Everything in 05 holds
-except the four things below.
+except the six things below.
 
 Three of these are places the implementation **knowingly departed** from 05,
 each because following it literally produced something worse or impossible.
 Each needs a decision from you so the drawings and the app say the same thing.
-The fourth is two corrections to `11a`, already decided. The last two are
+The fourth is three corrections to the frames, already decided. The last two are
 things the app has that no frame has ever shown: the Ableton Link toggle, and
 the bar's tooltips.
 
@@ -147,7 +147,7 @@ table is the thing that is right, not the field note.
 
 ---
 
-## 4. Two corrections to `11a` (decided — no question here)
+## 4. Three corrections to the frames (decided — no question here)
 
 ### 4.1 Drop the `1 × 8` pad layout
 
@@ -180,6 +180,18 @@ The app's home bar, in full, at a 1180px window to match your frame:
 Volume sits **between the device chip and `⇪`**; monitor sits **after the theme
 pair**, at the far right. Both are 20px square with the standard 9px gap.
 
+### 4.3 Take `⇪` *off* the trainer frames
+
+The reverse of 4.2, and it goes the other way round: the import button is now
+**home-only**. Importing a clip adds a lesson to the library, which is
+something you do while choosing what to play, not four bars into a run — and
+the trainer bar is the one that is tight for width.
+
+So `11b`, `11c`, `11d`, `11e`, `11f` and `11g` should lose the `⇪`; `11a`
+keeps it. The trainer bar's right group is 29px narrower as a result and
+everything left of the divider shifts right by that much. The window floor
+follows it down to **1082**.
+
 ---
 
 ## 5. The Ableton Link toggle has never been drawn — in any frame
@@ -209,11 +221,13 @@ attention at all, and what is there now is a developer's guess.
 ### Why this cost us a number
 
 The toggle only renders when the Tauri build has the `link` cargo feature, so
-in a browser it is absent. The window floor quoted in the appendix was measured
-in a browser and was **29px short** (20px control + 9px gap). Corrected: the
-trainer bar needs **1100px** and `minWidth` is now **1111**, not 1082. Same
-class of mistake as the device chip reading "NO DEVICE" at 91px instead of its
-116px cap — both are now forced when measuring.
+in a browser it is absent — and the window floor was first measured in a
+browser, making it **29px short** (20px control + 9px gap). Same class of
+mistake as the device chip reading "NO DEVICE" at 91px instead of its 116px
+cap; both are forced when measuring now.
+
+The floor has since landed at **1082**, because §4.3 takes the import button
+off the trainer bar and that is worth the same 29px the toggle costs.
 
 ---
 
@@ -262,6 +276,6 @@ Recorded so they do not come back as questions:
   could let go of the pad, and GM clips write arbitrary note lengths. The
   renderers draw pad holds correctly if a lesson authors them, so `11b`/`11c`'s
   RIM hold is reachable — no built-in lesson uses one yet.
-- The window floor came down from 1216 to **1111** now the instrument switch
-  has left the trainer bar (see §5 — the first figure we quoted was 1082,
-  measured before we noticed the Link toggle was missing from the browser).
+- The window floor came down from 1216 to **1082**, as the instrument switch
+  and then the import button left the trainer bar. See §5 for why an
+  intermediate figure of 1082 was briefly wrong for a different reason.
