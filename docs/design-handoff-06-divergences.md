@@ -8,7 +8,8 @@ except the four things below.
 Three of these are places the implementation **knowingly departed** from 05,
 each because following it literally produced something worse or impossible.
 Each needs a decision from you so the drawings and the app say the same thing.
-The fourth is two corrections to `11a`, already decided.
+The fourth is two corrections to `11a`, already decided. The fifth is a control
+that has been in the app since M6 and has never appeared in any frame.
 
 Every number here is a computed value read out of the running app or measured
 off your own frames, not an intention. Where a frame was measured it says so.
@@ -160,24 +161,58 @@ height.
 already exist in your trainer frames (`11b`…`11f`) — this is the same pair,
 in the same place.
 
-The app's home bar, in order, at a 1180px window to match your frame:
+The app's home bar, in full, at a 1180px window to match your frame:
 
-| control | width | note |
-|---|---|---|
-| `7 LESSONS` | 51 | |
-| divider | 1 | 9px either side |
-| `PADS ▾ \| PIANO` | 99 | as drawn |
-| device chip | 91–116 | 116 is its cap, with a device name showing |
-| **volume** | **20** | **missing from `11a`** — the mixer popover |
-| import `⇪` | 20 | |
-| divider | 1 | |
-| theme `◐ ☀` | 46 | |
-| **monitor `▤`** | **20** | **missing from `11a`** |
+| control | x | width | note |
+|---|---|---|---|
+| `7 LESSONS` | 721 | 51 | |
+| divider | 780 | 1 | 9px either side |
+| `PADS ▾ \| PIANO` | 790 | 99 | as drawn |
+| **Ableton Link** | **898** | **20** | **missing — see §5** |
+| device chip | 927 | 91–116 | 116 is its cap, with a device name showing |
+| **volume** | **1027** | **20** | **missing from `11a`** — the mixer popover |
+| import `⇪` | 1056 | 20 | |
+| divider | 1085 | 1 | |
+| theme `◐ ☀` | 1095 | 46 | |
+| **monitor `▤`** | **1150** | **20** | **missing from `11a`** |
 
 Volume sits **between the device chip and `⇪`**; monitor sits **after the theme
-pair**, at the far right. Both are 20px square with the standard 9px gap, so
-the right group grows by 58px and everything left of the monitor shifts 58px
-left. Nothing else on `11a` moves.
+pair**, at the far right. Both are 20px square with the standard 9px gap.
+
+---
+
+## 5. The Ableton Link toggle has never been drawn — in any frame
+
+This one is not a divergence, it is an omission on both sides: the control has
+existed since M6 and no handoff has ever drawn it. It is in **every** frame's
+bar, trainer and home alike.
+
+| | |
+|---|---|
+| **what** | a toggle that joins the Ableton Link session — tempo and downbeat follow Ableton |
+| **size** | 20 × 20, same as `⇪` `▤` and the other icon buttons |
+| **where** | immediately **after the divider that follows the scores** (trainer) or **the lesson count** (home), and immediately **before the device chip**. Same slot in both bars — x=806 in the trainer at 1180px, x=898 on home. |
+| **glyph** | a chain link, drawn as a 10 × 10 SVG on a 16 × 16 viewBox: a short diagonal stroke with a hooked stroke either side of it, 1.5px, round caps |
+| **off** | the ordinary icon-button treatment — `--face` fill, `--txt2` glyph |
+| **on** | `--head` (the playhead cyan, `#4ccfe0` / `#2c2d2e`) rather than the usual inverted chip, because Link being live is a *connection* state and reads with the playhead, not with the on-states |
+| **badge** | a peer count at the top-right corner, offset −4/−4: min-width 11px, 6px radius, `--head` fill, `--win` text, 7.5px/500, 11px line-height. Shown only while on. "1" is the usual value (Ableton counts as one peer). |
+
+It sits with the external-gear controls — device, SYNTH/DAW — because that is
+what it is, and that grouping is why it goes before the device chip rather than
+next to the transport.
+
+**Please draw it in the turn-12 frames.** If you would rather it were somewhere
+else, or looked like something else, now is the moment — it has had no design
+attention at all, and what is there now is a developer's guess.
+
+### Why this cost us a number
+
+The toggle only renders when the Tauri build has the `link` cargo feature, so
+in a browser it is absent. The window floor quoted in the appendix was measured
+in a browser and was **29px short** (20px control + 9px gap). Corrected: the
+trainer bar needs **1100px** and `minWidth` is now **1111**, not 1082. Same
+class of mistake as the device chip reading "NO DEVICE" at 91px instead of its
+116px cap — both are now forced when measuring.
 
 ---
 
@@ -196,5 +231,6 @@ Recorded so they do not come back as questions:
   could let go of the pad, and GM clips write arbitrary note lengths. The
   renderers draw pad holds correctly if a lesson authors them, so `11b`/`11c`'s
   RIM hold is reachable — no built-in lesson uses one yet.
-- The window floor came down from 1216 to **1082** now the instrument switch
-  has left the trainer bar.
+- The window floor came down from 1216 to **1111** now the instrument switch
+  has left the trainer bar (see §5 — the first figure we quoted was 1082,
+  measured before we noticed the Link toggle was missing from the browser).
