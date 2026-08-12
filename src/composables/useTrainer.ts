@@ -10,7 +10,7 @@
 import { computed, onMounted, onUnmounted, ref, watch, type Ref } from "vue";
 import { useSettings } from "@/stores/settings";
 import { useLessons } from "@/stores/lessons";
-import type { LinkState, Rating } from "@/engine/types";
+import type { HoldResult, LinkState, Rating } from "@/engine/types";
 import { Transport, phaseDelta, START_DELAY } from "@/engine/transport";
 import { PALETTE } from "@/engine/theme";
 import {
@@ -76,6 +76,8 @@ export function useTrainer(
     bestCombo: number;
     previousBest: number | null;
     tally: Readonly<Record<Rating, number>>;
+    /** Sustain, counted separately — a second judgement on the same notes. */
+    holds: Readonly<Record<HoldResult, number>>;
     lanes: ReturnType<Scorer["laneStats"]>;
   } | null>(null);
   /**
@@ -264,6 +266,7 @@ export function useTrainer(
     const offset = -idleAbsBeat();
     for (const i of previewCache.list) {
       i.time = now + (offset + i.loopIndex * lb + i.beat) * spb;
+      i.endTime = i.time + i.duration * spb;
     }
     return previewCache.list;
   }
@@ -462,6 +465,21 @@ export function useTrainer(
   }
 
   /**
+   * The player let go of a lane. Closes any hold open there and grades how
+   * much of the written note they covered.
+   *
+   * Silent when nothing was open, which is the common case: every instant
+   * note produces a release nobody is waiting for. Only a lesson that writes
+   * durations has holds to close at all.
+   */
+  function release(lane: number, time?: number): void {
+    if (!playing.value) return;
+    const closed = scorer.release(lane, time ?? audio.now);
+    // A dropped hold breaks the combo, so the bar has to hear about it.
+    if (closed) syncStats();
+  }
+
+  /**
    * Pad under a point on the lane canvas — the gutter rows in horizontal
    * mode, where the lane headers double as playable pads. Null otherwise.
    */
@@ -527,6 +545,11 @@ export function useTrainer(
         syncStats();
       }
 
+      // Holds that have run to the end of their written note close themselves.
+      // Overholding is not an error, so this is also what keeps a controller
+      // that never sends note-off from scoring every hold as dropped.
+      if (scorer.sweepHolds(now).length > 0) syncStats();
+
       drawFrame(now, pos);
       drawOverview(pos.countIn ? null : pos.absBeat);
 
@@ -572,9 +595,11 @@ export function useTrainer(
    * the player's to set — there is no adaptive ramp.
    */
   function finishRun(): void {
-    // Anything still unresolved at the end is a miss.
+    // Anything still unresolved at the end is a miss, and anything still held
+    // is judged with what we have rather than left ungraded.
     const missed = scorer.sweepMisses(audio.now + 1);
     for (const m of missed) noteTargetIndex(m.id, "miss");
+    scorer.closeAllHolds(audio.now);
     syncStats();
 
     const acc = scorer.accuracy;
@@ -584,6 +609,7 @@ export function useTrainer(
       bestCombo: scorer.bestCombo,
       previousBest,
       tally: { ...scorer.tally },
+      holds: { ...scorer.holdTally },
       lanes: scorer.laneStats(),
     };
     if (previousBest === null || acc > previousBest) bestByLesson.set(lesson.value.id, acc);
@@ -687,6 +713,7 @@ export function useTrainer(
     setBpm,
     followLink,
     strike,
+    release,
     padAtPoint,
     hardwareHitTime,
   };

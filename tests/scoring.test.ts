@@ -60,17 +60,17 @@ describe("lessonTargets", () => {
   it("routes pitches to lanes, drops unmapped, sorts by beat", () => {
     const targets = lessonTargets(lesson, noteToPad);
     expect(targets).toEqual([
-      { lane: 12, beat: 0 },
-      { lane: 13, beat: 1 },
+      { lane: 12, beat: 0, duration: 0 },
+      { lane: 13, beat: 1, duration: 0 },
     ]);
   });
 });
 
 // one kick lane note per beat, spb = 0.5 (times 0, 0.5s style via timeOf below)
 const targets: TargetNote[] = [
-  { lane: 12, beat: 0 },
-  { lane: 12, beat: 1 },
-  { lane: 13, beat: 2 },
+  { lane: 12, beat: 0, duration: 0 },
+  { lane: 12, beat: 1, duration: 0 },
+  { lane: 13, beat: 2, duration: 0 },
 ];
 const timeOf = (loop: number, beat: number) => 10 + loop * 2 + beat * 0.5;
 
@@ -186,9 +186,9 @@ describe("scorer", () => {
 describe("chord grading (piano)", () => {
   // A C-major triad on beat 0: three lanes (pitches) sharing the same time.
   const chord: TargetNote[] = [
-    { lane: 60, beat: 0 },
-    { lane: 64, beat: 0 },
-    { lane: 67, beat: 0 },
+    { lane: 60, beat: 0, duration: 0 },
+    { lane: 64, beat: 0, duration: 0 },
+    { lane: 67, beat: 0, duration: 0 },
   ];
   const timeOf = (loop: number, beat: number) => 5 + loop + beat * 0.5;
 
@@ -259,10 +259,10 @@ describe("lessonRepeats", () => {
 describe("run breakdown", () => {
   // two lanes, three notes each, so a lane can drift one way
   const two: TargetNote[] = [
-    { lane: 12, beat: 0 },
-    { lane: 12, beat: 1 },
-    { lane: 13, beat: 2 },
-    { lane: 13, beat: 3 },
+    { lane: 12, beat: 0, duration: 0 },
+    { lane: 12, beat: 1, duration: 0 },
+    { lane: 13, beat: 2, duration: 0 },
+    { lane: 13, beat: 3, duration: 0 },
   ];
   const at = (loop: number, beat: number) => 10 + loop * 4 + beat;
 
@@ -366,8 +366,8 @@ describe("visibleLoopSpan", () => {
 describe("previewInstances", () => {
   // Two lanes, notes on beats 0 and 2 of a 4-beat pattern.
   const pattern: TargetNote[] = [
-    { lane: 12, beat: 0 },
-    { lane: 13, beat: 2 },
+    { lane: 12, beat: 0, duration: 0 },
+    { lane: 13, beat: 2, duration: 0 },
   ];
   const SPB = 0.5; // 120bpm
 

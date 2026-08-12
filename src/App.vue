@@ -141,6 +141,7 @@ const {
   setBpm,
   followLink,
   strike,
+  release,
   padAtPoint,
   hardwareHitTime,
 } = useTrainer(audio, laneCanvas, overviewCanvas);
@@ -362,7 +363,19 @@ async function noteOn(
   strike(midi, hitTime);
 }
 
-function noteOff(midi: number) {
+/**
+ * Letting go of a key. `releaseTime` is the audio-clock moment it happened —
+ * a hardware note-off carries its own midir timestamp, the same as a strike.
+ *
+ * The scorer is told even when the key was never lit, because the two can
+ * disagree: `activeNotes` is cleared when the view changes, and a hold does
+ * not care whether the keyboard is still drawing the key down.
+ */
+function noteOff(midi: number, releaseTime?: number) {
+  // The same pitch→lane mapping the strike used, so a hold closes on the lane
+  // it was opened on rather than on the raw pitch.
+  const pad = noteToPad(midi);
+  release(pad !== null && settings.instrument === "pads" ? pad : midi, releaseTime);
   if (!activeNotes.value.has(midi)) return;
   const next = new Map(activeNotes.value);
   next.delete(midi);
@@ -385,7 +398,10 @@ function onMidiMessage(m: MidiMessage) {
       void noteOn(m.note, m.velocity, "hardware", hitTime);
     }
   } else if (m.kind === "noteoff") {
-    noteOff(m.note);
+    // Graded at the timestamp midir stamped it with, like a strike — a hold
+    // measured at "whenever the handler ran" would inherit every delivery
+    // hiccup between the controller and here.
+    noteOff(m.note, hardwareHitTime(m.timestampMicros));
   }
 }
 
@@ -976,6 +992,7 @@ watch(
       :best-combo="runResult.bestCombo"
       :previous-best="runResult.previousBest"
       :tally="runResult.tally"
+      :holds="runResult.holds"
       :lanes="runResult.lanes"
       :lane-order="isPiano ? lessonPitches : trainerLanes"
       @again="onPlay"

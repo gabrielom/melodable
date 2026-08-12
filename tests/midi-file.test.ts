@@ -318,3 +318,61 @@ describe("pad mapping", () => {
     expect(analysis.mapping).toEqual([]);
   });
 });
+
+describe("note durations", () => {
+  const PPQ = 480;
+  const clip = (notes: NoteSpec[]) => parseMidiFile(buildSmf({ ppq: PPQ, notes }));
+
+  it("keeps note_off − note_on rather than throwing it away", () => {
+    const p = clip([
+      { tick: 0, pitch: 60, vel: 100, dur: PPQ * 2 },
+      { tick: PPQ * 2, pitch: 62, vel: 100, dur: PPQ / 2 },
+    ]);
+    expect(p.notes.map((n) => n.durationTicks)).toEqual([PPQ * 2, PPQ / 2]);
+  });
+
+  it("converts them to beats on the lesson", () => {
+    const p = clip([{ tick: 0, pitch: 60, vel: 100, dur: PPQ * 3 }]);
+    const { lesson } = midiToLesson(p, "t", { instrument: "piano" });
+    expect(lesson.notes[0].duration).toBe(3);
+  });
+
+  it("treats a note-on with velocity 0 as the note-off it is", () => {
+    // note on at 0, then a *note-on* with velocity 0 at PPQ — the conventional
+    // note-off, which the old parser ignored entirely.
+    const bytes = [
+      ...vlq(0), 0x90, 60, 100,
+      ...vlq(PPQ), 0x90, 60, 0,
+      ...vlq(0), 0xff, 0x2f, 0x00,
+    ];
+    const header = [0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 0, 0, 1, (PPQ >> 8) & 0xff, PPQ & 0xff];
+    const trk = [0x4d, 0x54, 0x72, 0x6b, (bytes.length >> 24) & 0xff, (bytes.length >> 16) & 0xff,
+      (bytes.length >> 8) & 0xff, bytes.length & 0xff, ...bytes];
+    const p = parseMidiFile(new Uint8Array([...header, ...trk]).buffer);
+    expect(p.notes).toHaveLength(1);
+    expect(p.notes[0].durationTicks).toBe(PPQ);
+  });
+
+  it("ends a note when its own pitch is struck again", () => {
+    const p = clip([
+      { tick: 0, pitch: 60, vel: 100, dur: PPQ * 8 },
+      { tick: PPQ, pitch: 60, vel: 100, dur: PPQ },
+    ]);
+    // the first note stops where the second begins, not eight beats later
+    expect(p.notes[0].durationTicks).toBe(PPQ);
+  });
+
+  it("leaves a note whose off never arrives at zero rather than guessing", () => {
+    const bytes = [...vlq(0), 0x90, 60, 100, ...vlq(0), 0xff, 0x2f, 0x00];
+    const header = [0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 0, 0, 1, (PPQ >> 8) & 0xff, PPQ & 0xff];
+    const trk = [0x4d, 0x54, 0x72, 0x6b, 0, 0, 0, bytes.length, ...bytes];
+    const p = parseMidiFile(new Uint8Array([...header, ...trk]).buffer);
+    expect(p.notes[0].durationTicks).toBe(0);
+  });
+
+  it("gives pads no duration — a drum has decayed before you could let go", () => {
+    const p = clip([{ tick: 0, pitch: 36, vel: 100, dur: PPQ * 4 }]);
+    const { lesson } = midiToLesson(p, "t", { instrument: "pads" });
+    expect(lesson.notes[0].duration).toBe(0);
+  });
+});

@@ -12,7 +12,7 @@ import { PALETTE, hueOf } from "@/engine/theme";
 import { useSettings } from "@/stores/settings";
 import { PADS } from "@/engine/gm";
 import { noteName } from "@/engine/pitch";
-import type { InstrumentType, Rating } from "@/engine/types";
+import type { HoldResult, InstrumentType, Rating } from "@/engine/types";
 
 const props = defineProps<{
   lessonName: string;
@@ -27,6 +27,12 @@ const props = defineProps<{
   /** Best accuracy for this lesson before this run, if there was one. */
   previousBest: number | null;
   tally: Readonly<Record<Rating, number>>;
+  /**
+   * Sustain over the run. Kept out of `tally` because a hold is a *second*
+   * judgement on a note the tally has already counted — adding them together
+   * would make the run look twice as long as it was.
+   */
+  holds: Readonly<Record<HoldResult, number>>;
   lanes: Array<{ lane: number; accuracy: number; early: number; late: number; total: number }>;
   /** Lane order on screen, for LED identity. */
   laneOrder: number[];
@@ -73,6 +79,16 @@ const bands = computed(() =>
   })).filter((b) => b.count > 0),
 );
 
+/**
+ * Sustain, as a share of the notes that had one to hold. A lesson with no
+ * written durations has nothing to say here, so the figure stays off the
+ * screen rather than reading a confident 100% about notes nobody held.
+ */
+const heldTotal = computed(() => props.holds.held + props.holds.short + props.holds.dropped);
+const heldPct = computed(() =>
+  heldTotal.value ? Math.round((props.holds.held / heldTotal.value) * 100) : null,
+);
+
 /** The three that need work most; a clean run has nothing to show. */
 const weakest = computed(() => props.lanes.filter((l) => l.accuracy < 1).slice(0, 3));
 
@@ -112,6 +128,9 @@ const drift = (l: { early: number; late: number }): Rating | null => {
             <b class="num">{{ previousBest === null ? "—" : Math.round(previousBest * 100) }}</b>
           </span>
           <span class="stat"><i class="k">COMBO</i><b class="num">{{ bestCombo }}</b></span>
+          <span v-if="heldPct !== null" class="stat">
+            <i class="k">HELD</i><b class="num">{{ heldPct }}</b>
+          </span>
         </span>
       </div>
 

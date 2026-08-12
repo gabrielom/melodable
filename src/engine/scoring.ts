@@ -11,13 +11,15 @@
  * timestamp mapped onto it) — never Date.now().
  */
 
-import type { Lesson, Rating } from "./types";
-import { RATING_SCORE, TIMING_WINDOWS } from "./types";
+import type { HoldResult, Lesson, Rating } from "./types";
+import { HOLD_MIN_BEATS, HOLD_WINDOWS, RATING_SCORE, TIMING_WINDOWS } from "./types";
 
 /** A lesson note routed to a lane, still in musical time. */
 export interface TargetNote {
   lane: number;
   beat: number;
+  /** Written length in beats; 0 for an instant note. See `NoteEvent`. */
+  duration: number;
 }
 
 /** One occurrence of a target note in a specific loop, in clock time. */
@@ -29,6 +31,45 @@ export interface NoteInstance {
   time: number;
   resolved: boolean;
   rating: Rating | null;
+
+  // ---- sustain. All zero/null on an instant note, which is most of them.
+
+  /** Written length in beats. Above `HOLD_MIN_BEATS` this note is held. */
+  duration: number;
+  /** Clock time the written note ends — `time` plus its length. */
+  endTime: number;
+  /** Clock time the player struck it, while the hold is open. */
+  heldFrom: number | null;
+  /** Clock time the player let go. Null until the hold closes. */
+  releasedAt: number | null;
+  /** How much of the written length was covered, once the hold has closed. */
+  hold: HoldResult | null;
+}
+
+/** True for a note long enough that letting go of it is part of playing it. */
+export function isHeldNote(n: { duration: number }): boolean {
+  return n.duration >= HOLD_MIN_BEATS;
+}
+
+/**
+ * Fraction of the written length the player covered, 0..1.
+ *
+ * Measured from the note's *written* onset, not from where the player struck
+ * it. The two judgements are independent by design: striking late is already
+ * an `early`/`late` onset rating, and charging it again to the sustain would
+ * punish one mistake twice. Overholding is not an error at all, so this is
+ * clamped at 1 — only letting go early is information the player can act on.
+ */
+export function heldFraction(inst: NoteInstance, releaseTime: number): number {
+  const length = inst.endTime - inst.time;
+  if (length <= 0) return 1;
+  return Math.min(1, Math.max(0, (releaseTime - inst.time) / length));
+}
+
+export function gradeHold(fraction: number): HoldResult {
+  if (fraction >= HOLD_WINDOWS.held) return "held";
+  if (fraction >= HOLD_WINDOWS.short) return "short";
+  return "dropped";
 }
 
 /**
@@ -81,7 +122,12 @@ export function lessonTargets(lesson: Lesson, laneOf: (pitch: number) => number 
   const out: TargetNote[] = [];
   for (const n of lesson.notes) {
     const lane = laneOf(n.pitch);
-    if (lane !== null) out.push({ lane, beat: n.time });
+    // A length under the floor is an ornament, not a hold — normalised away
+    // here so nothing downstream has to keep re-deciding.
+    if (lane !== null) {
+      const duration = n.duration ?? 0;
+      out.push({ lane, beat: n.time, duration: duration >= HOLD_MIN_BEATS ? duration : 0 });
+    }
   }
   return out.sort((a, b) => a.beat - b.beat);
 }
@@ -110,6 +156,16 @@ export class Scorer {
     miss: 0,
   };
 
+  /**
+   * The sustain tally, kept apart from `counts` on purpose: a hold is a second
+   * judgement on the same note, so folding it into the rating counts would
+   * make a run look like it had twice as many notes as it does.
+   */
+  private holdCounts: Record<HoldResult, number> = { held: 0, short: 0, dropped: 0 };
+
+  /** Notes currently being held, at most one per lane. */
+  private open = new Map<number, NoteInstance>();
+
   constructor(targets: TargetNote[]) {
     this.targets = targets;
   }
@@ -122,6 +178,11 @@ export class Scorer {
   /** How many notes landed in each band over the whole run. */
   get tally(): Readonly<Record<Rating, number>> {
     return this.counts;
+  }
+
+  /** How the run's held notes were sustained. Empty when nothing was held. */
+  get holdTally(): Readonly<Record<HoldResult, number>> {
+    return this.holdCounts;
   }
 
   /**
@@ -174,6 +235,11 @@ export class Scorer {
         time: timeOf(loopIndex, t.beat),
         resolved: false,
         rating: null,
+        duration: t.duration,
+        endTime: timeOf(loopIndex, t.beat + t.duration),
+        heldFrom: null,
+        releasedAt: null,
+        hold: null,
       });
     }
   }
@@ -207,7 +273,83 @@ export class Scorer {
     this.loopTotal += 1;
     this.combo += 1;
     this.bestCombo = Math.max(this.bestCombo, this.combo);
+
+    // A lane can only be held once at a time, so striking it again ends
+    // whatever was sounding — treated as a release at this instant, the same
+    // way a keyboard behaves.
+    this.closeHold(best.lane, time);
+    if (isHeldNote(best)) {
+      best.heldFrom = time;
+      this.open.set(best.lane, best);
+    }
     return { rating, instance: best };
+  }
+
+  /**
+   * The player let go of `lane` at clock time `time`. Grades whatever hold was
+   * open there and returns it, or null if nothing was.
+   *
+   * A release with no open hold is not an error and not scored: it is a
+   * note-off for a stray hit, or for a note whose hold already closed at its
+   * written end because the player overheld it.
+   */
+  release(lane: number, time: number): NoteInstance | null {
+    return this.closeHold(lane, time);
+  }
+
+  /**
+   * Close any hold on `lane` and judge it. The one path that ever writes a
+   * `hold` result, so the combo rule lives here too: letting go of over half
+   * the note keeps the run alive, dropping it does not.
+   */
+  private closeHold(lane: number, time: number): NoteInstance | null {
+    const inst = this.open.get(lane);
+    if (!inst) return null;
+    this.open.delete(lane);
+    inst.releasedAt = time;
+    inst.hold = gradeHold(heldFraction(inst, time));
+    this.holdCounts[inst.hold] += 1;
+    // A short hold survives; a dropped one is a note you did not really play.
+    if (inst.hold === "dropped") this.combo = 0;
+    return inst;
+  }
+
+  /**
+   * Close holds that have run past the note's written end, at clock time
+   * `now`. Call once a frame.
+   *
+   * This is also what makes a controller that never sends note-off harmless:
+   * its holds simply close on time and read as `held`, so the player is
+   * scored on their onsets and not marked down for hardware that cannot
+   * report a release. It is the same rule as overholding, which the design
+   * says is not an error.
+   */
+  sweepHolds(now: number): NoteInstance[] {
+    const closed: NoteInstance[] = [];
+    for (const [lane, inst] of this.open) {
+      if (now >= inst.endTime) {
+        this.open.delete(lane);
+        closed.push(this.closeHoldAt(inst, inst.endTime));
+      }
+    }
+    return closed;
+  }
+
+  /** `closeHold` for an instance already taken out of the open table. */
+  private closeHoldAt(inst: NoteInstance, time: number): NoteInstance {
+    inst.releasedAt = time;
+    inst.hold = gradeHold(heldFraction(inst, time));
+    this.holdCounts[inst.hold] += 1;
+    if (inst.hold === "dropped") this.combo = 0;
+    return inst;
+  }
+
+  /** End of the run: whatever is still held is judged with what we have. */
+  closeAllHolds(now: number): void {
+    for (const [lane, inst] of this.open) {
+      this.open.delete(lane);
+      this.closeHoldAt(inst, Math.min(now, inst.endTime));
+    }
   }
 
   /**
@@ -243,16 +385,37 @@ export class Scorer {
     return acc;
   }
 
-  /** Drop instances from loops before `loopIndex` (they've scrolled away). */
+  /**
+   * Drop instances from loops before `loopIndex` (they've scrolled away).
+   *
+   * A hold open on a pruned instance goes with it: the note is off screen and
+   * out of the scorer, so there is nothing left for a release to close. In
+   * practice this cannot happen — an instance is only pruned once it has
+   * scrolled past the lane's trailing edge, long after its own end — but the
+   * open table must not outlive `all` or a release would grade a ghost.
+   */
   pruneBefore(loopIndex: number): void {
     this.all = this.all.filter((i) => i.loopIndex >= loopIndex);
     for (const l of this.spawned) if (l < loopIndex) this.spawned.delete(l);
+    for (const [lane, inst] of this.open) {
+      if (inst.loopIndex < loopIndex) this.open.delete(lane);
+    }
   }
 
-  /** Recompute unresolved instance times after a tempo change. */
+  /**
+   * Recompute unresolved instance times after a tempo change.
+   *
+   * `endTime` moves with `time`, so a held note keeps its written length in
+   * beats rather than in seconds — slowing down makes the hold longer, which
+   * is what "half a bar" means. A note already being held is left alone: its
+   * onset is settled, and shifting the end under the player mid-hold would
+   * change the answer to a question they are still answering.
+   */
   retime(timeOf: (loopIndex: number, beat: number) => number): void {
     for (const inst of this.all) {
-      if (!inst.resolved) inst.time = timeOf(inst.loopIndex, inst.beat);
+      if (inst.resolved) continue;
+      inst.time = timeOf(inst.loopIndex, inst.beat);
+      inst.endTime = timeOf(inst.loopIndex, inst.beat + inst.duration);
     }
   }
 }
@@ -316,6 +479,11 @@ export function previewInstances(
         time: now + beat * secPerBeat,
         resolved: false,
         rating: null,
+        duration: targets[i].duration,
+        endTime: now + (beat + targets[i].duration) * secPerBeat,
+        heldFrom: null,
+        releasedAt: null,
+        hold: null,
       });
     }
   }

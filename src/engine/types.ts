@@ -11,7 +11,40 @@ export interface NoteEvent {
   time: number; // beats (quarter note = 1.0)
   pitch: number; // MIDI note number (0-127)
   velocity?: number; // 0-127 (optional target dynamics)
+  /**
+   * How long the note is written to be held, in beats.
+   *
+   * Absent or below `HOLD_MIN_BEATS` means an instant note — an onset to hit
+   * and nothing more, which is every note the app had before sustain existed.
+   * Above it the note is *held*: the release is judged too, and the lane draws
+   * a bar from the head showing how much of the written length you covered.
+   */
+  duration?: number;
 }
+
+/**
+ * Shortest written length that is worth aiming a release at. Below this a
+ * note is an ornament rather than a hold: there is nothing to sustain, and
+ * the bar would be a smudge on the head rather than a duration.
+ *
+ * A dotted eighth, chosen so it clears the design's 34px minimum bar at the
+ * five-bar zoom in the horizontal views (44px at the standard width, 40px at
+ * the window floor). The vertical views have far less room on the time axis,
+ * so there a hold has to be a half note or longer before the bar is drawn —
+ * that is the 34px rule biting, not this one.
+ */
+export const HOLD_MIN_BEATS = 0.75;
+
+/** How much of a note's written length the player actually covered. */
+export type HoldResult = "held" | "short" | "dropped";
+
+/**
+ * Where the sustain bands sit, as a fraction of the written length.
+ *
+ * The design proposes these pending feel-testing on real hardware, which is
+ * exactly why they are two named numbers rather than literals in a branch.
+ */
+export const HOLD_WINDOWS = { held: 0.85, short: 0.5 } as const;
 
 export interface Lesson {
   id: string;
