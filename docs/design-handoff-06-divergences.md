@@ -1,5 +1,24 @@
 # Handoff 06 — where the app and handoff 05 disagree (app → design)
 
+> **Status after design's handoff 08.** Parts of this are answered; read the
+> header before acting on any section.
+>
+> | § | state |
+> |---|---|
+> | 1 — the 34px minimum bar | **open**, unless handoff **07** answers it (we do not have 07) |
+> | 2 — §1.5 vs §1.4 on the playhead | **open**, same caveat |
+> | 3 — piano pitch → hue order | **open**, same caveat |
+> | 4.1 — drop the `1 × 8` layout | pending a redraw of `11a` |
+> | 4.2 — add volume + monitor to `11a` | **settled** — both are in handoff 08's final home-bar order |
+> | 4.3 — take `⇪` off the trainer frames | **settled** — handoff 07 §6, and built |
+> | 5 — the Link toggle | **settled and superseded** — handoff 08 §3 gives a horizontal chain, home-bar only; the diagonal glyph described here is gone |
+> | 6 — tooltips | **open** — no frame draws one yet |
+>
+> **We are missing handoff 07.** Handoff 08 cites it twice (§5 for the Link
+> toggle's states, §6 for the import button) and says "everything in Handoffs
+> 05 and 07 stands", so 07 is very likely design's answer to §§1–3 above.
+> Please send it.
+
 This one goes app → design. Handoff 05 is **built**: sustained notes end to end,
 the fourteen instrument hues with the target/result split, the 33px overview
 strip, and the instrument switch moved to the home bar. Everything in 05 holds

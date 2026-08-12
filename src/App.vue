@@ -802,10 +802,19 @@ watch(
         </button>
       </div>
 
-      <!-- Ableton Link (M6) isn't in the redesign's control list; it sits with
-           the other external-gear controls. -->
+      <!-- Ableton Link sits with the external-gear group — it and the device
+           chip are both "what is plugged in" — and is home-only: joining a
+           session is a decision made before a run, like choosing the device.
+           It stays joined once you start; there is simply no toggle mid-run.
+
+           Handoff 08 §3, path data verbatim, and it supersedes the diagonal
+           chain that was here. That one was rejected at true size rather than
+           on the drawing board: its hook gaps close up at 20px and the mark
+           turns to mush. This is two capsule halves meeting at a seam, and
+           the seam is drawn rather than implied — that stroke is what says
+           *linked* instead of *two pills*. -->
       <button
-        v-if="linkAvailable"
+        v-if="linkAvailable && view === 'home'"
         class="ico link"
         :class="{ on: linkOn }"
         :aria-pressed="linkOn"
@@ -816,13 +825,20 @@ watch(
         "
         @click="toggleLink"
       >
-        <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
-          <path d="M6.6 9.4 9.4 6.6" fill="none" stroke="currentColor" stroke-width="1.5"
-                stroke-linecap="round" />
-          <path d="M7.1 4.7 8.2 3.6a2.6 2.6 0 0 1 3.6 3.6l-1.1 1.1" fill="none"
-                stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-          <path d="M8.9 11.3 7.8 12.4a2.6 2.6 0 0 1-3.6-3.6l1.1-1.1" fill="none"
-                stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+        <svg
+          viewBox="0 0 16 16"
+          width="10"
+          height="10"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M7 5.2H4.3a2.8 2.8 0 0 0 0 5.6H7" />
+          <path d="M9 5.2h2.7a2.8 2.8 0 0 1 0 5.6H9" />
+          <path d="M5.6 8h4.8" />
         </svg>
         <i v-if="linkOn" class="peerbadge num">{{ linkPeers }}</i>
       </button>
@@ -869,14 +885,31 @@ watch(
           :aria-expanded="volMenuOpen"
           @click="toggleMenu('volume')"
         >
-          <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
-            <path d="M3 6.2h2.3L8.4 3.6v8.8L5.3 9.8H3z" fill="currentColor" />
-            <path v-if="loudestBus > 0" d="M10.6 6a2.9 2.9 0 0 1 0 4" fill="none"
-                  stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-            <path v-if="loudestBus > 0.5" d="M12.4 4.3a5.4 5.4 0 0 1 0 7.4" fill="none"
-                  stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-            <path v-if="loudestBus === 0" d="M11 6.2 14 9.8M14 6.2 11 9.8" fill="none"
-                  stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+          <!-- Handoff 08 §1, path data verbatim. The two arcs are true circular
+               arcs on one shared centre (7.58, 8) at radii 2.7 and 5.6 — that
+               concentricity is the whole read, sound leaving a point, and it is
+               why they must not be rebuilt from `border-radius`, which gives
+               half-ellipses with square ends.
+
+               The arcs still come and go with the level, and the cross still
+               replaces them at silence: that is state the design's static mark
+               does not cover, and losing it would cost the only indication that
+               everything is muted. Its geometry is ours — see handoff 09. -->
+          <svg
+            viewBox="0 0 16 16"
+            width="13"
+            height="13"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.3"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M1.6 6.2h2.1L7 3.4v9.2L3.7 9.8H1.6z" fill="currentColor" />
+            <path v-if="loudestBus > 0" d="M9.5 6.1a2.7 2.7 0 0 1 0 3.8" />
+            <path v-if="loudestBus > 0.5" d="M11.7 4.2a5.6 5.6 0 0 1 0 7.6" />
+            <path v-if="loudestBus === 0" d="M9.8 6.2 13.4 9.8M13.4 6.2 9.8 9.8" />
           </svg>
         </button>
 
@@ -901,15 +934,36 @@ watch(
       <!-- Home only: importing a clip adds a lesson to the library, which is
            a thing you do while choosing one, not mid-run. `data-tip` is a
            tooltip, not a name, so a glyph-only button still needs its own
-           `aria-label` now that `title` is gone. -->
+           `aria-label` now that `title` is gone.
+
+           Handoff 08 §2, path data verbatim. This was the `⇪` character, and
+           a character is at the mercy of whichever font in the stack happens
+           to carry it — which is exactly why it drifted from the drawing. The
+           arrow deliberately stops short of the tray (10.2 against 11.1): the
+           0.9 gap is what makes it read as motion rather than one glued
+           shape, so do not close it up. -->
       <button
         v-if="view === 'home'"
-        class="ico glyph-lg"
+        class="ico"
         data-tip="Import a MIDI clip from Ableton"
         aria-label="Import a MIDI clip"
         @click="openImport"
       >
-        ⇪
+        <svg
+          viewBox="0 0 16 16"
+          width="11"
+          height="11"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M8 10.2V2.4" />
+          <path d="M4.9 5.5 8 2.4l3.1 3.1" />
+          <path d="M2.6 11.1v1.6a.9.9 0 0 0 .9.9h9a.9.9 0 0 0 .9-.9v-1.6" />
+        </svg>
       </button>
       <input
         ref="fileInput"
@@ -1089,10 +1143,10 @@ watch(
   letter-spacing: 1.1px;
 }
 
-/* The reference draws these two symbols a shade larger than the ✕ — they are
-   open outlines where it is a solid stroke, so they need the extra pixel to
-   carry the same weight on screen. */
-.ico.glyph-lg,
+/* The reference draws ▤ a shade larger than the ✕ — it is an open outline
+   where the ✕ is a solid stroke, so it needs the extra pixel to carry the
+   same weight on screen. The import button used to share this rule; it is an
+   SVG now (handoff 08 §2) and sizes itself. */
 .ico.mon {
   font-size: 10px;
 }
