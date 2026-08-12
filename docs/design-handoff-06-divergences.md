@@ -1,0 +1,200 @@
+# Handoff 06 — where the app and handoff 05 disagree (app → design)
+
+This one goes app → design. Handoff 05 is **built**: sustained notes end to end,
+the fourteen instrument hues with the target/result split, the 33px overview
+strip, and the instrument switch moved to the home bar. Everything in 05 holds
+except the four things below.
+
+Three of these are places the implementation **knowingly departed** from 05,
+each because following it literally produced something worse or impossible.
+Each needs a decision from you so the drawings and the app say the same thing.
+The fourth is two corrections to `11a`, already decided.
+
+Every number here is a computed value read out of the running app or measured
+off your own frames, not an intention. Where a frame was measured it says so.
+
+---
+
+## 1. The 34px minimum bar cannot survive the falling views
+
+**§1.5:** *"A hold with under `34px` of visible bar is drawn as a plain head
+with no bar."*
+
+That figure works on the **scrolling** axis and fails on the **falling** one,
+because the two axes have very different amounts of room for the same five
+bars of music.
+
+### What the app actually has
+
+Measured at the default 1280×780 window. The zoom is `track ÷ (5 bars × 4
+beats)`, so one beat gets a twentieth of whichever axis carries time:
+
+| view | time axis | px per beat | 34px is |
+|---|---|---|---|
+| pads horizontal | 1140px (width, less the 128px label gutter) | 57.0 | **0.60 beats** |
+| piano horizontal | 1208px (full width) | 60.4 | **0.56 beats** |
+| pads vertical | 655px (height, less the 42px label tile) | 32.8 | **1.04 beats** |
+| piano vertical | 543px (height) | 27.1 | **1.25 beats** |
+
+So in the horizontal views 34px is a bit over half a beat — a sensible floor
+that only drops ornaments. In the vertical views it is a whole beat or more:
+**a quarter note would never draw a bar, and in piano vertical neither would
+anything under a dotted quarter.**
+
+It gets worse as the window shortens, because the vertical axis is the window's
+height. At a 560px-tall window piano vertical falls to ~16px per beat, where
+34px is over two beats and *nothing in First Chords draws a bar at all*. That
+is not a corner case; it is a laptop with a browser open behind the app.
+
+### Why this reads as a conflict rather than a rule we dislike
+
+`11c` and `11f` both plainly draw holds. Measured off those frames, your bars
+are **47.8px** (`11f`, piano vertical) and **52.8px** (`11c`, pads vertical) —
+comfortably over your own 34px floor. They can be, because the frames are 500px
+tall and the app's window is 780: your roll has far fewer beats on screen than
+ours does. The rule and the drawings are consistent *with each other* and
+inconsistent *with the app's zoom*.
+
+### What the app does now
+
+The floor is per-axis. Scrolling keeps your 34px. Falling uses a structural
+minimum instead — the two caps plus enough slot between them to read as a
+channel rather than a seam:
+
+```
+falling floor = headCap + tailCap(5) + slotMin(10)
+              = 27px in piano vertical, 15px in pads vertical
+```
+
+At the default window that makes a quarter note the shortest drawable hold in
+piano vertical and an eighth in pads vertical, which is about where a hold
+stops being a hold.
+
+**`slotMin` is the one number in the sustain work that is ours, not yours.**
+
+### What we need from you
+
+Either:
+
+- **(a)** confirm a per-axis minimum and give us your figure for the falling
+  one — this is the smaller change and keeps everything else as drawn; or
+- **(b)** tell us the falling views should show **fewer bars** than five. That
+  is what your frames imply, and it would make one 34px rule true everywhere.
+  It is a much bigger change: the five-bar zoom is shared by both orientations
+  and both instruments, and the overview strip's viewport rectangle is derived
+  from it.
+
+We have built (a). If you want (b), say so and we will change the zoom rather
+than the floor.
+
+---
+
+## 2. §1.5 and §1.4 contradict each other on bars crossing the playhead
+
+**§1.4:** *"The bar therefore **legitimately crosses the playhead** while a
+note is being held. `11c`, `11e` and `11f` all show this. Do not 'fix' it."*
+
+**§1.5:** *"Pads horizontal only: the note sitting **on** the playhead is drawn
+plain, without a bar."*
+
+These cannot both hold. §1.5 would make a bar disappear for the few frames
+either side of its head crossing the line and then reappear — a flicker on
+every held note, every repeat, in one view only.
+
+**The app follows §1.4.** Bars cross the playhead in all four views.
+
+We think §1.5's line describes what `11b` happens to show — the note under the
+playhead there is a closed hat, which is an instant note — rather than a rule.
+**Confirm and we will delete the line from our notes; tell us it is a real rule
+and we will need to know what should happen as the head crosses.**
+
+---
+
+## 3. The piano pitch → hue order: the prose and the two frames all disagree
+
+**§2.2's table** assigns `BLUE = piano 1st`, `VIOLET = piano 2nd`,
+`BRONZE = piano 3rd`, `TEAL = piano 4th`, and **§4.1** says *"Each pitch gets
+its own hue from §2.2, low → high."*
+
+The frames do not do that, and they do not agree with each other. Measured
+upcoming (dimmed) fills, by row:
+
+| frame | pitches, low → high | hue given |
+|---|---|---|
+| `11e` piano horizontal | C4, C#4, E4, G4, G#4, C5 | BLUE, —, VIOLET, **STEEL**, PLUM, **INDIGO** |
+| `11f` piano vertical | C4, C#4, G4, G#4, C5 | BLUE, —, **VIOLET**, —, **STEEL** |
+
+Both agree the first pitch is BLUE. After that `11e` makes G4 steel and C5
+indigo; `11f` makes G4 violet and C5 steel. The same pitch gets a different
+hue in the two frames, so neither can be the source.
+
+**The app follows the prose**: rank 1→BLUE, 2→VIOLET, 3→BRONZE, 4→TEAL, then
+the list continues PLUM, INDIGO, OLIVE, STONE, then the six spares.
+
+**Please confirm the prose is right and redraw `11e`/`11f` to match**, or give
+us the intended order explicitly. This is the one divergence where we are
+fairly confident the frames are simply hand-coloured, but it is also the one a
+player would notice first — it is every note in the roll.
+
+While you are in there: the dimmed values in §2.2's table are all reproducible
+as `mix(hue, field, 0.60)` in dark and `mix(hue, field, 0.35)` in light, for
+all fourteen hues — but only with a **dark field of `#0d0d0e`**. §2.2 names
+`#141415` for pads, which does not reproduce your own column. We derive with
+`#0d0d0e` in both instruments; the difference is 4/255 and invisible, but the
+table is the thing that is right, not the field note.
+
+---
+
+## 4. Two corrections to `11a` (decided — no question here)
+
+### 4.1 Drop the `1 × 8` pad layout
+
+`11a` draws the pad-layout panel with three rows: `4 × 4`, `2 × 8` and
+`1 × 8 — top row only`. The app has **two** layouts and is not adding a third.
+Please remove the `1 × 8` row; the panel becomes two rows and loses 26px of
+height.
+
+### 4.2 Add the volume and monitor buttons
+
+`11a`'s right group is missing two controls the app has on every screen. Both
+already exist in your trainer frames (`11b`…`11f`) — this is the same pair,
+in the same place.
+
+The app's home bar, in order, at a 1180px window to match your frame:
+
+| control | width | note |
+|---|---|---|
+| `7 LESSONS` | 51 | |
+| divider | 1 | 9px either side |
+| `PADS ▾ \| PIANO` | 99 | as drawn |
+| device chip | 91–116 | 116 is its cap, with a device name showing |
+| **volume** | **20** | **missing from `11a`** — the mixer popover |
+| import `⇪` | 20 | |
+| divider | 1 | |
+| theme `◐ ☀` | 46 | |
+| **monitor `▤`** | **20** | **missing from `11a`** |
+
+Volume sits **between the device chip and `⇪`**; monitor sits **after the theme
+pair**, at the far right. Both are 20px square with the standard 9px gap, so
+the right group grows by 58px and everything left of the monitor shifts 58px
+left. Nothing else on `11a` moves.
+
+---
+
+## Appendix — small things already matched
+
+Recorded so they do not come back as questions:
+
+- The pad-layout panel's `top` is **23px from the chip**, not the 25px §4.2
+  names. Both describe the same place: §4.2 measures from the 20px segment,
+  the app anchors on the 16px chip inside it, and `11a` itself puts the panel
+  23px below the chip's top.
+- Note-letter ink is `#08131a` dark / `#f2f2f2` light, measured off `11e`.
+- The overview strip's rows sit at 3 / 11 / 20 / 28 for four lanes in a 33px
+  strip, last dot ending on 30 — matching `11b`'s eight-row spacing rule.
+- Pads carry **no** duration on import: a drum has decayed long before you
+  could let go of the pad, and GM clips write arbitrary note lengths. The
+  renderers draw pad holds correctly if a lesson authors them, so `11b`/`11c`'s
+  RIM hold is reachable — no built-in lesson uses one yet.
+- The window floor came down from 1216 to **1082** now the instrument switch
+  has left the trainer bar.
