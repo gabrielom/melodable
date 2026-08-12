@@ -99,6 +99,14 @@ const BAR_RADIUS = 4;
  * head would show the slot's 2px channel through its middle.
  */
 const HEAD_CAP = 12;
+/**
+ * The letter written on a note. One ink per theme, whatever the note's own
+ * colour — the hues and the ratings are all mid-tone enough to carry it, and
+ * a per-note ink would be one more thing that could disagree with itself.
+ * Dark is a blue-black rather than a neutral one, which sits better on the
+ * cool end of the hue list.
+ */
+const INK = { dark: "#08131a", light: "#f2f2f2" } as const;
 
 export class PianoRoll implements LaneRenderer {
   private ctx: CanvasRenderingContext2D;
@@ -495,7 +503,7 @@ export class PianoRoll implements LaneRenderer {
   private label(f: LaneFrame, text: string, cx: number, cy: number): void {
     const ctx = this.ctx;
     const m = this.metrics!;
-    ctx.fillStyle = f.theme === "light" ? "#e9e9ea" : "#0b0b0c";
+    ctx.fillStyle = INK[f.theme];
 
     if (text.length === 1) {
       ctx.fillText(text, cx - m.letter / 2, cy + 0.5);

@@ -30,15 +30,18 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
 - Vue 3 Composition API with `<script setup lang="ts">`; Pinia for state; `@/` aliases `src/`.
 - Design tokens live in **two places that must stay in step**: `src/styles.css` (CSS custom properties, for the DOM) and `src/engine/theme.ts` (the same values as data, because canvas can't read custom properties). Change one, change the other. Don't introduce a new palette. These now supersede the palette in `build_plan.html`, which predates the trainer redesign.
 - Two themes, `dark` and `light`, swapped by `data-theme` on `<html>` from `settings.theme`. Light is one flat grey, so on-states **invert** to a dark chip and every field needs the `--outline` hairline — a lighter fill reads as nothing.
-- Rating colors live in the palette: `PALETTE[theme].rating[r]` (`src/engine/theme.ts`). Renderers read that, never a hardcoded rating colour. Dark: perfect = cyan, great = blue, good = amber, miss = red.
+- **Two colour languages, and a note wears exactly one.** The **instrument hues** name a lane or a pitch — *what* to hit. The **rating** colours name a result — *how well*. They share no value, so a dimmed target can never be misread as a judgement. `noteInk` (`src/views/lane-geometry.ts`) is the single place that decides, and every renderer goes through it. The switch is `resolved`, not which side of the playhead a note is on: a note sitting on the playhead has no result yet. During the count-in nothing is judged, so everything shows its tint.
+- Rating colors live in the palette: `PALETTE[theme].rating[r]` (`src/engine/theme.ts`). Renderers read that, never a hardcoded rating colour.
 - **A lesson is a finite run, not an endless loop.** The pattern plays
   `lesson.repeats` times (built-ins are 16 bars, 39-55s) and then ends; the run
   is scored as a whole, and clearing one clean run advances the library.
   `lessonRepeats` derives a count for imported clips that don't state one.
   The overview strip spans the whole run, which is what makes its viewport
   rectangle a meaningful slice rather than the entire width.
-- Lane identity uses the fixed 8-colour LED set (`ledOf`/`ledUpcoming`), indexed by the lane's position on screen — not a hash of the pad number, so a lane keeps its colour between lessons. Notes still to come are the LED at 33% (`UPCOMING_ALPHA`).
+- Lane identity is a **hue from the fourteen** (`hueOf`), indexed by the lane's position on screen — not by pad number or pitch, so a lane keeps its colour between lessons. Pads walk the list in order; piano starts on the cool end (blue, violet, bronze, teal) so a chord reads as separate voices. The **dimmed** value is derived, never authored: `mix(hue, field, 0.60)` in dark against `#0d0d0e`, `0.35` in light against `#cccccc`. That reproduces the design's own dimmed column for all fourteen in both themes, and `tests/theme.test.ts` pins it. A lane's strip, its lit mini-grid cell and its unplayed notes are all that same dim tint; full strength means the lane is sounding *now*. This supersedes the old 8-colour LED set, three of which doubled as rating colours.
+- `--led0..2` in `styles.css` are **not** lane identity — they are chrome accents (the device dot, the resume flag, the monitor's source dots) and are deliberately not mirrored in `theme.ts`.
 - Respect `prefers-reduced-motion`; keep controls keyboard-focusable.
+- **A note can have a length.** `NoteEvent.duration` is in beats; anything under `HOLD_MIN_BEATS` is an ornament and normalised to zero by `lessonTargets`. A held note is judged twice and independently: the onset rating is unchanged and alone decides the colour, and the sustain is measured from the note's *written* onset so a late strike is not charged twice. Overholding is not an error — the fraction clamps at 1, and a hold still open at the written end closes itself, which is also what stops a controller that never sends note-off from scoring every hold as dropped. Combo breaks on a dropped hold, survives a short one. Pads carry no duration on import (a drum has decayed before you could let go), though the renderers support pad holds if a lesson authors them.
 - **Everything lives in the one transport bar**, which is also the macOS titlebar (left padding clears the traffic lights). It is 34px tall with every control 20px, and stays a single row with nothing hidden. No second toolbar row, no in-stage header.
 - **The window floor is what keeps the bar intact**: `minWidth` in `tauri.conf.json` is 1082, measured as the narrowest width where every trainer control fits at natural size with the longest built-in name ("Syncopated Groove", full at 1071px). It came down from 1216 when the instrument switch left the trainer bar for the home bar (handoff 05 §4.2). The trainer bar is the binding one — the home bar needs 622px. The bar's 84px left inset and the device chip's 116px cap are both part of that budget, so re-measure whenever either moves. **Measure with a device connected** — in a plain browser the port list is empty and the chip reads "NO DEVICE" at 91px rather than its 116px cap, which understates the floor by 25px; `scratchpad/handoff5/floor.mjs` forces the cap instead. Nothing drops out responsively any more — if you add a control, re-measure and raise the floor, don't start hiding things. The lesson title is the one elastic element (`flex: 0 1 auto; min-width: 0`) so an imported clip with a long name ellipsises instead of pushing controls off the edge.
 - The bar carries **`data-tauri-drag-region="deep"`**, not the bare attribute. Tauri's shim walks up from the clicked node and stops at the first interactive element, so controls opt out of dragging by themselves; the bare form only catches direct hits on the header, which at this density is gaps and nothing else. Anything non-interactive that hangs off the bar — the dropdowns — needs `="false"` so a click on its own chrome doesn't drag the window. `-webkit-app-region` is Electron-only and does nothing here.
@@ -55,11 +58,36 @@ follower in `useTrainer` that drives tempo via `Transport.setBpm` and phase via
 `Transport.anchorTo`. `docs/ableton-playalong.md` documents it, including the
 MIDI-Clock alternative if CMake ever becomes a problem.
 
-The **trainer redesign** has landed in two handoffs. Handoff 02 (turn 10) is the
-current design and supersedes 01 wherever they disagree — note that its own
+The **trainer redesign** has landed across several handoffs. **Handoff 05 (turn
+11) is the current design** and supersedes everything before it where they
+disagree; 02 (turn 10) still governs anything 05 does not mention, and its own
 §§16-29 reverse several of its earlier sections, so read those last. Every
-screen now has a drawn state: home, both instruments in both orientations, the
+screen has a drawn state: home, both instruments in both orientations, the
 monitor, count-in, import, summary and the dropdowns.
+
+Handoff 05 is built: sustained notes end to end (model, importer, scorer,
+input, and the bar drawn in all four views), the fourteen instrument hues with
+the target/result colour split, the 33px overview strip, and the instrument
+switch moved to the home bar. Three deliberate divergences, each argued in the
+code where it bites:
+
+- The design's **34px minimum bar** is a scrolling-axis figure. Applied
+  verbatim it makes a hold undrawable in the falling views, whose time axis
+  has a third of the pixels — yet `11c` and `11f` plainly draw them, against a
+  roll where a beat is ~32px rather than our ~16. The falling axis uses a
+  structural floor instead (`holdFloor`). **This is the one number here that is
+  ours, not the design's** — worth settling with them.
+- **§1.5 vs §1.4** on whether a bar may cross the playhead in pads horizontal.
+  §1.4 wins; hiding the bar around the crossing would flicker.
+- The piano pitch→hue order follows §2.2's *prose* (1st blue, 2nd violet, 3rd
+  bronze, 4th teal). The frames disagree with the prose **and with each other**
+  — `11e` gives G4 steel and C5 indigo, `11f` gives G4 violet — so they are not
+  usable as the source here.
+
+Not built from 05, and worth asking about: `11a` draws the pad-layout panel
+with a third `1x8` layout and right-aligned row hints, neither of which the
+prose asks for; and the app's home bar still carries the volume and monitor
+buttons that `11a` does not draw (which predates this handoff).
 
 Undrawn edge cases — no MIDI device connected, an empty lesson list, a failed
 import — are **not designed**; ask before inventing them.
