@@ -131,7 +131,6 @@ const {
   bestCombo,
   toast,
   pops,
-  lanes: trainerLanes,
   isPiano,
   pianoRange,
   lessonPitches,
@@ -1063,8 +1062,7 @@ watch(
       :previous-best="runResult.previousBest"
       :tally="runResult.tally"
       :holds="runResult.holds"
-      :lanes="runResult.lanes"
-      :lane-order="isPiano ? lessonPitches : trainerLanes"
+      :attempts="runResult.attempts"
       @again="onPlay"
       @lessons="goHome"
     />

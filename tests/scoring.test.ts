@@ -276,31 +276,11 @@ describe("run breakdown", () => {
     expect(s.tally).toEqual({ perfect: 1, great: 1, early: 0, late: 1, miss: 1 });
   });
 
-  it("reports each lane's accuracy and which way it drifts, worst first", () => {
-    const s = new Scorer(two);
-    s.spawnLoop(0, at);
-    s.hit(12, 10.0); // perfect
-    s.hit(12, 11.0); // perfect
-    s.hit(13, 11.92); // early (80ms ahead)
-    s.hit(13, 12.92); // early
-
-    const stats = s.laneStats();
-    expect(stats).toHaveLength(2);
-    // lane 13 only managed the loose band, so it sorts first
-    expect(stats[0].lane).toBe(13);
-    expect(stats[0].accuracy).toBeCloseTo(0.4);
-    expect(stats[0].early).toBe(2);
-    expect(stats[0].late).toBe(0);
-    expect(stats[1].lane).toBe(12);
-    expect(stats[1].accuracy).toBeCloseTo(1);
-  });
-
-  it("counts a swept note as a miss in both the tally and the lane", () => {
+  it("counts a swept note as a miss in the tally", () => {
     const s = new Scorer(two);
     s.spawnLoop(0, at);
     s.sweepMisses(20);
     expect(s.tally.miss).toBe(4);
-    expect(s.laneStats().every((l) => l.accuracy === 0)).toBe(true);
   });
 });
 

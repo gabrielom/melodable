@@ -3,16 +3,27 @@
  * End of run. A lesson is a finite piece, so it earns a result screen rather
  * than a toast that disappears before you have read it.
  *
- * The weakest-lane list is the point of the screen: it names the lane, how
- * accurate it was, and — because the loose band is split by direction — which
- * way it drifted. "You rush the snare" is something you can act on.
+ * The run-history chart is the point of the screen. It replaced a ranked list
+ * of your worst lanes (handoff 09): that told you something you already knew
+ * — you felt the snare drag — in the most discouraging frame available, and
+ * duplicated the judgement breakdown directly above it. The question worth
+ * answering here is whether you are getting better, and it takes more than
+ * one run to answer.
  */
 import { computed } from "vue";
-import { PALETTE, hueOf } from "@/engine/theme";
+import { PALETTE } from "@/engine/theme";
 import { useSettings } from "@/stores/settings";
-import { PADS } from "@/engine/gm";
-import { noteName } from "@/engine/pitch";
 import type { HoldResult, InstrumentType, Rating } from "@/engine/types";
+import {
+  AXIS_DOT_R,
+  AXIS_Y,
+  BADGE,
+  CURRENT_DOT_R,
+  DOT_R,
+  VIEW,
+  historyChart,
+} from "@/components/run-history";
+import { MAX_ATTEMPTS } from "@/stores/history";
 
 const props = defineProps<{
   lessonName: string;
@@ -33,9 +44,8 @@ const props = defineProps<{
    * would make the run look twice as long as it was.
    */
   holds: Readonly<Record<HoldResult, number>>;
-  lanes: Array<{ lane: number; accuracy: number; early: number; late: number; total: number }>;
-  /** Lane order on screen, for LED identity. */
-  laneOrder: number[];
+  /** Every attempt at this lesson, oldest first, this run last. */
+  attempts: readonly number[];
 }>();
 
 const emit = defineEmits<{ (e: "again"): void; (e: "lessons"): void }>();
@@ -89,23 +99,19 @@ const heldPct = computed(() =>
   heldTotal.value ? Math.round((props.holds.held / heldTotal.value) * 100) : null,
 );
 
-/** The three that need work most; a clean run has nothing to show. */
-const weakest = computed(() => props.lanes.filter((l) => l.accuracy < 1).slice(0, 3));
-
-const laneName = (lane: number) =>
-  props.instrument === "piano" ? noteName(lane) : PADS[lane].name.toUpperCase();
 /**
- * The lane's own hue, dimmed — the same swatch it wears in the lane stack and
- * the overview strip, so a row here is recognisable as that lane rather than
- * needing to be read.
+ * The chart's geometry. Laid out against the full capacity rather than the
+ * attempts in hand, so the dots march rightwards as history accumulates
+ * instead of the whole chart rescaling under you after every run.
  */
-const laneColour = (lane: number) =>
-  hueOf(palette.value, props.instrument, Math.max(0, props.laneOrder.indexOf(lane))).dim;
-/** Which way a lane drifted, when it clearly leant one way. */
-const drift = (l: { early: number; late: number }): Rating | null => {
-  if (l.early === l.late) return null;
-  return l.early > l.late ? "early" : "late";
-};
+const chart = computed(() => historyChart(props.attempts, MAX_ATTEMPTS));
+
+/** The chart is a picture; a screen reader gets the same facts as a sentence. */
+const chartLabel = computed(() => {
+  const n = props.attempts.length;
+  if (n <= 1) return `First attempt at this lesson, ${score.value}%.`;
+  return `${n} attempts at this lesson, from ${Math.round(props.attempts[0] * 100)}% to ${score.value}%.`;
+});
 </script>
 
 <template>
@@ -150,19 +156,76 @@ const drift = (l: { early: number; late: number }): Rating | null => {
         </div>
       </div>
 
-      <div v-if="weakest.length" class="weak">
-        <span class="ttl">WEAKEST LANES</span>
-        <div v-for="l in weakest" :key="l.lane" class="wrow">
-          <i class="chip" :style="{ background: laneColour(l.lane) }" />
-          <span class="wname">{{ laneName(l.lane) }}</span>
-          <span class="track">
-            <i :style="{ width: `${Math.round(l.accuracy * 100)}%`, background: laneColour(l.lane) }" />
+      <!-- Handoff 09: run history replaces weakest lanes. -->
+      <div class="history">
+        <div class="hhead">
+          <span class="ttl">RUN HISTORY</span>
+          <b class="hscore num">{{ score }}%</b>
+        </div>
+
+        <svg
+          class="chart"
+          :viewBox="`0 0 ${VIEW.w} ${VIEW.h}`"
+          role="img"
+          :aria-label="chartLabel"
+        >
+          <!-- Two rules only. This is a shape to read, not a table. -->
+          <g class="grid">
+            <line v-for="g in chart.gridlines" :key="g.value" x1="26" x2="614" :y1="g.y" :y2="g.y" />
+            <text v-for="g in chart.gridlines" :key="`t${g.value}`" x="20" :y="g.y + 3">
+              {{ g.value }}
+            </text>
+          </g>
+
+          <line class="axis" x1="26" x2="614" :y1="AXIS_Y" :y2="AXIS_Y" />
+          <circle class="axis-cap" cx="26" :cy="AXIS_Y" :r="AXIS_DOT_R" />
+          <circle class="axis-cap" cx="614" :cy="AXIS_Y" :r="AXIS_DOT_R" />
+
+          <polyline v-if="chart.path" class="line" :points="chart.path" />
+          <circle
+            v-for="(pt, i) in chart.points"
+            :key="i"
+            class="dot"
+            :cx="pt.x"
+            :cy="pt.y"
+            :r="DOT_R"
+          />
+          <circle
+            v-if="chart.current"
+            class="now"
+            :cx="chart.current.x"
+            :cy="chart.current.y"
+            :r="CURRENT_DOT_R"
+          />
+
+          <!-- Only when the run actually beat every attempt before it: a badge
+               that always appears is decoration. -->
+          <g v-if="chart.badge">
+            <rect
+              class="badge"
+              :x="chart.badge.x"
+              :y="chart.badge.y"
+              :width="BADGE.w"
+              :height="BADGE.h"
+              rx="2"
+            />
+            <text
+              class="badge-t"
+              :x="chart.badge.x + BADGE.w / 2"
+              :y="chart.badge.y + BADGE.h / 2 + 3"
+            >
+              BEST
+            </text>
+          </g>
+        </svg>
+
+        <!-- Each label sits where the thing it describes sits. -->
+        <div class="hfoot">
+          <span>{{ chart.first ? `FIRST ${Math.round(chart.first.value * 100)}%` : "" }}</span>
+          <span class="hcount">
+            {{ attempts.length }} {{ attempts.length === 1 ? "ATTEMPT" : "ATTEMPTS" }}
           </span>
-          <span
-            class="drift"
-            :style="{ color: drift(l) ? palette.rating[drift(l)!] : 'var(--txt3)' }"
-          >{{ drift(l) ? LABEL[drift(l)!] : "—" }}</span>
-          <span class="wpct num">{{ Math.round(l.accuracy * 100) }}</span>
+          <span class="hnow">THIS RUN</span>
         </div>
       </div>
 
@@ -252,32 +315,68 @@ const drift = (l: { early: number; late: number }): Rating | null => {
 .leg b { font-size: 9.5px; color: var(--txt2); }
 .swatch { width: 6px; height: 6px; border-radius: 1px; }
 
-.weak { display: flex; flex-direction: column; gap: 5px; }
-.wrow { display: flex; align-items: center; gap: 9px; }
-.chip { width: 6px; height: 6px; flex: none; border-radius: 1px; }
-.wname {
-  width: 92px;
-  flex: none;
+/* Run history. The 620x78 viewBox scales uniformly to whatever width the
+   panel column has — deliberately *not* `preserveAspectRatio: none`, which
+   would squash the gridline labels and the badge's text along one axis.
+   `overflow` stays visible so the badge can rise into the header's gap, which
+   is where the design puts it on a high score. */
+.history { display: flex; flex-direction: column; gap: 6px; }
+.hhead { display: flex; align-items: baseline; justify-content: space-between; }
+/* The headline figure of the block, so the largest thing in it. */
+.hscore { font-size: 15px; color: var(--txt); }
+
+.chart { display: block; width: 100%; height: auto; overflow: visible; }
+
+.grid line { stroke: #00000014; stroke-width: 1; }
+:root[data-theme="dark"] .grid line { stroke: #ffffff10; }
+.grid text {
   font-family: var(--mono);
-  font-size: 8.5px;
-  font-weight: 500;
-  letter-spacing: 1.1px;
-  color: var(--txt);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 8px;
+  fill: var(--txt3);
+  text-anchor: end;
 }
-.track { flex: 1; min-width: 0; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
-.track i { display: block; height: 100%; }
-.drift {
-  width: 52px;
-  flex: none;
-  text-align: right;
+
+/* A rule with a dot at each end, not a boxed baseline. */
+.axis { stroke: var(--hair); stroke-width: 1.4; stroke-linecap: round; }
+.axis-cap { fill: var(--hair); }
+
+/* Neutral on purpose: the line is the trend, not a judgement, so it never
+   takes a timing colour. */
+.line {
+  fill: none;
+  stroke: #8f9196;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.dot { fill: #8f9196; }
+:root[data-theme="dark"] .line { stroke: #5c5e64; }
+:root[data-theme="dark"] .dot { fill: #5c5e64; }
+
+/* This run: the accuracy colour, a size larger — the one point the eye should
+   find without looking for it. */
+.now { fill: var(--rate-perfect); }
+.badge { fill: var(--rate-perfect); }
+.badge-t {
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 1.1px;
+  fill: var(--win);
+  text-anchor: middle;
+}
+
+.hfoot {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: baseline;
   font-family: var(--mono);
   font-size: 7.5px;
   letter-spacing: 1.2px;
+  color: var(--txt3);
 }
-.wpct { width: 26px; flex: none; text-align: right; font-size: 11px; color: var(--txt2); }
+.hcount { text-align: center; }
+/* One step brighter: of the three, this is the one the eye should land on. */
+.hnow { text-align: right; color: var(--txt2); }
 
 .actions { display: flex; align-items: center; gap: 8px; }
 .act {

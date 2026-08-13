@@ -185,33 +185,6 @@ export class Scorer {
     return this.holdCounts;
   }
 
-  /**
-   * Per-lane breakdown for the summary: how accurate the lane was, and which
-   * way it drifted. The drift column is the reason splitting `early` from
-   * `late` is worth doing — "you rush the snare" is actionable in a way that
-   * "you are 78% on the snare" is not.
-   */
-  laneStats(): Array<{ lane: number; accuracy: number; early: number; late: number; total: number }> {
-    const by = new Map<number, { points: number; total: number; early: number; late: number }>();
-    for (const inst of this.all) {
-      if (!inst.resolved || !inst.rating) continue;
-      const e = by.get(inst.lane) ?? { points: 0, total: 0, early: 0, late: 0 };
-      e.points += RATING_SCORE[inst.rating] / 100;
-      e.total += 1;
-      if (inst.rating === "early") e.early += 1;
-      if (inst.rating === "late") e.late += 1;
-      by.set(inst.lane, e);
-    }
-    return [...by.entries()]
-      .map(([lane, e]) => ({
-        lane,
-        accuracy: e.total === 0 ? 1 : e.points / e.total,
-        early: e.early,
-        late: e.late,
-        total: e.total,
-      }))
-      .sort((a, b) => a.accuracy - b.accuracy);
-  }
 
   /** Score-weighted accuracy 0..1 over everything resolved so far. */
   get accuracy(): number {

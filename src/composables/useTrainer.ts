@@ -10,6 +10,7 @@
 import { computed, onMounted, onUnmounted, ref, watch, type Ref } from "vue";
 import { useSettings } from "@/stores/settings";
 import { useLessons } from "@/stores/lessons";
+import { useHistory } from "@/stores/history";
 import type { HoldResult, LinkState, Rating } from "@/engine/types";
 import { Transport, phaseDelta, START_DELAY } from "@/engine/transport";
 import { PALETTE } from "@/engine/theme";
@@ -54,6 +55,7 @@ export function useTrainer(
 ) {
   const settings = useSettings();
   const lessons = useLessons();
+  const history = useHistory();
   /** The active lesson comes from the library store — one source of truth. */
   const lesson = computed(() => lessons.current);
 
@@ -78,13 +80,12 @@ export function useTrainer(
     tally: Readonly<Record<Rating, number>>;
     /** Sustain, counted separately — a second judgement on the same notes. */
     holds: Readonly<Record<HoldResult, number>>;
-    lanes: ReturnType<Scorer["laneStats"]>;
+    /**
+     * Every attempt at this lesson, oldest first, this run included — what
+     * the summary's history chart draws.
+     */
+    attempts: readonly number[];
   } | null>(null);
-  /**
-   * Best accuracy per lesson so far. In memory for now — M7 persists it, and
-   * this is the shape it will persist.
-   */
-  const bestByLesson = new Map<string, number>();
   const accuracy = ref(100);
   const combo = ref(0);
   const bestCombo = ref(0);
@@ -603,16 +604,18 @@ export function useTrainer(
     syncStats();
 
     const acc = scorer.accuracy;
-    const previousBest = bestByLesson.get(lesson.value.id) ?? null;
+    // Read the previous best *before* recording, or this run would be its own
+    // predecessor and nothing could ever be a new best.
+    const previousBest = history.best(lesson.value.id);
+    history.record(lesson.value.id, acc);
     runResult.value = {
       accuracy: acc,
       bestCombo: scorer.bestCombo,
       previousBest,
       tally: { ...scorer.tally },
       holds: { ...scorer.holdTally },
-      lanes: scorer.laneStats(),
+      attempts: [...history.attempts(lesson.value.id)],
     };
-    if (previousBest === null || acc > previousBest) bestByLesson.set(lesson.value.id, acc);
 
     transport.stop();
     playing.value = false;
@@ -701,7 +704,6 @@ export function useTrainer(
     bestCombo,
     toast,
     pops,
-    lanes,
     isPiano,
     pianoRange,
     lessonPitches,
