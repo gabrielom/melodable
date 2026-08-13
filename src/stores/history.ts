@@ -19,12 +19,16 @@ import { persistGet, persistSet } from "./persist";
 /**
  * How many attempts are kept and drawn.
  *
- * The design's ceiling: past about forty the 3.1r dots start touching at the
- * chart's 620px, and the answer is to drop the oldest rather than squeeze the
- * spacing. Keeping exactly what is drawn means the store never grows without
- * bound either.
+ * Twenty-eight is what the design's chart holds: 588px of plot over 27 gaps
+ * is the "≈21px between dots" it measures, and a full history then spans the
+ * plot exactly as the frame draws it. The handoff also mentions ~40 as where
+ * `3.1r` dots would start touching — that is a ceiling, not a target, and
+ * drawing 40 would overrun the plot at the spacing it specifies.
+ *
+ * Past the cap the oldest is dropped rather than the spacing squeezed.
+ * Keeping exactly what is drawn also stops the store growing without bound.
  */
-export const MAX_ATTEMPTS = 40;
+export const MAX_ATTEMPTS = 28;
 
 type History = Record<string, number[]>;
 

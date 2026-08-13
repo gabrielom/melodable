@@ -106,6 +106,34 @@ const heldPct = computed(() =>
  */
 const chart = computed(() => historyChart(props.attempts, MAX_ATTEMPTS));
 
+/**
+ * The two dot-anchored footer labels, as percentages across the chart.
+ *
+ * The design's rule is that a label sits where the thing it describes sits,
+ * and with fewer attempts than the chart holds the last dot is nowhere near
+ * the right edge — so `THIS RUN` has to follow it rather than pin to the
+ * panel. `FIRST` reads from its dot rightwards; `THIS RUN` is centred on the
+ * last and clamped so a full history does not push it off the edge.
+ */
+const pctOf = (x: number) => (x / VIEW.w) * 100;
+const firstLeft = computed(() => `${pctOf(chart.value.first?.x ?? 0)}%`);
+const nowPct = computed(() => Math.min(pctOf(chart.value.current?.x ?? 0), 92));
+const nowLeft = computed(() => `${nowPct.value}%`);
+
+/**
+ * The attempt count is centred under the axis, except when `THIS RUN` has
+ * moved into that space.
+ *
+ * The design's frame only shows a full history, where the last dot is hard
+ * right and the two never meet. Partway through — roughly a dozen attempts in
+ * — the dot sits near the middle and the two labels overlap. The count gives
+ * way rather than the dot-anchored one, because the right end is empty in
+ * exactly those cases, and moving a label the axis owns is a smaller lie than
+ * moving one that names a dot.
+ */
+const COLLIDE_PCT = 13;
+const countAside = computed(() => Math.abs(nowPct.value - 50) < COLLIDE_PCT);
+
 /** The chart is a picture; a screen reader gets the same facts as a sentence. */
 const chartLabel = computed(() => {
   const n = props.attempts.length;
@@ -219,13 +247,16 @@ const chartLabel = computed(() => {
           </g>
         </svg>
 
-        <!-- Each label sits where the thing it describes sits. -->
+        <!-- Each label sits where the thing it describes sits: the two ends
+             track their own dots, the count is centred under the axis. -->
         <div class="hfoot">
-          <span>{{ chart.first ? `FIRST ${Math.round(chart.first.value * 100)}%` : "" }}</span>
-          <span class="hcount">
+          <span v-if="chart.first" class="hfirst" :style="{ left: firstLeft }">
+            FIRST {{ Math.round(chart.first.value * 100) }}%
+          </span>
+          <span class="hcount" :class="{ aside: countAside }">
             {{ attempts.length }} {{ attempts.length === 1 ? "ATTEMPT" : "ATTEMPTS" }}
           </span>
-          <span class="hnow">THIS RUN</span>
+          <span class="hnow" :style="{ left: nowLeft }">THIS RUN</span>
         </div>
       </div>
 
@@ -366,17 +397,27 @@ const chartLabel = computed(() => {
 }
 
 .hfoot {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: baseline;
+  position: relative;
+  height: 11px;
   font-family: var(--mono);
   font-size: 7.5px;
   letter-spacing: 1.2px;
   color: var(--txt3);
+  white-space: nowrap;
 }
-.hcount { text-align: center; }
+.hfirst,
+.hnow { position: absolute; top: 0; }
+/* Centred under the axis line, the way Melodics places THIS SESSION — until
+   THIS RUN needs that space, when it steps aside to the right. */
+.hcount {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.hcount.aside { left: auto; right: 0; transform: none; }
 /* One step brighter: of the three, this is the one the eye should land on. */
-.hnow { text-align: right; color: var(--txt2); }
+.hnow { color: var(--txt2); transform: translateX(-50%); }
 
 .actions { display: flex; align-items: center; gap: 8px; }
 .act {
