@@ -68,7 +68,20 @@ boundaries of ours and we land a bar out at even odds. `link.rs` enables
 start/stop sync and reports `beatsSinceStart`, the beats from the peer's
 transport start; `linkBeat` prefers it and falls back to `phase` only when no
 peer publishes a transport (Live's "Start Stop Sync" is off by default). Don't
-go back to phase-only alignment. Two rules hang off this: `Transport.start`
+go back to phase-only alignment.
+
+**With a peer on the session, Start arms rather than starts.** Link carries the
+peer's loop *length* nowhere, so counting our own loops from anywhere still
+lands inside a longer one — every built-in lesson is 1 or 2 bars, and against a
+4-bar Ableton loop that is bar 1, 2, 3 or 4 at the mercy of when Start was
+pressed. Their transport start is the one downbeat Link names outright, so
+`Transport.startAt` pins beat 0 to it exactly and plays whatever of the count-in
+fits in the lead Live's launch quantization gives. While armed the count-in
+screen holds with empty rings and a `waiting` caption. Don't replace this with
+a guessed alignment unit, and don't add a bars-per-cycle setting without asking
+— that option was offered and declined.
+
+Two more rules hang off the alignment: `Transport.start`
 takes a `StartGrid` so beat 0 is *pinned* rather than yanked into place a frame
 later — the yank was up to half a loop and ate the count-in it landed in — and
 once the run proper is under way the follower only trims drift
