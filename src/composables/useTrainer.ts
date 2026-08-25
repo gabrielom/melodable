@@ -12,7 +12,7 @@ import { useSettings } from "@/stores/settings";
 import { useLessons } from "@/stores/lessons";
 import { useHistory } from "@/stores/history";
 import type { HoldResult, LinkState, Rating } from "@/engine/types";
-import { Transport, phaseDelta, START_DELAY } from "@/engine/transport";
+import { Transport, phaseDelta, START_DELAY, type StartGrid } from "@/engine/transport";
 import { PALETTE } from "@/engine/theme";
 import {
   Scorer,
@@ -47,6 +47,21 @@ const LOOKAHEAD = 1.0;
  * for nothing.
  */
 const LINK_DEADBAND = 0.003;
+
+/**
+ * How long a Link snapshot is worth starting against. They arrive at ~30 Hz, so
+ * anything this old means the session has gone — Link switched off, or the last
+ * peer left — and pressing Start should not pin beat 0 to a dead grid.
+ */
+const LINK_GRID_TTL = 0.5;
+
+/**
+ * Once the run proper is under way the follower only trims drift. A correction
+ * this large is Ableton relocating or its transport appearing mid-run, and
+ * teleporting the playhead would score the player against notes they never
+ * saw. Lining up is what the count-in is for, and there it is unrestricted.
+ */
+const LINK_MAX_TRIM_BEATS = 0.25;
 
 export function useTrainer(
   audio: AudioEngine,
@@ -344,7 +359,8 @@ export function useTrainer(
       beatsPerBar: lesson.value.beatsPerBar,
       totalLoops: totalLoops.value,
     });
-    transport.start(audio.now);
+    const startedAt = audio.now;
+    transport.start(startedAt, START_DELAY, startGrid(startedAt));
     lastLoop = -1;
     accuracy.value = 100;
     combo.value = 0;
@@ -408,10 +424,28 @@ export function useTrainer(
   const linkClock = new HostClock();
 
   /**
+   * The latest grid Link described, in audio-clock terms — what `play` pins
+   * beat 0 to. Null until a snapshot arrives, and treated as gone once it is
+   * older than `LINK_GRID_TTL`.
+   */
+  let linkGrid: (StartGrid & { playing: boolean }) | null = null;
+
+  /**
+   * Where the run's beat 0 belongs, counted from a beat 0 of Link's own.
+   *
+   * When a peer publishes its transport that origin is *their* downbeat, which
+   * is the only thing that makes our loop start where their loop starts.
+   * Session phase alone cannot: Ableton's quantum is one bar, ours is the
+   * lesson loop, so for a two-bar lesson half of Ableton's downbeats are not
+   * boundaries of ours and we land a bar out at even odds — the report.
+   */
+  function linkBeat(s: LinkState): number {
+    return s.playing ? s.beatsSinceStart : s.phase;
+  }
+
+  /**
    * Follow one Link snapshot: match Ableton's tempo, and slide our loop so its
-   * boundary sits on Link's. Rust reports `phase` against a quantum of
-   * `loopBeats`, so phase *is* our beat-in-loop as Ableton sees it — we only
-   * have to close the gap.
+   * boundary sits on theirs.
    *
    * This is the whole of M6's transport work: the transport already re-anchors
    * on tempo change, and `anchorTo` handles the phase. Nothing here knows or
@@ -422,6 +456,7 @@ export function useTrainer(
     linkClock.sync(s.clockMicros, now);
     // The instant this snapshot describes, in audio-clock terms.
     const at = linkClock.toAudioTime(s.clockMicros, now);
+    linkGrid = { beat: linkBeat(s), at, playing: s.playing };
 
     let moved = false;
 
@@ -432,9 +467,12 @@ export function useTrainer(
     }
 
     if (playing.value && transport.isPlaying) {
+      const lb = transport.loopBeats;
       const cur = transport.position(at).absBeat;
-      const delta = phaseDelta(cur, s.phase, transport.loopBeats);
-      if (Math.abs(delta) * transport.secPerBeat > LINK_DEADBAND) {
+      const delta = phaseDelta(cur, ((linkBeat(s) % lb) + lb) % lb, lb);
+      const settling = cur < 0; // still counting in, so still free to move
+      const ok = settling || Math.abs(delta) <= LINK_MAX_TRIM_BEATS;
+      if (ok && Math.abs(delta) * transport.secPerBeat > LINK_DEADBAND) {
         transport.anchorTo(cur + delta, at);
         moved = true;
       }
@@ -442,6 +480,12 @@ export function useTrainer(
 
     // Note times are derived from the anchor, so they move with it.
     if (moved && playing.value) scorer.retime(timeOf);
+  }
+
+  /** The Link grid to start against, or undefined when there isn't a live one. */
+  function startGrid(now: number): StartGrid | undefined {
+    if (!linkGrid || now - linkGrid.at > LINK_GRID_TTL) return undefined;
+    return { beat: linkGrid.beat, at: linkGrid.at };
   }
 
 

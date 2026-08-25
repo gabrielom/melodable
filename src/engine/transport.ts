@@ -50,6 +50,18 @@ export function phaseDelta(absBeat: number, phase: number, loopBeats: number): n
   return d;
 }
 
+/**
+ * An external beat grid to start against — Ableton Link, in practice.
+ *
+ * `beat` is the grid's own beat value at clock time `at`, counted from a beat 0
+ * that is a boundary worth landing on: the peer's transport start when Link
+ * publishes one, otherwise the current quantum boundary.
+ */
+export interface StartGrid {
+  beat: number;
+  at: number;
+}
+
 export interface TransportPosition {
   playing: boolean;
   /** True while the pre-roll count-in bar is still running. */
@@ -129,12 +141,35 @@ export class Transport {
   /**
    * Begin playback: a short scheduling delay, then the count-in bar, then
    * loop 0. `now` is the current clock reading.
+   *
+   * With a `grid` (Ableton Link) beat 0 is pinned to that grid instead of
+   * falling wherever the press landed. Without it the follower would start us
+   * at an arbitrary phase and yank the playhead onto the grid a frame later,
+   * which is up to half a loop and eats the count-in it lands in.
    */
-  start(now: number, delay = START_DELAY): void {
+  start(now: number, delay = START_DELAY, grid?: StartGrid): void {
     this.playing = true;
     this.anchorLoop = 0;
-    this.anchorTime = now + delay + this.countInBeats * this.secPerBeat;
+    const earliest = now + delay + this.countInBeats * this.secPerBeat;
+    this.anchorTime = grid ? this.gridAtOrAfter(earliest, grid) : earliest;
     this.scheduledUntilBeat = -this.countInBeats;
+  }
+
+  /**
+   * The first grid boundary at or after `t`. Boundaries sit a whole number of
+   * loops from the grid's own beat 0, so our loop lines up with theirs and not
+   * merely with a bar of theirs.
+   *
+   * The count-in keeps its full length and simply starts later; the wait
+   * before it is silent, which is what waiting for the downbeat sounds like.
+   */
+  private gridAtOrAfter(t: number, grid: StartGrid): number {
+    const loopSeconds = this.loopBeats * this.secPerBeat;
+    const origin = grid.at - grid.beat * this.secPerBeat;
+    // Nudge before rounding up so a boundary landing exactly on `t` is taken
+    // rather than pushed a whole loop away by floating-point dust.
+    const loops = Math.ceil((t - origin) / loopSeconds - 1e-9);
+    return origin + loops * loopSeconds;
   }
 
   stop(): void {
