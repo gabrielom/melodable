@@ -61,37 +61,31 @@ follower in `useTrainer` that drives tempo via `Transport.setBpm` and phase via
 `Transport.anchorTo`. `docs/ableton-playalong.md` documents it, including the
 MIDI-Clock alternative if CMake ever becomes a problem.
 
-**Link aligns to the peer's downbeat, not to session phase.** Phase only names a
-boundary of *some* quantum, and Ableton's quantum is one bar while ours is the
-lesson loop — so for a two-bar lesson half of Ableton's downbeats are not
-boundaries of ours and we land a bar out at even odds. `link.rs` enables
-start/stop sync and reports `beatsSinceStart`, the beats from the peer's
-transport start; `linkBeat` prefers it and falls back to `phase` only when no
-peer publishes a transport (Live's "Start Stop Sync" is off by default). Don't
-go back to phase-only alignment.
+**Link alignment is session phase, and only session phase.** Phase comes from
+the session's own beat grid, so following it can never put the loop off the
+beat. The peer's *transport start* is the tempting alternative — with start/stop
+sync it is the one thing Link says about where their loop begins — but
+`time_for_is_playing` is the time of an event, not of a beat, so a transport
+started off the grid drags our whole loop off it. That was built (Rust reporting
+`playing`/`beatsSinceStart`, a follower counting from their downbeat) and
+**reverted**: it bought the right bar at the cost of the right beat, which is
+the worse trade. Don't rebuild it.
 
-**Start always starts.** A version that armed and waited for the peer's *next*
-transport start shipped and was reverted: a loop already running never produces
-one, so the app sat in the count-in for ever. Don't reintroduce a wait, and
-don't add a bars-per-cycle setting without asking — that option was offered and
-declined.
+**Start always starts.** A version that armed and waited for the peer's next
+transport start also shipped and was reverted — a loop already running never
+produces one, so the app sat in the count-in for ever.
 
-**The alignment origin is the peer's bar 1, not their transport start.** **Live
-turns Link's transport on when its count-in starts, not when bar 1 does**, and
-Link says neither which it is nor how long a count-in runs — so `linkBeat`
-subtracts one of *our* count-ins from `beatsSinceStart`. That assumes their
-count-in is a bar, like ours; it is the one guess left in this path, and it is
-the user's own configuration. What remains unfixable is a lesson loop shorter
-than theirs: 2 bars counted through a 4-bar Ableton loop is bar 1 or bar 3, and
-Link carries their loop length nowhere.
+What survives from that round is the one thing that was measured rather than
+inferred: **`Transport.start` takes a `StartGrid`** so beat 0 is pinned to Link's
+grid instead of being yanked onto it a frame later. That yank was up to half a
+loop and it ate the count-in it landed in — measured at 1.427s to 2.317s against
+a 2.15s bar — and `anchorTo` moved the scheduling window with it, so the skipped
+clicks never sounded. `tests/link-sync.test.ts` simulates a session and pins it.
 
-Two more rules hang off the alignment: `Transport.start`
-takes a `StartGrid` so beat 0 is *pinned* rather than yanked into place a frame
-later — the yank was up to half a loop and ate the count-in it landed in — and
-once the run proper is under way the follower only trims drift
-(`LINK_MAX_TRIM_BEATS`), because teleporting a playing lesson would score the
-player against notes they never saw. `tests/link-sync.test.ts` simulates a
-session and pins all of it.
+**What Link cannot do here, and don't pretend otherwise:** it carries no loop
+length, so which bar of a 4-bar Ableton loop a 2-bar lesson starts on is not
+knowable. A bars-per-cycle setting is the only real fix and was offered and
+declined — don't add one without asking again.
 
 The **trainer redesign** has landed across several handoffs. **Handoff 05 (turn
 11) is the current design** and supersedes everything before it where they

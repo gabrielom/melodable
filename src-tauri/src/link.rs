@@ -40,16 +40,6 @@ pub struct LinkState {
     /// audio clock, so a slow event delivery can't skew the phase we align to.
     #[serde(rename = "clockMicros")]
     pub clock_micros: i64,
-    /// True when a peer's transport is running and we can see it. Needs
-    /// start/stop sync at both ends — in Live that is Link's "Start Stop Sync"
-    /// checkbox, which is not on by default.
-    pub playing: bool,
-    /// Beats from that peer's transport start to `clock_micros`. This is the
-    /// only thing Link carries that names *their downbeat* rather than merely
-    /// a boundary of some quantum, so it is what our loop 0 lines up with.
-    /// Zero, and meaningless, when `playing` is false.
-    #[serde(rename = "beatsSinceStart")]
-    pub beats_since_start: f64,
 }
 
 pub use imp::LinkHandle;
@@ -116,14 +106,9 @@ mod imp {
 
     impl Default for LinkHandle {
         fn default() -> Self {
-            // Link needs a starting tempo; a peer's tempo wins once we join.
-            let link = AblLink::new(120.0);
-            // Without this the session state never carries a transport, and
-            // all Link can tell us is where some quantum boundary falls — not
-            // where the other app's loop actually begins.
-            link.enable_start_stop_sync(true);
             Self {
-                link,
+                // Link needs a starting tempo; a peer's tempo wins once we join.
+                link: AblLink::new(120.0),
                 quantum: AtomicU64::new(4.0f64.to_bits()),
                 polling: AtomicBool::new(false),
                 commit: Mutex::new(()),
@@ -137,16 +122,6 @@ mod imp {
             let mut session = SessionState::new();
             self.link.capture_app_session_state(&mut session);
             let now = self.link.clock_micros();
-            // `beat_at_time`'s magnitude is private to this client, but the
-            // *difference* between two of its readings is real beats — so the
-            // gap from their transport start to now is a number we can use.
-            let playing = session.is_playing();
-            let start_micros = session.time_for_is_playing();
-            let beats_since_start = if playing {
-                session.beat_at_time(now, quantum) - session.beat_at_time(start_micros, quantum)
-            } else {
-                0.0
-            };
             LinkState {
                 enabled: self.link.is_enabled(),
                 available: true,
@@ -154,8 +129,6 @@ mod imp {
                 phase: session.phase_at_time(now, quantum),
                 peers: self.link.num_peers(),
                 clock_micros: now,
-                playing,
-                beats_since_start,
             }
         }
     }

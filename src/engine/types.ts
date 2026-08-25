@@ -92,12 +92,6 @@ export interface LinkState {
   /** Link's clock reading for this snapshot. Map it onto the audio clock via
    *  `HostClock` before using it — never apply it at delivery time. */
   clockMicros: number;
-  /** True when a peer's transport is running and we can see it. Needs Link's
-   *  "Start Stop Sync" switched on at both ends. */
-  playing: boolean;
-  /** Beats from that peer's transport start to `clockMicros`. Names their
-   *  downbeat rather than a quantum boundary; 0 when `playing` is false. */
-  beatsSinceStart: number;
 }
 
 /**

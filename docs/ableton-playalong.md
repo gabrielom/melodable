@@ -83,14 +83,11 @@ and it works alongside everything in sections 1–4.
 
 ### Turning it on
 
-1. In Ableton: **Settings → Link / Tempo / MIDI → Link: Show / On**, and tick
-   **Start Stop Sync** in the same panel. It is off by default, and it is what
-   lets Melodable see *where Ableton's loop begins* — see below.
+1. In Ableton: **Settings → Link / Tempo / MIDI → Link: Show / On**.
 2. In Melodable: click the **chain icon** in the transport bar, left of the MIDI
    device menu. It turns teal and shows the peer count as a small badge.
-3. Start Ableton's transport, then hit ▶ Play in Melodable. It counts in from
-   the next boundary of Ableton's loop and the run begins on one of Ableton's
-   own downbeats. Ableton's tempo and clock drive the trainer throughout.
+3. Hit ▶ Play. The trainer's loop now rides Ableton's grid: the loop boundary
+   lands on Ableton's, and moving Ableton's tempo moves the trainer.
 
 The tempo slider still works while linked — dragging it *proposes* the tempo to
 the whole session, so Melodable can drive Ableton as well as follow it. That's
@@ -109,55 +106,30 @@ normal Link behaviour, the same as between two Live sets.
 - Link's quantum is the *lesson's loop length*, so a 2-bar lesson lines up with
   Ableton every 2 bars rather than every beat.
 - ▶ Play does not start the run where you pressed it. `Transport.start` takes
-  the grid and pins beat 0 to it, so the count-in begins on a boundary and the
-  follower has nothing left to correct. The gap between the press and the
-  count-in is silent — under one loop — and the four rings sit empty until it
-  begins.
+  the grid Link last described and pins beat 0 to it, so the count-in begins on
+  a boundary and the follower has nothing left to correct. Without that the run
+  started at whatever phase the press landed on and was dragged onto the grid a
+  frame later — up to half a loop, which ate the count-in it landed in and
+  dropped the clicks it skipped. The gap between the press and the count-in is
+  silent and never longer than one loop.
 
 ### What it can and cannot line up
 
-Link puts tempo and phase on the wire. It does **not** put your loop length
-there — there is no message that says "my loop is four bars". What it does name,
-once Start Stop Sync is on, is the moment your transport started. Melodable
-counts whole *lesson* loops from that, so the run always begins on a boundary of
-yours.
+Tempo and beat are exact: Melodable follows Ableton's clock, and the alignment
+comes from Link's *phase*, which is derived from the session's own beat grid.
 
-Where the two loop lengths differ that still leaves a choice Link cannot settle:
-a two-bar lesson counted forward through a four-bar Ableton loop lands on bar 1
-or bar 3, and which one depends on when you pressed Play. Bar-level and tempo
-sync are exact; loop-top sync is exact only when the lesson's loop length
-matches yours.
+Which **bar** of your loop the lesson starts on is not something Link can settle.
+Phase names a boundary of some quantum, and the two apps do not use the same
+one — Ableton's is a bar, ours is the whole lesson loop — so a 2-bar lesson
+against a 4-bar Ableton loop begins on bar 1 or bar 3, fixed for the session but
+decided by where Ableton's transport started against a session timeline neither
+app chose. **Link puts your loop length on the wire nowhere.** A 1-bar lesson
+lands on one of your downbeats every time; longer ones may sit a bar in.
 
-**Live turns Link's transport on when its *count-in* starts, not when bar 1
-does**, and Link carries no way to tell those apart or to say how long a count-in
-is. Melodable therefore counts from one count-in bar after the transport start —
-where your loop actually begins. This assumes **Ableton's count-in is one bar**,
-the same as Melodable's. Set Live's to two bars, or switch it off, and the two
-no longer match.
-
-Start always starts. An earlier version held until Ableton's *next* transport
-start, which never came for a loop already running and left the app stuck in the
-count-in; that is gone.
-
-With no Link peer at all, Play behaves as it always did — a full count-in,
-starting straight away.
-
-### Why Start Stop Sync matters
-
-Link's *phase* only tells you where a boundary of some quantum falls, and the
-two apps do not use the same quantum: Ableton's is one bar, ours is the whole
-lesson loop. For a two-bar lesson that means half of Ableton's downbeats are not
-boundaries of ours, and which one we lock to is decided by where Ableton's
-transport happened to start against a session timeline neither app chose. Half
-the time it is Ableton's loop start; half the time it is the bar in the middle
-of it.
-
-Start Stop Sync is what carries the transport at all: `is_playing` and the clock
-time it started. Rust reports those as `playing` and `beatsSinceStart`. Without
-it Melodable never sees a transport and falls back to session phase, which still
-locks tempo and bars but can sit a bar out from your loop — because session phase
-names a boundary of *some* quantum, and yours is one bar while ours is the whole
-lesson loop.
+Ableton's *transport start* looks like the answer to that and is not:
+`time_for_is_playing` is the time of an event, not of a beat, so aligning to it
+takes a loop that was on the beat and pulls it off. It was tried and reverted —
+it traded the downbeat for the bar, which is the worse of the two.
 
 ### Building it
 
