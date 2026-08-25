@@ -70,20 +70,20 @@ transport start; `linkBeat` prefers it and falls back to `phase` only when no
 peer publishes a transport (Live's "Start Stop Sync" is off by default). Don't
 go back to phase-only alignment.
 
-**With a peer on the session, Start arms rather than starts.** Link carries the
-peer's loop *length* nowhere, so counting our own loops from anywhere still
-lands inside a longer one — every built-in lesson is 1 or 2 bars, and against a
-4-bar Ableton loop that is bar 1, 2, 3 or 4 at the mercy of when Start was
-pressed. Their transport start is the one downbeat Link names outright, so
-`Transport.startAt` pins beat 0 to a time derived from it. Derived, not equal:
-**Live turns Link's transport on when its count-in starts, not when bar 1 does**,
-and Link says neither which it is nor how long a count-in runs — so ours runs
-over theirs and beat 0 lands one of *our* count-ins later. That assumes their
+**Start always starts.** A version that armed and waited for the peer's *next*
+transport start shipped and was reverted: a loop already running never produces
+one, so the app sat in the count-in for ever. Don't reintroduce a wait, and
+don't add a bars-per-cycle setting without asking — that option was offered and
+declined.
+
+**The alignment origin is the peer's bar 1, not their transport start.** **Live
+turns Link's transport on when its count-in starts, not when bar 1 does**, and
+Link says neither which it is nor how long a count-in runs — so `linkBeat`
+subtracts one of *our* count-ins from `beatsSinceStart`. That assumes their
 count-in is a bar, like ours; it is the one guess left in this path, and it is
-the user's own configuration. While armed the count-in screen holds with empty
-rings and a `waiting` caption. Don't replace this with
-a guessed alignment unit, and don't add a bars-per-cycle setting without asking
-— that option was offered and declined.
+the user's own configuration. What remains unfixable is a lesson loop shorter
+than theirs: 2 bars counted through a 4-bar Ableton loop is bar 1 or bar 3, and
+Link carries their loop length nowhere.
 
 Two more rules hang off the alignment: `Transport.start`
 takes a `StartGrid` so beat 0 is *pinned* rather than yanked into place a frame
