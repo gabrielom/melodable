@@ -50,6 +50,15 @@ pub struct LinkState {
     /// Zero, and meaningless, when `playing` is false.
     #[serde(rename = "beatsSinceStart")]
     pub beats_since_start: f64,
+    /// Link's clock reading for the peer's last transport start or stop.
+    ///
+    /// Live quantizes its own launch, so when `playing` turns true this is
+    /// often a little way *ahead* of `clock_micros` — the downbeat it is about
+    /// to start on. That is exactly the instant a waiting run begins at, so
+    /// report it rather than deriving it, and let the frontend map it through
+    /// `HostClock` like any other host stamp.
+    #[serde(rename = "startMicros")]
+    pub start_micros: i64,
 }
 
 pub use imp::LinkHandle;
@@ -141,9 +150,9 @@ mod imp {
             // *difference* between two of its readings is real beats — so the
             // gap from their transport start to now is a number we can use.
             let playing = session.is_playing();
+            let start_micros = session.time_for_is_playing();
             let beats_since_start = if playing {
-                session.beat_at_time(now, quantum)
-                    - session.beat_at_time(session.time_for_is_playing(), quantum)
+                session.beat_at_time(now, quantum) - session.beat_at_time(start_micros, quantum)
             } else {
                 0.0
             };
@@ -156,6 +165,7 @@ mod imp {
                 clock_micros: now,
                 playing,
                 beats_since_start,
+                start_micros,
             }
         }
     }

@@ -407,6 +407,8 @@ export function paintCountIn(
     beat: number;
     reducedMotion: boolean;
     lessonName: string;
+    /** Holding for a peer's downbeat rather than counting in to our own. */
+    waiting?: boolean;
     w: number;
     h: number;
     mono: string;
@@ -448,7 +450,7 @@ export function paintCountIn(
   ctx.fillText(opts.lessonName, W / 2, cy + R + 26);
   ctx.fillStyle = p.txt3;
   ctx.font = `500 8.5px ${opts.mono}`;
-  ctx.fillText("ESC TO STOP", W / 2, cy + R + 46);
+  ctx.fillText(opts.waiting ? "WAITING FOR ABLETON · ESC TO STOP" : "ESC TO STOP", W / 2, cy + R + 46);
   ctx.textBaseline = "alphabetic";
   ctx.textAlign = "left";
 }

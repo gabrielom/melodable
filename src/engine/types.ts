@@ -98,6 +98,10 @@ export interface LinkState {
   /** Beats from that peer's transport start to `clockMicros`. Names their
    *  downbeat rather than a quantum boundary; 0 when `playing` is false. */
   beatsSinceStart: number;
+  /** Link's clock reading for the peer's last transport start or stop. Often a
+   *  little ahead of `clockMicros` when `playing` has just turned true, because
+   *  Live quantizes its own launch — that lead is the downbeat to start on. */
+  startMicros: number;
 }
 
 /**

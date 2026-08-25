@@ -20,6 +20,8 @@ export interface LaneFrame {
   secPerBeat: number;
   playing: boolean;
   countIn: boolean;
+  /** Armed and holding for a Link peer's downbeat — nothing is counting yet. */
+  waiting: boolean;
   /** Beats elapsed within the count-in. */
   countInBeat: number;
   countInBeats: number;

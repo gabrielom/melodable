@@ -181,3 +181,81 @@ describe("following a Link session", () => {
     expect(sinceTheirs / t.loopBeats).toBeCloseTo(Math.round(sinceTheirs / t.loopBeats), 9);
   });
 });
+
+/**
+ * Waiting for Ableton, which is the only way to land on the top of *their*
+ * loop. Link puts their loop length on the wire nowhere, so counting our own
+ * loops from their transport start still lands a bar or two inside a loop
+ * longer than ours — a 4-bar loop against a 2-bar lesson is bar 1 or bar 3.
+ * Their transport start is the one downbeat Link names outright.
+ */
+describe("starting on the peer's transport", () => {
+  const oneBar = () =>
+    new Transport({ bpm: 120, bars: 1, beatsPerBar: 4, countInBars: 1, totalLoops: 64 });
+  const twoBar = () =>
+    new Transport({ bpm: 120, bars: 2, beatsPerBar: 4, countInBars: 1, totalLoops: 64 });
+
+  /** Their beat timeline, counted from the moment their transport started. */
+  const sinceStart = (link: ReturnType<typeof session>, theirStart: number) => ({
+    tempo: link.tempo,
+    beatAt: (t: number) => link.beatAt(t) - link.beatAt(theirStart),
+    phaseAt: (t: number, q: number) => {
+      const b = link.beatAt(t) - link.beatAt(theirStart);
+      return ((b % q) + q) % q;
+    },
+  });
+
+  it("puts beat 0 exactly on their downbeat, whatever our loop length", () => {
+    const theirStart = 7.94; // on no boundary of ours
+    for (const t of [oneBar(), twoBar()]) {
+      // Live quantizes its own launch, so we hear about it a little early.
+      t.startAt(theirStart, theirStart - 0.4);
+      expect(t.timeOfAbsBeat(0)).toBeCloseTo(theirStart, 9);
+    }
+  });
+
+  /**
+   * The report's own shape: their loop is 4 bars, the lesson is 2. Every one
+   * of our loop tops has to be one of theirs — not the bar in the middle.
+   */
+  it("keeps a 2-bar lesson on the tops of a 4-bar loop", () => {
+    const link = session(120, 0.317);
+    const theirStart = 7.94;
+    const theirLoopBeats = 16;
+    const t = twoBar();
+    t.startAt(theirStart, theirStart - 0.4);
+
+    // Our loop 0 and 2 are their loop tops; 1 and 3 are their halfway bars,
+    // which is fine — what matters is that we never start on one.
+    const beatOfOurLoop = (i: number) => (t.timeOf(i, 0) - theirStart) / t.secPerBeat;
+    expect(beatOfOurLoop(0) % theirLoopBeats).toBeCloseTo(0, 9);
+    expect(beatOfOurLoop(2) % theirLoopBeats).toBeCloseTo(0, 9);
+
+    // And the follower, now counting from their downbeat, leaves it alone.
+    const theirs = sinceStart(link, theirStart);
+    let corrections = 0;
+    for (let at = theirStart; at <= theirStart + 20; at += 1 / 30) {
+      const before = t.timeOfAbsBeat(0);
+      follow(t, { tempo: theirs.tempo, phase: theirs.phaseAt(at, t.loopBeats) }, at, true);
+      if (Math.abs(t.timeOfAbsBeat(0) - before) > 1e-9) corrections++;
+    }
+    expect(corrections).toBe(0);
+  });
+
+  it("plays whatever of the count-in fits in the lead they gave", () => {
+    const t = twoBar();
+    const theirStart = 12.0;
+
+    // A bar of warning: the whole count-in sounds.
+    t.startAt(theirStart, theirStart - 2.0);
+    const full = t.advanceScheduler(theirStart - 2.0, 4.0);
+    expect(full?.from).toBe(-4);
+
+    // None at all: we drop straight in rather than clicking into the past.
+    const u = twoBar();
+    u.startAt(theirStart, theirStart);
+    const none = u.advanceScheduler(theirStart, 4.0);
+    expect(none?.from).toBe(0);
+    expect(u.clicksIn(none!.from, none!.to).every((c) => c.absBeat >= 0)).toBe(true);
+  });
+});

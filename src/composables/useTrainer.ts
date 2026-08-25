@@ -291,10 +291,12 @@ export function useTrainer(
   function drawFrame(
     now: number,
     pos: { countIn: boolean; countInBeat: number; absBeat: number } | null,
+    waiting = false,
   ): void {
     if (!renderer) return;
     renderer.resize();
     renderer.draw({
+      waiting,
       now,
       secPerBeat: transport.secPerBeat,
       absBeat: pos?.absBeat ?? idleAbsBeat(),
@@ -360,7 +362,15 @@ export function useTrainer(
       totalLoops: totalLoops.value,
     });
     const startedAt = audio.now;
-    transport.start(startedAt, START_DELAY, startGrid(startedAt));
+    const link = liveLink(startedAt);
+    if (link && link.peers > 0) {
+      // Hold for their downbeat instead of guessing at one.
+      armedAfterMicros = link.startMicros;
+      armed.value = true;
+    } else {
+      armed.value = false;
+      transport.start(startedAt, START_DELAY, startGrid(startedAt));
+    }
     lastLoop = -1;
     accuracy.value = 100;
     combo.value = 0;
@@ -372,6 +382,7 @@ export function useTrainer(
   function stop(): void {
     transport.stop();
     playing.value = false;
+    armed.value = false;
     // The click and the guide are queued ahead of the playhead; without this
     // they keep sounding for a beat or two after the transport has stopped.
     audio.cancelScheduled("metronome", "guide");
@@ -388,6 +399,7 @@ export function useTrainer(
     runRatings.clear();
     transport.stop();
     playing.value = false;
+    armed.value = false;
     audio.cancelScheduled("metronome", "guide");
     transport = new Transport({
       bpm: lesson.value.bpm,
@@ -428,7 +440,19 @@ export function useTrainer(
    * beat 0 to. Null until a snapshot arrives, and treated as gone once it is
    * older than `LINK_GRID_TTL`.
    */
-  let linkGrid: (StartGrid & { playing: boolean }) | null = null;
+  let linkGrid: (StartGrid & { playing: boolean; peers: number; startMicros: number }) | null =
+    null;
+
+  /**
+   * Armed and waiting for Ableton's transport. With a peer on the session,
+   * Start does not start — it waits for the peer's next transport start and
+   * begins there, because that instant is the only downbeat Link names and so
+   * the only one guaranteed to be the top of *their* loop rather than some bar
+   * inside it. Their loop length is not on the wire at all.
+   */
+  const armed = ref(false);
+  /** The transport-event stamp seen when we armed; a different one is a start. */
+  let armedAfterMicros = 0;
 
   /**
    * Where the run's beat 0 belongs, counted from a beat 0 of Link's own.
@@ -456,7 +480,22 @@ export function useTrainer(
     linkClock.sync(s.clockMicros, now);
     // The instant this snapshot describes, in audio-clock terms.
     const at = linkClock.toAudioTime(s.clockMicros, now);
-    linkGrid = { beat: linkBeat(s), at, playing: s.playing };
+    linkGrid = {
+      beat: linkBeat(s),
+      at,
+      playing: s.playing,
+      peers: s.peers,
+      startMicros: s.startMicros,
+    };
+
+    // Their transport just started: that is the downbeat we have been holding
+    // for. `startMicros` is often slightly ahead of now — Live quantizes its
+    // own launch — so this usually arrives with a little of the bar to spare.
+    if (armed.value && s.playing && s.startMicros !== armedAfterMicros) {
+      transport.startAt(linkClock.toAudioTime(s.startMicros, now), now);
+      armed.value = false;
+      scorer.retime(timeOf);
+    }
 
     let moved = false;
 
@@ -482,10 +521,15 @@ export function useTrainer(
     if (moved && playing.value) scorer.retime(timeOf);
   }
 
+  /** The latest Link snapshot, or null when the session has gone quiet. */
+  function liveLink(now: number) {
+    return linkGrid && now - linkGrid.at <= LINK_GRID_TTL ? linkGrid : null;
+  }
+
   /** The Link grid to start against, or undefined when there isn't a live one. */
   function startGrid(now: number): StartGrid | undefined {
-    if (!linkGrid || now - linkGrid.at > LINK_GRID_TTL) return undefined;
-    return { beat: linkGrid.beat, at: linkGrid.at };
+    const g = liveLink(now);
+    return g ? { beat: g.beat, at: g.at } : undefined;
   }
 
 
@@ -498,7 +542,7 @@ export function useTrainer(
    * or null for strays/count-in/stopped.
    */
   function strike(lane: number, time?: number): Rating | null {
-    if (!playing.value) return null;
+    if (!playing.value || armed.value) return null;
     const now = audio.now;
     if (transport.position(now).countIn) return null;
     const res = scorer.hit(lane, time ?? now);
@@ -600,6 +644,12 @@ export function useTrainer(
 
       // The run is over: grade whatever is left and come to rest.
       if (pos.finished) finishRun();
+    } else if (playing.value && armed.value) {
+      // Holding for Ableton's downbeat. The count-in screen is already the
+      // right picture for this — the rings simply stay empty, because a
+      // negative beat fills none of them.
+      drawFrame(now, { countIn: true, countInBeat: -1, absBeat: idleAbsBeat() }, true);
+      drawOverview(null);
     } else {
       // Parked one count-in before the run: the strip's rectangle is clamped
       // to the run, so it still covers exactly the slice of it the lane is

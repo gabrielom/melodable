@@ -507,6 +507,7 @@ export class PadLanes implements LaneRenderer {
       palette: f.palette,
       beats: f.countInBeats,
       beat: f.countInBeat,
+      waiting: f.waiting,
       reducedMotion: f.reducedMotion,
       lessonName: f.lessonName,
       w: W,
