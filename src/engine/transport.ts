@@ -156,23 +156,6 @@ export class Transport {
   }
 
   /**
-   * Begin with beat 0 at an exact clock time, rather than at the next boundary
-   * of our own loop. The Link follower derives that time from the one downbeat
-   * Link can actually name — the peer's transport start.
-   *
-   * Whatever of the count-in still fits before `beatZero` is what sounds; the
-   * rest is silence, and nothing is ever scheduled into the past.
-   */
-  startAt(beatZero: number, now: number): void {
-    this.playing = true;
-    this.anchorLoop = 0;
-    this.anchorTime = beatZero;
-    // Never schedule into the past — if their downbeat has already gone by,
-    // the count-in went with it.
-    this.scheduledUntilBeat = Math.max(-this.countInBeats, this.absBeatAt(now));
-  }
-
-  /**
    * The first grid boundary at or after `t`. Boundaries sit a whole number of
    * loops from the grid's own beat 0, so our loop lines up with theirs and not
    * merely with a bar of theirs.

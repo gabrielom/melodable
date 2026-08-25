@@ -172,109 +172,38 @@ describe("following a Link session", () => {
     expect(link.phaseAt(theirStart, 8)).toBeCloseTo(4, 9);
 
     const t = twoBar();
-    // The grid we hand `start` counts from *their* downbeat, not from phase 0.
+    // The grid we hand `start` counts from *their bar 1*, not from phase 0 and
+    // not from their transport start — Live turns the transport on with its
+    // count-in, so bar 1 is a count-in later.
     const at = 10.41;
-    t.start(at, START_DELAY, { beat: link.beatAt(at) - link.beatAt(theirStart), at });
+    const theirBarOne = theirStart + t.countInBeats * t.secPerBeat;
+    t.start(at, START_DELAY, { beat: link.beatAt(at) - link.beatAt(theirBarOne), at });
 
     // Every one of our loop boundaries is a whole number of loops from theirs.
-    const sinceTheirs = (t.timeOfAbsBeat(0) - theirStart) / t.secPerBeat;
+    const sinceTheirs = (t.timeOfAbsBeat(0) - theirBarOne) / t.secPerBeat;
     expect(sinceTheirs / t.loopBeats).toBeCloseTo(Math.round(sinceTheirs / t.loopBeats), 9);
   });
-});
-
-/**
- * Waiting for Ableton, which is the only way to land on the top of *their*
- * loop. Link puts their loop length on the wire nowhere, so counting our own
- * loops from their transport start still lands a bar or two inside a loop
- * longer than ours — a 4-bar loop against a 2-bar lesson is bar 1 or bar 3.
- * Their transport start is the one downbeat Link names outright.
- */
-describe("starting on the peer's transport", () => {
-  const oneBar = () =>
-    new Transport({ bpm: 120, bars: 1, beatsPerBar: 4, countInBars: 1, totalLoops: 64 });
-  const twoBar = () =>
-    new Transport({ bpm: 120, bars: 2, beatsPerBar: 4, countInBars: 1, totalLoops: 64 });
 
   /**
-   * What the follower does when the peer's transport starts. Their transport
-   * turns on with their count-in, so ours runs over theirs and beat 0 lands a
-   * count-in later — the beat their loop actually begins on.
+   * The regression that mattered most: Start has to start. Arming for a peer's
+   * next transport start meant an Ableton loop already running never produced
+   * one, and the app sat in the count-in for ever.
    */
-  function peerStarted(t: Transport, theirStart: number, now: number) {
-    t.startAt(theirStart + t.countInBeats * t.secPerBeat, now);
-  }
-
-  /** Their beat timeline, counted from the moment their transport started. */
-  const sinceStart = (link: ReturnType<typeof session>, theirStart: number) => ({
-    tempo: link.tempo,
-    beatAt: (t: number) => link.beatAt(t) - link.beatAt(theirStart),
-    phaseAt: (t: number, q: number) => {
-      const b = link.beatAt(t) - link.beatAt(theirStart);
-      return ((b % q) + q) % q;
-    },
-  });
-
-  it("counts in over their count-in, so bar 1 is the same beat", () => {
-    const theirStart = 7.94; // their transport on: the top of their count-in
-    for (const t of [oneBar(), twoBar()]) {
-      // Live quantizes its own launch, so we hear about it a little early.
-      peerStarted(t, theirStart, theirStart - 0.4);
-      // Their loop begins a bar after their transport did; so does our run.
-      const theirBarOne = theirStart + 4 * t.secPerBeat;
-      expect(t.timeOfAbsBeat(0)).toBeCloseTo(theirBarOne, 9);
-      // And our count-in fills exactly their count-in bar.
-      expect(t.timeOfAbsBeat(-t.countInBeats)).toBeCloseTo(theirStart, 9);
-    }
-  });
-
-  /**
-   * The report's own shape: their loop is 4 bars, the lesson is 2. Every one
-   * of our loop tops has to be one of theirs — not the bar in the middle.
-   */
-  it("keeps a 2-bar lesson on the tops of a 4-bar loop", () => {
+  it("starts against a peer whose transport is already running", () => {
     const link = session(120, 0.317);
-    const theirStart = 7.94;
-    const theirLoopBeats = 16;
+    const theirStart = 6.317;
     const t = twoBar();
-    peerStarted(t, theirStart, theirStart - 0.4);
-    const theirBarOne = theirStart + 4 * t.secPerBeat;
+    const theirBarOne = theirStart + t.countInBeats * t.secPerBeat;
+    // Pressed Start a full four minutes into their loop.
+    const at = theirStart + 240;
+    t.start(at, START_DELAY, { beat: link.beatAt(at) - link.beatAt(theirBarOne), at });
 
-    // Our loop 0 and 2 are their loop tops; 1 and 3 are their halfway bars,
-    // which is fine — what matters is that we never start on one.
-    const beatOfOurLoop = (i: number) => (t.timeOf(i, 0) - theirBarOne) / t.secPerBeat;
-    expect(beatOfOurLoop(0) % theirLoopBeats).toBeCloseTo(0, 9);
-    expect(beatOfOurLoop(2) % theirLoopBeats).toBeCloseTo(0, 9);
-
-    // And the follower, now counting from their downbeat, leaves it alone.
-    const theirs = sinceStart(link, theirBarOne);
-    let corrections = 0;
-    for (let at = theirBarOne; at <= theirBarOne + 20; at += 1 / 30) {
-      const before = t.timeOfAbsBeat(0);
-      follow(t, { tempo: theirs.tempo, phase: theirs.phaseAt(at, t.loopBeats) }, at, true);
-      if (Math.abs(t.timeOfAbsBeat(0) - before) > 1e-9) corrections++;
-    }
-    expect(corrections).toBe(0);
-  });
-
-  it("plays the whole count-in when their transport starts on time", () => {
-    const t = twoBar();
-    const theirStart = 12.0;
-    peerStarted(t, theirStart, theirStart);
-    const win = t.advanceScheduler(theirStart, 4.0);
-    expect(win?.from).toBe(-4);
-  });
-
-  /**
-   * A peer already a bar into its count-in — a late-delivered snapshot, or a
-   * transport that started before we armed. We drop into whatever is left
-   * rather than clicking into the past.
-   */
-  it("never schedules a click behind the playhead", () => {
-    const t = twoBar();
-    const theirStart = 12.0;
-    peerStarted(t, theirStart, theirStart + 2.0);
-    const win = t.advanceScheduler(theirStart + 2.0, 4.0);
-    expect(win?.from).toBe(0);
-    expect(t.clicksIn(win!.from, win!.to).every((c) => c.absBeat >= 0)).toBe(true);
+    expect(t.isPlaying).toBe(true);
+    // The count-in begins at the next of their loop boundaries that still has
+    // room for it — so never later than one loop plus the scheduling lead-in,
+    // rather than never at all.
+    const wait = t.timeOfAbsBeat(-t.countInBeats) - at;
+    expect(wait).toBeGreaterThanOrEqual(START_DELAY);
+    expect(wait).toBeLessThan(t.loopBeats * t.secPerBeat + START_DELAY);
   });
 });
