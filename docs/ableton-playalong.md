@@ -83,11 +83,14 @@ and it works alongside everything in sections 1–4.
 
 ### Turning it on
 
-1. In Ableton: **Settings → Link / Tempo / MIDI → Link: Show / On**.
+1. In Ableton: **Settings → Link / Tempo / MIDI → Link: Show / On**, and tick
+   **Start Stop Sync** in the same panel. It is off by default, and it is what
+   lets Melodable see *where Ableton's loop begins* — see below.
 2. In Melodable: click the **chain icon** in the transport bar, left of the MIDI
    device menu. It turns teal and shows the peer count as a small badge.
-3. Hit ▶ Play. The trainer's loop now rides Ableton's grid: the loop boundary
-   lands on Ableton's, and moving Ableton's tempo moves the trainer.
+3. Start Ableton's transport, then hit ▶ Play in Melodable. The count-in waits
+   for the next downbeat of Ableton's loop before it starts, so the run's first
+   beat and Ableton's are the same beat.
 
 The tempo slider still works while linked — dragging it *proposes* the tempo to
 the whole session, so Melodable can drive Ableton as well as follow it. That's
@@ -105,6 +108,27 @@ normal Link behaviour, the same as between two Live sets.
   jittered 30 times a second.
 - Link's quantum is the *lesson's loop length*, so a 2-bar lesson lines up with
   Ableton every 2 bars rather than every beat.
+- ▶ Play does not start the run where you pressed it. `Transport.start` takes
+  the grid and pins beat 0 to it, so the count-in begins on a boundary and the
+  follower has nothing left to correct. The wait before the count-in is silent
+  — the four rings sit empty until it begins.
+
+### Why Start Stop Sync matters
+
+Link's *phase* only tells you where a boundary of some quantum falls, and the
+two apps do not use the same quantum: Ableton's is one bar, ours is the whole
+lesson loop. For a two-bar lesson that means half of Ableton's downbeats are not
+boundaries of ours, and which one we lock to is decided by where Ableton's
+transport happened to start against a session timeline neither app chose. Half
+the time it is Ableton's loop start; half the time it is the bar in the middle
+of it.
+
+Start Stop Sync is the one thing Link carries that names *their* downbeat: the
+clock time their transport started. Rust reports it as `beatsSinceStart`, and
+both the start and the follower count loops from there, so our loop boundary is
+a whole number of lesson loops from Ableton's own. With the checkbox off there
+is nothing to count from and the app falls back to session phase — which still
+locks tempo and bars, but can sit a bar out from Ableton's loop.
 
 ### Building it
 

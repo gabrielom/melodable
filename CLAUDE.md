@@ -61,6 +61,21 @@ follower in `useTrainer` that drives tempo via `Transport.setBpm` and phase via
 `Transport.anchorTo`. `docs/ableton-playalong.md` documents it, including the
 MIDI-Clock alternative if CMake ever becomes a problem.
 
+**Link aligns to the peer's downbeat, not to session phase.** Phase only names a
+boundary of *some* quantum, and Ableton's quantum is one bar while ours is the
+lesson loop — so for a two-bar lesson half of Ableton's downbeats are not
+boundaries of ours and we land a bar out at even odds. `link.rs` enables
+start/stop sync and reports `beatsSinceStart`, the beats from the peer's
+transport start; `linkBeat` prefers it and falls back to `phase` only when no
+peer publishes a transport (Live's "Start Stop Sync" is off by default). Don't
+go back to phase-only alignment. Two rules hang off this: `Transport.start`
+takes a `StartGrid` so beat 0 is *pinned* rather than yanked into place a frame
+later — the yank was up to half a loop and ate the count-in it landed in — and
+once the run proper is under way the follower only trims drift
+(`LINK_MAX_TRIM_BEATS`), because teleporting a playing lesson would score the
+player against notes they never saw. `tests/link-sync.test.ts` simulates a
+session and pins all of it.
+
 The **trainer redesign** has landed across several handoffs. **Handoff 05 (turn
 11) is the current design** and supersedes everything before it where they
 disagree; 02 (turn 10) still governs anything 05 does not mention, and its own
