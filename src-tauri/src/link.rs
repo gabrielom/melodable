@@ -95,23 +95,23 @@ mod imp {
     const IDLE: Duration = Duration::from_millis(250);
 
     pub struct LinkHandle {
-        link: AblLink,
+        /// Built on the first *enable*, never at startup — see `enable`. Also
+        /// dropped on disable, so every join is by a freshly built instance.
+        /// The mutex serialises that against the poll thread, and against the
+        /// capture/commit pair in `set_tempo`, which is read-modify-write.
+        link: Mutex<Option<AblLink>>,
         /// Loop length in beats, as f64 bits — the trainer sets it per lesson.
         quantum: AtomicU64,
         /// Whether the poll thread has been spawned yet.
         polling: AtomicBool,
-        /// Serialises the capture/commit pairs below, which are read-modify-write.
-        commit: Mutex<()>,
     }
 
     impl Default for LinkHandle {
         fn default() -> Self {
             Self {
-                // Link needs a starting tempo; a peer's tempo wins once we join.
-                link: AblLink::new(120.0),
+                link: Mutex::new(None),
                 quantum: AtomicU64::new(4.0f64.to_bits()),
                 polling: AtomicBool::new(false),
-                commit: Mutex::new(()),
             }
         }
     }
@@ -119,15 +119,23 @@ mod imp {
     impl LinkHandle {
         fn snapshot(&self) -> LinkState {
             let quantum = f64::from_bits(self.quantum.load(Ordering::Relaxed));
+            let guard = match self.link.lock() {
+                Ok(g) => g,
+                Err(_) => return LinkState { available: true, ..LinkState::default() },
+            };
+            let Some(link) = guard.as_ref() else {
+                // Built but never joined: available, switched off, nothing to say.
+                return LinkState { available: true, ..LinkState::default() };
+            };
             let mut session = SessionState::new();
-            self.link.capture_app_session_state(&mut session);
-            let now = self.link.clock_micros();
+            link.capture_app_session_state(&mut session);
+            let now = link.clock_micros();
             LinkState {
-                enabled: self.link.is_enabled(),
+                enabled: link.is_enabled(),
                 available: true,
                 tempo: session.tempo(),
                 phase: session.phase_at_time(now, quantum),
-                peers: self.link.num_peers(),
+                peers: link.num_peers(),
                 clock_micros: now,
             }
         }
@@ -136,10 +144,27 @@ mod imp {
     impl Drop for LinkHandle {
         fn drop(&mut self) {
             // Leaving the session on the way out is polite to other peers.
-            self.link.enable(false);
+            if let Ok(mut slot) = self.link.lock() {
+                if let Some(link) = slot.take() {
+                    link.enable(false);
+                }
+            }
         }
     }
 
+    /// Join or leave the session.
+    ///
+    /// **The `AblLink` is built here rather than in `Default`, and dropped
+    /// again on leaving.** When two Link sessions meet, the one that has been
+    /// running longer wins the merge and its timeline — tempo included — is
+    /// adopted by everyone else. Link measures "longer" from the moment the
+    /// instance was constructed: `initXForm` in Link's `Controller.hpp` maps
+    /// construction to ghost time 0, and `Sessions.hpp` prefers the session
+    /// with the larger ghost time. An instance alive since app launch is
+    /// therefore older than the one inside a DAW the user opened afterwards,
+    /// so *we* won and pushed our own seed tempo of 120 onto their running set.
+    /// Building it at the moment of joining makes us the newcomer instead, and
+    /// the newcomer is the one that adopts.
     pub fn enable(
         app: AppHandle,
         state: State<'_, LinkHandle>,
@@ -147,18 +172,26 @@ mod imp {
         quantum: f64,
     ) -> Result<LinkState, String> {
         state.quantum.store(quantum.to_bits(), Ordering::Relaxed);
-        state.link.enable(enabled);
+        {
+            let mut slot = state.link.lock().map_err(|e| e.to_string())?;
+            if enabled {
+                slot.get_or_insert_with(|| AblLink::new(120.0)).enable(true);
+            } else if let Some(link) = slot.take() {
+                link.enable(false);
+            }
+        }
 
         // Spawn the poll thread once, on first enable. Toggling Link off idles
         // it rather than tearing it down and respawning.
         if enabled && !state.polling.swap(true, Ordering::SeqCst) {
             let handle = app.clone();
             std::thread::spawn(move || loop {
-                let Some(link) = handle.try_state::<LinkHandle>() else {
+                let Some(state) = handle.try_state::<LinkHandle>() else {
                     return; // app is shutting down
                 };
-                if link.link.is_enabled() {
-                    let _ = handle.emit("link://state", link.snapshot());
+                let snap = state.snapshot();
+                if snap.enabled {
+                    let _ = handle.emit("link://state", snap);
                     std::thread::sleep(POLL);
                 } else {
                     std::thread::sleep(IDLE);
@@ -170,11 +203,12 @@ mod imp {
     }
 
     pub fn set_tempo(state: State<'_, LinkHandle>, bpm: f64) -> Result<(), String> {
+        let slot = state.link.lock().map_err(|e| e.to_string())?;
+        let Some(link) = slot.as_ref() else { return Ok(()) };
         let mut session = SessionState::new();
-        let _guard = state.commit.lock().map_err(|e| e.to_string())?;
-        state.link.capture_app_session_state(&mut session);
-        session.set_tempo(bpm, state.link.clock_micros());
-        state.link.commit_app_session_state(&session);
+        link.capture_app_session_state(&mut session);
+        session.set_tempo(bpm, link.clock_micros());
+        link.commit_app_session_state(&session);
         Ok(())
     }
 }

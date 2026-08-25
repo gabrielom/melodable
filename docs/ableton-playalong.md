@@ -96,7 +96,24 @@ normal Link behaviour, the same as between two Live sets.
 ### How it works
 
 - `src-tauri/src/link.rs` owns the session and polls it at ~30 Hz, emitting
-  `link://state` — the same Rust→Vue event pattern as MIDI.
+  `link://state` — the same Rust→Vue event pattern as MIDI. The `AblLink`
+  instance is built when you *join* and dropped when you leave, never held open
+  from app launch — see below.
+
+### Why joining must not change Ableton's tempo
+
+When two Link sessions meet, the one that has been running longer wins the
+merge, and its timeline — tempo included — is adopted by everyone else. Link
+measures "longer" from the moment the instance was **constructed**: `initXForm`
+in Link's `Controller.hpp` maps construction to ghost time 0, and `Sessions.hpp`
+picks the session with the larger ghost time.
+
+Melodable used to build its `AblLink` at app launch. If the app had been open
+longer than the Link instance inside Live, Melodable's session was the older one,
+so it won — and pushed its own seed tempo of **120** onto your running set the
+moment you switched the chain icon on. Building the instance at the moment of
+joining makes Melodable the newcomer, and the newcomer is the one that adopts.
+Leaving drops it again, so the next join is a newcomer too.
 - Each snapshot carries Link's own clock reading. The frontend maps that onto
   the `AudioContext` clock (`src/engine/host-clock.ts`, shared with the midir
   path) so a slow event delivery can't skew the phase we align to.

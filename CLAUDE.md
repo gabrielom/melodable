@@ -82,6 +82,16 @@ loop and it ate the count-in it landed in — measured at 1.427s to 2.317s again
 a 2.15s bar — and `anchorTo` moved the scheduling window with it, so the skipped
 clicks never sounded. `tests/link-sync.test.ts` simulates a session and pins it.
 
+**Build the `AblLink` on join, never at startup, and drop it on leave.** When
+two Link sessions meet the longer-running one wins the merge and its timeline —
+tempo included — is adopted by everyone else, and Link measures that from the
+instance's *construction* (`initXForm` maps construction to ghost time 0;
+`Sessions.hpp` prefers the larger ghost time). Held open from app launch, ours
+was older than the one inside a DAW opened later, so we won and shoved our seed
+tempo of 120 onto the user's running set the moment they enabled the toggle.
+`LinkHandle.link` is a `Mutex<Option<AblLink>>` for exactly this reason — don't
+"simplify" it back to an eager field.
+
 **What Link cannot do here, and don't pretend otherwise:** it carries no loop
 length, so which bar of a 4-bar Ableton loop a 2-bar lesson starts on is not
 knowable. A bars-per-cycle setting is the only real fix and was offered and
