@@ -157,13 +157,11 @@ export class Transport {
 
   /**
    * Begin with beat 0 at an exact clock time, rather than at the next boundary
-   * of our own loop — the peer's transport start, which is the one downbeat
-   * Link can actually name.
+   * of our own loop. The Link follower derives that time from the one downbeat
+   * Link can actually name — the peer's transport start.
    *
-   * Whatever of the count-in still fits before `beatZero` is what sounds: Live
-   * quantizes its launch so there is usually most of a bar of warning, but a
-   * peer that starts on the spot leaves none, and dropping straight in beats
-   * starting a bar out.
+   * Whatever of the count-in still fits before `beatZero` is what sounds; the
+   * rest is silence, and nothing is ever scheduled into the past.
    */
   startAt(beatZero: number, now: number): void {
     this.playing = true;

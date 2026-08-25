@@ -492,7 +492,13 @@ export function useTrainer(
     // for. `startMicros` is often slightly ahead of now — Live quantizes its
     // own launch — so this usually arrives with a little of the bar to spare.
     if (armed.value && s.playing && s.startMicros !== armedAfterMicros) {
-      transport.startAt(linkClock.toAudioTime(s.startMicros, now), now);
+      // Their transport turns on with their *count-in*, not with bar 1 — Live
+      // does this and Link carries no way to tell the two apart, nor how long
+      // their count-in is. So ours runs over theirs: beat 0 lands one count-in
+      // after their transport start, which is where both loops begin. This
+      // assumes their count-in is a bar, like ours.
+      const theirStart = linkClock.toAudioTime(s.startMicros, now);
+      transport.startAt(theirStart + transport.countInBeats * transport.secPerBeat, now);
       armed.value = false;
       scorer.retime(timeOf);
     }

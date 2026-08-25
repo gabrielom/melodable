@@ -90,8 +90,8 @@ and it works alongside everything in sections 1–4.
    device menu. It turns teal and shows the peer count as a small badge.
 3. Hit ▶ Play in Melodable **first**. It arms and holds — the count-in rings
    sit empty and the caption reads *WAITING FOR ABLETON*.
-4. Start Ableton's transport. Both begin on the same beat: the top of your
-   loop. Escape cancels the wait.
+4. Start Ableton's transport. Melodable counts in over Ableton's count-in bar,
+   and both loops begin on the same beat. Escape cancels the wait.
 
 The tempo slider still works while linked — dragging it *proposes* the tempo to
 the whole session, so Melodable can drive Ableton as well as follow it. That's
@@ -128,9 +128,16 @@ run's first beat are the same beat, whatever length either loop is. This is why
 the flow is Play-then-Ableton rather than the other way round, and why a loop
 already running has to be restarted to sync to it.
 
-The count-in still plays, as much of it as fits: Live quantizes its own launch,
-so Melodable usually hears about the start most of a bar before it happens. If
-Live starts on the spot there is no room for one and the run drops straight in.
+**Live turns Link's transport on when its *count-in* starts, not when bar 1
+does**, and Link carries no way to tell those apart or to say how long a count-in
+is. So Melodable's count-in runs over Ableton's: beat 0 lands one count-in bar
+after their transport start, which is where both loops actually begin. Taking
+their transport start as bar 1 put the run a bar early, playing through their
+count-in.
+
+This assumes **Ableton's count-in is one bar**, the same as Melodable's. Set
+Live's to two bars, or switch it off, and the two no longer match — tell me and
+I'll make the offset follow it.
 
 With no Link peer at all, Play behaves as it always did — a full count-in,
 starting straight away.

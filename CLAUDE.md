@@ -75,9 +75,13 @@ peer's loop *length* nowhere, so counting our own loops from anywhere still
 lands inside a longer one — every built-in lesson is 1 or 2 bars, and against a
 4-bar Ableton loop that is bar 1, 2, 3 or 4 at the mercy of when Start was
 pressed. Their transport start is the one downbeat Link names outright, so
-`Transport.startAt` pins beat 0 to it exactly and plays whatever of the count-in
-fits in the lead Live's launch quantization gives. While armed the count-in
-screen holds with empty rings and a `waiting` caption. Don't replace this with
+`Transport.startAt` pins beat 0 to a time derived from it. Derived, not equal:
+**Live turns Link's transport on when its count-in starts, not when bar 1 does**,
+and Link says neither which it is nor how long a count-in runs — so ours runs
+over theirs and beat 0 lands one of *our* count-ins later. That assumes their
+count-in is a bar, like ours; it is the one guess left in this path, and it is
+the user's own configuration. While armed the count-in screen holds with empty
+rings and a `waiting` caption. Don't replace this with
 a guessed alignment unit, and don't add a bars-per-cycle setting without asking
 — that option was offered and declined.
 

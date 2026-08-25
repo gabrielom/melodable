@@ -195,6 +195,15 @@ describe("starting on the peer's transport", () => {
   const twoBar = () =>
     new Transport({ bpm: 120, bars: 2, beatsPerBar: 4, countInBars: 1, totalLoops: 64 });
 
+  /**
+   * What the follower does when the peer's transport starts. Their transport
+   * turns on with their count-in, so ours runs over theirs and beat 0 lands a
+   * count-in later — the beat their loop actually begins on.
+   */
+  function peerStarted(t: Transport, theirStart: number, now: number) {
+    t.startAt(theirStart + t.countInBeats * t.secPerBeat, now);
+  }
+
   /** Their beat timeline, counted from the moment their transport started. */
   const sinceStart = (link: ReturnType<typeof session>, theirStart: number) => ({
     tempo: link.tempo,
@@ -205,12 +214,16 @@ describe("starting on the peer's transport", () => {
     },
   });
 
-  it("puts beat 0 exactly on their downbeat, whatever our loop length", () => {
-    const theirStart = 7.94; // on no boundary of ours
+  it("counts in over their count-in, so bar 1 is the same beat", () => {
+    const theirStart = 7.94; // their transport on: the top of their count-in
     for (const t of [oneBar(), twoBar()]) {
       // Live quantizes its own launch, so we hear about it a little early.
-      t.startAt(theirStart, theirStart - 0.4);
-      expect(t.timeOfAbsBeat(0)).toBeCloseTo(theirStart, 9);
+      peerStarted(t, theirStart, theirStart - 0.4);
+      // Their loop begins a bar after their transport did; so does our run.
+      const theirBarOne = theirStart + 4 * t.secPerBeat;
+      expect(t.timeOfAbsBeat(0)).toBeCloseTo(theirBarOne, 9);
+      // And our count-in fills exactly their count-in bar.
+      expect(t.timeOfAbsBeat(-t.countInBeats)).toBeCloseTo(theirStart, 9);
     }
   });
 
@@ -223,18 +236,19 @@ describe("starting on the peer's transport", () => {
     const theirStart = 7.94;
     const theirLoopBeats = 16;
     const t = twoBar();
-    t.startAt(theirStart, theirStart - 0.4);
+    peerStarted(t, theirStart, theirStart - 0.4);
+    const theirBarOne = theirStart + 4 * t.secPerBeat;
 
     // Our loop 0 and 2 are their loop tops; 1 and 3 are their halfway bars,
     // which is fine — what matters is that we never start on one.
-    const beatOfOurLoop = (i: number) => (t.timeOf(i, 0) - theirStart) / t.secPerBeat;
+    const beatOfOurLoop = (i: number) => (t.timeOf(i, 0) - theirBarOne) / t.secPerBeat;
     expect(beatOfOurLoop(0) % theirLoopBeats).toBeCloseTo(0, 9);
     expect(beatOfOurLoop(2) % theirLoopBeats).toBeCloseTo(0, 9);
 
     // And the follower, now counting from their downbeat, leaves it alone.
-    const theirs = sinceStart(link, theirStart);
+    const theirs = sinceStart(link, theirBarOne);
     let corrections = 0;
-    for (let at = theirStart; at <= theirStart + 20; at += 1 / 30) {
+    for (let at = theirBarOne; at <= theirBarOne + 20; at += 1 / 30) {
       const before = t.timeOfAbsBeat(0);
       follow(t, { tempo: theirs.tempo, phase: theirs.phaseAt(at, t.loopBeats) }, at, true);
       if (Math.abs(t.timeOfAbsBeat(0) - before) > 1e-9) corrections++;
@@ -242,20 +256,25 @@ describe("starting on the peer's transport", () => {
     expect(corrections).toBe(0);
   });
 
-  it("plays whatever of the count-in fits in the lead they gave", () => {
+  it("plays the whole count-in when their transport starts on time", () => {
     const t = twoBar();
     const theirStart = 12.0;
+    peerStarted(t, theirStart, theirStart);
+    const win = t.advanceScheduler(theirStart, 4.0);
+    expect(win?.from).toBe(-4);
+  });
 
-    // A bar of warning: the whole count-in sounds.
-    t.startAt(theirStart, theirStart - 2.0);
-    const full = t.advanceScheduler(theirStart - 2.0, 4.0);
-    expect(full?.from).toBe(-4);
-
-    // None at all: we drop straight in rather than clicking into the past.
-    const u = twoBar();
-    u.startAt(theirStart, theirStart);
-    const none = u.advanceScheduler(theirStart, 4.0);
-    expect(none?.from).toBe(0);
-    expect(u.clicksIn(none!.from, none!.to).every((c) => c.absBeat >= 0)).toBe(true);
+  /**
+   * A peer already a bar into its count-in — a late-delivered snapshot, or a
+   * transport that started before we armed. We drop into whatever is left
+   * rather than clicking into the past.
+   */
+  it("never schedules a click behind the playhead", () => {
+    const t = twoBar();
+    const theirStart = 12.0;
+    peerStarted(t, theirStart, theirStart + 2.0);
+    const win = t.advanceScheduler(theirStart + 2.0, 4.0);
+    expect(win?.from).toBe(0);
+    expect(t.clicksIn(win!.from, win!.to).every((c) => c.absBeat >= 0)).toBe(true);
   });
 });
