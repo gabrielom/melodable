@@ -49,9 +49,11 @@ export function useLink(onState?: (s: LinkState) => void) {
 
   /**
    * Join or leave the session. `quantum` is the trainer's loop length in beats
-   * — both apps need to agree on where a loop boundary falls.
+   * — both apps need to agree on where a loop boundary falls. `bpm` seeds the
+   * Link instance so that if we end up founding the session rather than joining
+   * one, the tempo we contribute is the one on screen.
    */
-  async function setEnabled(on: boolean, quantum: number): Promise<void> {
+  async function setEnabled(on: boolean, quantum: number, bpm: number): Promise<void> {
     error.value = "";
     if (!isTauri()) {
       error.value = "Run inside Tauri (npm run tauri dev) to use Ableton Link.";
@@ -62,7 +64,7 @@ export function useLink(onState?: (s: LinkState) => void) {
       if (on && !unlisten) {
         unlisten = await listen<LinkState>("link://state", (e) => apply(e.payload));
       }
-      apply(await invoke<LinkState>("link_enable", { enabled: on, quantum }));
+      apply(await invoke<LinkState>("link_enable", { enabled: on, quantum, bpm }));
     } catch (e) {
       error.value = String(e);
       enabled.value = false;

@@ -159,12 +159,12 @@ const {
 } = useLink(followLink);
 
 function toggleLink() {
-  void setLinkEnabled(!linkOn.value, loopBeats.value);
+  void setLinkEnabled(!linkOn.value, loopBeats.value, bpm.value);
 }
 
 // A different lesson can mean a different loop length — re-agree the quantum.
 watch(loopBeats, (q) => {
-  if (linkOn.value) void setLinkEnabled(true, q);
+  if (linkOn.value) void setLinkEnabled(true, q, bpm.value);
 });
 
 let logId = 0;

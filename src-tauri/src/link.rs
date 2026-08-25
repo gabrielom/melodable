@@ -59,11 +59,15 @@ pub fn link_enable(
     state: State<'_, LinkHandle>,
     enabled: bool,
     quantum: f64,
+    bpm: f64,
 ) -> Result<LinkState, String> {
     if !(quantum.is_finite() && quantum > 0.0) {
         return Err(format!("invalid quantum {quantum}"));
     }
-    imp::enable(app, state, enabled, quantum)
+    if !(bpm.is_finite() && bpm > 0.0) {
+        return Err(format!("invalid tempo {bpm}"));
+    }
+    imp::enable(app, state, enabled, quantum, bpm)
 }
 
 /// Propose a tempo to the whole session — the trainer's slider driving Ableton,
@@ -170,12 +174,17 @@ mod imp {
         state: State<'_, LinkHandle>,
         enabled: bool,
         quantum: f64,
+        bpm: f64,
     ) -> Result<LinkState, String> {
         state.quantum.store(quantum.to_bits(), Ordering::Relaxed);
         {
             let mut slot = state.link.lock().map_err(|e| e.to_string())?;
             if enabled {
-                slot.get_or_insert_with(|| AblLink::new(120.0)).enable(true);
+                // Seeded with the tempo on screen, not a constant. A founding
+                // instance's tempo becomes the session's, and a stray 120 that
+                // appears nowhere in the UI is the worst possible thing to hand
+                // a set that is already playing.
+                slot.get_or_insert_with(|| AblLink::new(bpm)).enable(true);
             } else if let Some(link) = slot.take() {
                 link.enable(false);
             }
@@ -229,6 +238,7 @@ mod imp {
         _state: State<'_, LinkHandle>,
         _enabled: bool,
         _quantum: f64,
+        _bpm: f64,
     ) -> Result<LinkState, String> {
         // available:false — the UI hides the toggle rather than failing loudly.
         Ok(LinkState::default())
