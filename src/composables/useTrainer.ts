@@ -173,10 +173,21 @@ export function useTrainer(
 
   /**
    * Run shape. A lesson is a finite piece of music: the pattern plays
-   * `totalLoops` times and then ends. `loopBeats` doubles as Ableton Link's
-   * quantum, so loop boundaries line up with the session.
+   * `totalLoops` times and then ends.
    */
   const loopBeats = computed(() => lesson.value.bars * lesson.value.beatsPerBar);
+
+  /**
+   * Ableton Link's quantum: one bar, the unit Ableton itself uses.
+   *
+   * It was the lesson's whole loop, which sounds tighter and is worse. Phase
+   * against an 8-beat quantum only ever names every other bar of the session,
+   * and *which* every-other is fixed by a session timeline neither app chose —
+   * so a two-bar lesson sat on the wrong half of a four-bar set at even odds,
+   * with nothing the player could do about it. A one-bar quantum names every
+   * bar, which is what lets the press time choose.
+   */
+  const linkQuantum = computed(() => lesson.value.beatsPerBar);
   const totalLoops = computed(() => lessonRepeats(lesson.value));
   /** The whole run in beats — what the overview strip spans. */
   const runBeats = computed(() => totalLoops.value * loopBeats.value);
@@ -423,10 +434,10 @@ export function useTrainer(
   let linkGrid: StartGrid | null = null;
 
   /**
-   * Follow one Link snapshot: match Ableton's tempo, and slide our loop so its
-   * boundary sits on Link's. Rust reports `phase` against a quantum of
-   * `loopBeats`, so phase *is* our beat-in-loop as Ableton sees it — we only
-   * have to close the gap.
+   * Follow one Link snapshot: match Ableton's tempo, and slide our playhead so
+   * our bar lines sit on Link's. Rust reports `phase` against a quantum of one
+   * bar — the same unit Ableton uses — so phase *is* our beat-in-bar as Ableton
+   * sees it, and we only have to close the gap.
    *
    * Phase, and nothing else. It is derived from the session's own beat grid, so
    * aligning to it can never put us off the beat. The peer's *transport start*
@@ -456,7 +467,7 @@ export function useTrainer(
 
     if (playing.value && transport.isPlaying) {
       const cur = transport.position(at).absBeat;
-      const delta = phaseDelta(cur, s.phase, transport.loopBeats);
+      const delta = phaseDelta(cur, s.phase, transport.beatsPerBar);
       if (Math.abs(delta) * transport.secPerBeat > LINK_DEADBAND) {
         transport.anchorTo(cur + delta, at);
         moved = true;
@@ -738,6 +749,7 @@ export function useTrainer(
     lessonPitches,
     totalLoops,
     loopBeats,
+    linkQuantum,
     runBeats,
     play,
     stop,

@@ -53,9 +53,8 @@ export function phaseDelta(absBeat: number, phase: number, loopBeats: number): n
 /**
  * An external beat grid to start against — Ableton Link, in practice.
  *
- * `beat` is the grid's own beat value at clock time `at`, counted from a beat 0
- * that is a boundary worth landing on: the peer's transport start when Link
- * publishes one, otherwise the current quantum boundary.
+ * `beat` is the grid's position within a bar at clock time `at`, so beat 0 of
+ * the grid is a bar line the other app agrees on.
  */
 export interface StartGrid {
   beat: number;
@@ -156,20 +155,26 @@ export class Transport {
   }
 
   /**
-   * The first grid boundary at or after `t`. Boundaries sit a whole number of
-   * loops from the grid's own beat 0, so our loop lines up with theirs and not
-   * merely with a bar of theirs.
+   * The first bar line at or after `t`, on the external grid.
+   *
+   * A *bar*, deliberately, and not the lesson's loop. Stepping by the loop
+   * would make every candidate start point a whole loop apart and therefore
+   * all of the same parity — for a two-bar lesson against a four-bar set,
+   * every one of them lands on the same two bars, and no press time can reach
+   * the other two. Stepping by the bar puts the choice in the player's hands:
+   * the count-in occupies the bar after the press, so pressing one bar before
+   * the set's last bar starts the run on its downbeat.
    *
    * The count-in keeps its full length and simply starts later; the wait
-   * before it is silent, which is what waiting for the downbeat sounds like.
+   * before it is silent.
    */
   private gridAtOrAfter(t: number, grid: StartGrid): number {
-    const loopSeconds = this.loopBeats * this.secPerBeat;
+    const barSeconds = this.beatsPerBar * this.secPerBeat;
     const origin = grid.at - grid.beat * this.secPerBeat;
     // Nudge before rounding up so a boundary landing exactly on `t` is taken
-    // rather than pushed a whole loop away by floating-point dust.
-    const loops = Math.ceil((t - origin) / loopSeconds - 1e-9);
-    return origin + loops * loopSeconds;
+    // rather than pushed a whole bar away by floating-point dust.
+    const bars = Math.ceil((t - origin) / barSeconds - 1e-9);
+    return origin + bars * barSeconds;
   }
 
   stop(): void {

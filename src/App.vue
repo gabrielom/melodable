@@ -135,7 +135,7 @@ const {
   pianoRange,
   lessonPitches,
   totalLoops,
-  loopBeats,
+  linkQuantum,
   play,
   stop,
   setBpm,
@@ -148,7 +148,9 @@ const {
 
 // ------------------------------------------------------------ Ableton Link
 // Link shares tempo and phase with Ableton; the trainer's loop rides its grid.
-// `loopBeats` is the quantum, so our loop boundary is one Ableton agrees on.
+// The quantum is one bar — the unit Ableton uses — so our bar lines are ones
+// Ableton agrees on, and which of its bars the run enters on is the player's
+// to choose by when they press Start.
 const {
   available: linkAvailable,
   enabled: linkOn,
@@ -159,11 +161,11 @@ const {
 } = useLink(followLink);
 
 function toggleLink() {
-  void setLinkEnabled(!linkOn.value, loopBeats.value, bpm.value);
+  void setLinkEnabled(!linkOn.value, linkQuantum.value, bpm.value);
 }
 
-// A different lesson can mean a different loop length — re-agree the quantum.
-watch(loopBeats, (q) => {
+// A lesson in another time signature means another bar length — re-agree it.
+watch(linkQuantum, (q) => {
   if (linkOn.value) void setLinkEnabled(true, q, bpm.value);
 });
 

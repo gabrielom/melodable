@@ -92,10 +92,16 @@ tempo of 120 onto the user's running set the moment they enabled the toggle.
 `LinkHandle.link` is a `Mutex<Option<AblLink>>` for exactly this reason — don't
 "simplify" it back to an eager field.
 
-**What Link cannot do here, and don't pretend otherwise:** it carries no loop
-length, so which bar of a 4-bar Ableton loop a 2-bar lesson starts on is not
-knowable. A bars-per-cycle setting is the only real fix and was offered and
-declined — don't add one without asking again.
+**Link's quantum is one bar (`linkQuantum`), not the lesson's loop.** Link
+carries no loop length, so which bar of a 4-bar Ableton set a 2-bar lesson
+starts on is not knowable — but with a one-bar quantum it becomes the player's
+to choose, because `gridAtOrAfter` steps by the bar: the count-in occupies the
+bar after the press and the run starts the bar after that, so pressing two bars
+before the wanted downbeat lands on it. Stepping by the loop instead (the
+original) made every candidate start a whole loop apart and therefore all of one
+parity, so the other bars of a longer set were unreachable however the press was
+timed. Don't put the quantum back to `loopBeats`, and don't add a bars-per-cycle
+setting without asking — that was offered and declined in favour of this.
 
 The **trainer redesign** has landed across several handoffs. **Handoff 05 (turn
 11) is the current design** and supersedes everything before it where they

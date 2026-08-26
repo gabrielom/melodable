@@ -83,11 +83,18 @@ and it works alongside everything in sections 1–4.
 
 ### Turning it on
 
-1. In Ableton: **Settings → Link / Tempo / MIDI → Link: Show / On**.
+1. In Ableton: **Settings → Link / Tempo / MIDI → Link: Show / On**. Do this
+   **first** — see the note below.
 2. In Melodable: click the **chain icon** in the transport bar, left of the MIDI
    device menu. It turns teal and shows the peer count as a small badge.
-3. Hit ▶ Play. The trainer's loop now rides Ableton's grid: the loop boundary
-   lands on Ableton's, and moving Ableton's tempo moves the trainer.
+3. Start Ableton's transport, then hit ▶ Play in Melodable — pressing two bars
+   before the downbeat you want the lesson to begin on (see below). Ableton's
+   tempo and clock drive the trainer throughout.
+
+> **Order matters for tempo.** When two Link sessions meet, the one that has been
+> running longer wins the merge and its tempo is adopted by everyone else.
+> Joining second means Melodable adopts your set's tempo; joining first means
+> your set adopts Melodable's.
 
 The tempo slider still works while linked — dragging it *proposes* the tempo to
 the whole session, so Melodable can drive Ableton as well as follow it. That's
@@ -120,8 +127,8 @@ Leaving drops it again, so the next join is a newcomer too.
 - `useTrainer` closes the gap: `Transport.setBpm` for tempo, `Transport.anchorTo`
   for phase. Corrections under 3 ms are ignored, so a locked transport isn't
   jittered 30 times a second.
-- Link's quantum is the *lesson's loop length*, so a 2-bar lesson lines up with
-  Ableton every 2 bars rather than every beat.
+- Link's quantum is **one bar** — the unit Ableton itself uses — so our bar
+  lines are Ableton's bar lines.
 - ▶ Play does not start the run where you pressed it. `Transport.start` takes
   the grid Link last described and pins beat 0 to it, so the count-in begins on
   a boundary and the follower has nothing left to correct. Without that the run
@@ -130,20 +137,29 @@ Leaving drops it again, so the next join is a newcomer too.
   dropped the clicks it skipped. The gap between the press and the count-in is
   silent and never longer than one loop.
 
-### What it can and cannot line up
+### Which bar of your loop it starts on — you choose
 
 Tempo and beat are exact: Melodable follows Ableton's clock, and the alignment
 comes from Link's *phase*, which is derived from the session's own beat grid.
 
-Which **bar** of your loop the lesson starts on is not something Link can settle.
-Phase names a boundary of some quantum, and the two apps do not use the same
-one — Ableton's is a bar, ours is the whole lesson loop — so a 2-bar lesson
-against a 4-bar Ableton loop begins on bar 1 or bar 3, fixed for the session but
-decided by where Ableton's transport started against a session timeline neither
-app chose. **Link puts your loop length on the wire nowhere.** A 1-bar lesson
-lands on one of your downbeats every time; longer ones may sit a bar in.
+**Link puts your loop length on the wire nowhere.** There is no message that says
+"my loop is four bars", so Melodable cannot work out where the top of your loop
+is. What it can do is land on one of your bar lines and let you pick which:
 
-Ableton's *transport start* looks like the answer to that and is not:
+> **The count-in occupies the bar after the one you press in, and the run starts
+> the bar after that.** So press Start **two bars before** the downbeat you want.
+> For a four-bar loop, press during **bar 3**: the count-in runs over bar 4 and
+> the lesson begins on bar 1.
+
+If it comes in on the wrong bar, stop and press again a bar earlier or later.
+There is a full bar of slack on the press, so this is not a game of reflexes.
+
+This is why the quantum is one bar rather than the lesson's loop. With the loop
+as the quantum, every possible start point was a whole loop apart and so shared
+one parity — a 2-bar lesson could only ever enter a 4-bar set on the same two
+bars, and no amount of retiming the press could reach the other two.
+
+Ableton's *transport start* looks like a way to derive the loop top, and is not:
 `time_for_is_playing` is the time of an event, not of a beat, so aligning to it
 takes a loop that was on the beat and pulls it off. It was tried and reverted —
 it traded the downbeat for the bar, which is the worse of the two.
