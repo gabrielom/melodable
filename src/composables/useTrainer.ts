@@ -531,6 +531,15 @@ export function useTrainer(
 
   /** Audio-clock time of a hardware hit, from its midir timestamp. */
   function hardwareHitTime(stampMicros: number): number {
+    return rawHitTime(stampMicros) - settings.latencyMs / 1000;
+  }
+
+  /**
+   * The same conversion with the calibration offset left off — what the tap
+   * test measures against, since applying the offset it is trying to find
+   * would only ever report the residual.
+   */
+  function rawHitTime(stampMicros: number): number {
     midiClock.sync(stampMicros, audio.now);
     return midiClock.toAudioTime(stampMicros, audio.now);
   }
@@ -759,5 +768,6 @@ export function useTrainer(
     release,
     padAtPoint,
     hardwareHitTime,
+    rawHitTime,
   };
 }

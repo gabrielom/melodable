@@ -23,6 +23,9 @@ import DeviceMenu from "@/components/DeviceMenu.vue";
 import MidiMonitor from "@/components/MidiMonitor.vue";
 import HomeScreen from "@/components/HomeScreen.vue";
 import ImportDialog from "@/components/ImportDialog.vue";
+import CalibrationDialog from "@/components/CalibrationDialog.vue";
+import { useCalibration } from "@/composables/useCalibration";
+import { clampLatency } from "@/engine/calibration";
 import RunSummary from "@/components/RunSummary.vue";
 import type { LogRow } from "@/components/midi-log";
 import PianoKeyboard from "@/views/piano/PianoKeyboard.vue";
@@ -144,7 +147,29 @@ const {
   release,
   padAtPoint,
   hardwareHitTime,
+  rawHitTime,
 } = useTrainer(audio, laneCanvas, overviewCanvas);
+
+// ------------------------------------------------------------- calibration
+// A before-a-run decision, like the instrument switch and Link, so it lives on
+// the home bar (see CLAUDE.md). The tap test needs audio running and hardware
+// timestamps, so it is fed from `onMidiMessage` rather than from the scorer.
+const calOpen = ref(false);
+const calibration = useCalibration(audio);
+
+async function openCalibration() {
+  await ensureAudio();
+  calOpen.value = true;
+}
+
+function closeCalibration() {
+  calibration.cancel();
+  calOpen.value = false;
+}
+
+function setLatency(ms: number) {
+  settings.latencyMs = clampLatency(ms);
+}
 
 // ------------------------------------------------------------ Ableton Link
 // Link shares tempo and phase with Ableton; the trainer's loop rides its grid.
@@ -389,6 +414,14 @@ function noteOff(midi: number, releaseTime?: number) {
 /** Hardware input. Scoring uses `m.timestampMicros`, not handler time. */
 function onMidiMessage(m: MidiMessage) {
   pushLog(m.kind, m.note, m.velocity, m.channel, "hardware");
+
+  // Calibrating: a strike is a tap against the click, not a note. Measured on
+  // the *raw* time — feeding it the offset under test would only ever report
+  // what was left over.
+  if (calibration.active.value && m.kind === "noteon") {
+    calibration.feed(rawHitTime(m.timestampMicros));
+    return;
+  }
 
   if (m.kind === "noteon") {
     const hitTime = hardwareHitTime(m.timestampMicros);
@@ -943,6 +976,34 @@ watch(
            arrow deliberately stops short of the tray (10.2 against 11.1): the
            0.9 gap is what makes it read as motion rather than one glued
            shape, so do not close it up. -->
+      <!-- Home only: calibration is a decision about the rig, made before a
+           run rather than during one. A metronome-and-stopwatch mark, the
+           needle sitting off centre because an offset is what it measures. -->
+      <button
+        v-if="view === 'home'"
+        class="ico"
+        :class="{ on: settings.latencyMs !== 0 }"
+        data-tip="Calibrate timing for your controller and audio"
+        aria-label="Calibrate timing"
+        @click="openCalibration"
+      >
+        <svg
+          viewBox="0 0 16 16"
+          width="11"
+          height="11"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M8 14.1a5.7 5.7 0 1 0 0-11.4 5.7 5.7 0 0 0 0 11.4Z" />
+          <path d="M8 8.4 10.7 5.7" />
+          <path d="M8 2.7V1.5" />
+        </svg>
+      </button>
+
       <button
         v-if="view === 'home'"
         class="ico"
@@ -1067,6 +1128,20 @@ watch(
       :attempts="runResult.attempts"
       @again="onPlay"
       @lessons="goHome"
+    />
+
+    <CalibrationDialog
+      v-if="calOpen"
+      :latency-ms="settings.latencyMs"
+      :active="calibration.active.value"
+      :lead-in="calibration.leadIn.value"
+      :taps="calibration.errors.value.length"
+      :result="calibration.result.value"
+      :has-device="connectedIndex !== null"
+      @start="calibration.start"
+      @stop="calibration.finishEarly"
+      @set="setLatency"
+      @close="closeCalibration"
     />
 
     <ImportDialog

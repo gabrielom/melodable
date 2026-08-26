@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref, watch } from "vue";
 import type { InstrumentType } from "@/engine/types";
 import type { Theme } from "@/engine/theme";
+import { clampLatency } from "@/engine/calibration";
 import { persistGet, persistSet } from "./persist";
 
 /**
@@ -37,6 +38,7 @@ interface SettingsSnapshot {
   laneOrientation: LaneOrientation;
   pianoLow: number;
   pianoHigh: number;
+  latencyMs: number;
 }
 
 /** The OS preference, used until the player picks a side themselves. */
@@ -80,6 +82,16 @@ export const useSettings = defineStore("settings", () => {
   const pianoLow = ref(48);
   const pianoHigh = ref(84);
 
+  /**
+   * Timing calibration: milliseconds subtracted from every hardware strike
+   * before it is graded (M7). Positive means the rig makes you play late —
+   * a DAW's output buffer, a controller's own scan — and this cancels it.
+   *
+   * Only hardware carries it. A mouse click or a computer key has no rig
+   * between the intent and the timestamp, so there is nothing to cancel.
+   */
+  const latencyMs = ref(0);
+
   /** True once persisted values have been loaded (or confirmed absent). */
   const hydrated = ref(false);
 
@@ -108,6 +120,7 @@ export const useSettings = defineStore("settings", () => {
       if (saved.laneOrientation) laneOrientation.value = saved.laneOrientation;
       if (typeof saved.pianoLow === "number") pianoLow.value = saved.pianoLow;
       if (typeof saved.pianoHigh === "number") pianoHigh.value = saved.pianoHigh;
+      if (typeof saved.latencyMs === "number") latencyMs.value = clampLatency(saved.latencyMs);
     }
     hydrated.value = true;
   });
@@ -115,7 +128,7 @@ export const useSettings = defineStore("settings", () => {
   // Persist on change. Guarded so the async hydrate above doesn't get
   // clobbered by an initial write before it lands.
   watch(
-    [theme, volNotes, volGuide, volMetronome, soundOutput, metronome, monitorOpen, padLayout, laneOrientation, pianoLow, pianoHigh],
+    [theme, volNotes, volGuide, volMetronome, soundOutput, metronome, monitorOpen, padLayout, laneOrientation, pianoLow, pianoHigh, latencyMs],
     () => {
     if (!hydrated.value) return;
     void persistSet("settings", {
@@ -130,6 +143,7 @@ export const useSettings = defineStore("settings", () => {
       laneOrientation: laneOrientation.value,
       pianoLow: pianoLow.value,
       pianoHigh: pianoHigh.value,
+      latencyMs: latencyMs.value,
     } satisfies SettingsSnapshot);
     },
   );
@@ -147,6 +161,7 @@ export const useSettings = defineStore("settings", () => {
     laneOrientation,
     pianoLow,
     pianoHigh,
+    latencyMs,
     hydrated,
     setInstrument,
   };
