@@ -1,4 +1,4 @@
-# Rhythm Trainer
+# Melodable
 
 A Melodics-style timing trainer for **MPC-style pads** and **piano**, where lessons come from your own Ableton clips and you can play along to a live Ableton set — Ableton makes the sound, Melodable shows the notes and scores your timing.
 

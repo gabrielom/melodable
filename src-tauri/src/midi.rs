@@ -40,7 +40,7 @@ pub struct MidiMsg {
 /// List the names of every available MIDI input port, in index order.
 #[tauri::command]
 pub fn list_midi_ports() -> Result<Vec<String>, String> {
-    let input = MidiInput::new("rhythm-trainer-scan").map_err(|e| e.to_string())?;
+    let input = MidiInput::new("melodable-scan").map_err(|e| e.to_string())?;
     let ports = input.ports();
     let mut names = Vec::with_capacity(ports.len());
     for port in ports.iter() {
@@ -61,7 +61,7 @@ pub fn open_midi_port(
     state: State<'_, MidiState>,
     index: usize,
 ) -> Result<String, String> {
-    let mut input = MidiInput::new("rhythm-trainer").map_err(|e| e.to_string())?;
+    let mut input = MidiInput::new("melodable").map_err(|e| e.to_string())?;
     // We want everything except active-sensing noise; sysex/timing are ignored.
     input.ignore(Ignore::All);
 
@@ -84,7 +84,7 @@ pub fn open_midi_port(
     let conn = input
         .connect(
             &port,
-            "rhythm-trainer-in",
+            "melodable-in",
             move |stamp, message, _| {
                 if message.is_empty() {
                     return;

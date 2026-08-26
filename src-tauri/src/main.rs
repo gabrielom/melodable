@@ -21,5 +21,5 @@ fn main() {
             link::link_set_tempo,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Rhythm Trainer");
+        .expect("error while running Melodable");
 }

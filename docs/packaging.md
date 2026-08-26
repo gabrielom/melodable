@@ -84,19 +84,19 @@ Export the certificate with
 Nothing to sign. `.deb` and `.AppImage` are distributed unsigned; repository
 signing is a separate exercise and only matters if you publish to one.
 
-## Two decisions to make before the first public release
+## The bundle identifier
 
-Neither is a bug, and both are cheap now and expensive later.
+`io.github.gabrielom.melodable`. Reverse-DNS of a namespace that is
+demonstrably ours — Apple does not verify domain ownership, but the convention
+wants something you control, and a GitHub account qualifies. Swap it for
+`com.<yourdomain>.melodable` if you register one.
 
-1. **The bundle identifier is `com.local.rhythmtrainer`.** `com.local.*` is a
-   placeholder. Changing it is the right thing before shipping to anyone —
-   but the identifier is what decides where the Tauri store keeps its file, so
-   changing it **orphans existing settings, calibration and practice history**.
-   Do it before there are users, or write a migration.
-
-2. **`productName` is "Rhythm Trainer" while the app calls itself Melodable.**
-   That name is what appears in the Dock, the Applications folder and the
-   installer's title. They should agree; picking which way is yours.
+**Changing it again resets the app.** The identifier is what decides where the
+Tauri store keeps its file, so a new one means a fresh install as far as
+settings, calibration, practice history and imported clips are concerned. It
+was changed once already, from the `com.local.rhythmtrainer` placeholder, while
+the only data at risk was the author's. Past that point it needs a migration
+rather than a rename.
 
 ## What is not here
 

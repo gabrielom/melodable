@@ -185,10 +185,15 @@ is merged automatically by tauri-bundler and carries
 `NSLocalNetworkUsageDescription` — from macOS 15, Link without it is denied the
 LAN silently, which looks exactly like Link being broken.
 
-Two things deliberately left for the user to decide, both cheap now and
-expensive later: the identifier is still `com.local.rhythmtrainer` (changing it
-orphans the store — settings, calibration and history), and `productName` is
-"Rhythm Trainer" while the app calls itself Melodable.
+The app is **Melodable** everywhere now — `productName`, the window title, the
+page title, the npm package, and the MIDI client name other apps see in their
+port lists. The bundle identifier is `io.github.gabrielom.melodable`, changed
+once from the `com.local.rhythmtrainer` placeholder while the only data at risk
+was the author's. **Don't change it again without a migration**: it decides
+where the Tauri store lives, so a new one reads as a fresh install — settings,
+calibration, history and imported clips all gone. `build_plan.html` still says
+"Rhythm Trainer" and is left alone, being the original spec rather than a live
+document.
 
 **The calibration dialog is not in any design handoff.** It is built in the
 dialogs' existing language rather than inventing one, and wants drawing.
