@@ -15,8 +15,9 @@
  * sheet, kicker, fields and footer as the import dialog) rather than inventing
  * a look for it — worth drawing properly before it is called finished.
  */
-import { computed, onMounted, onUnmounted } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { CAL_LEAD_CLICKS, CAL_TAPS, LATENCY_LIMIT_MS, type TapSummary } from "@/engine/calibration";
+import { useFocusTrap } from "@/composables/useFocusTrap";
 
 const props = defineProps<{
   /** The stored offset, in milliseconds. */
@@ -67,14 +68,42 @@ function onKey(e: KeyboardEvent) {
   }
 }
 
-onMounted(() => window.addEventListener("keydown", onKey));
-onUnmounted(() => window.removeEventListener("keydown", onKey));
+/**
+ * Where focus was before the dialog opened, so it can be put back. Opening a
+ * modal and leaving focus on the page behind it strands a keyboard user
+ * outside the thing they just opened.
+ */
+const panel = ref<HTMLElement | null>(null);
+let returnTo: HTMLElement | null = null;
+
+useFocusTrap(panel);
+
+onMounted(() => {
+  window.addEventListener("keydown", onKey);
+  returnTo = document.activeElement as HTMLElement | null;
+  // The panel itself rather than the first control: it carries the dialog's
+  // accessible name, so a screen reader announces what opened before what is
+  // in it, and Tab from here reaches the controls in order.
+  panel.value?.focus();
+});
+
+onUnmounted(() => {
+  window.removeEventListener("keydown", onKey);
+  returnTo?.focus?.();
+});
 </script>
 
 <template>
   <Teleport to="body">
     <div class="backdrop" @click.self="emit('close')">
-      <div class="panel" role="dialog" aria-modal="true" aria-label="Timing calibration">
+      <div
+        ref="panel"
+        class="panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Timing calibration"
+        tabindex="-1"
+      >
         <header class="head">
           <div class="kicker">TIMING CALIBRATION</div>
           <button class="close" aria-label="Close" @click="emit('close')">✕</button>
@@ -186,6 +215,10 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
   background: var(--gutter);
   box-shadow: inset 0 0 0 1px var(--hair), 0 24px 60px #00000066;
   overflow: hidden;
+}
+
+.panel:focus {
+  outline: none;
 }
 
 .head {
@@ -358,11 +391,5 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
 .btn:disabled {
   opacity: 0.5;
   cursor: default;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .rings i {
-    transition: none;
-  }
 }
 </style>

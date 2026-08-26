@@ -12,6 +12,7 @@ import type { MidiAnalysis } from "@/engine/midi-file";
 import type { InstrumentType } from "@/engine/types";
 import { PADS } from "@/engine/gm";
 import { noteName } from "@/engine/pitch";
+import { useFocusTrap } from "@/composables/useFocusTrap";
 
 const props = defineProps<{
   fileName: string;
@@ -63,14 +64,39 @@ function onKey(e: KeyboardEvent) {
     emit("close");
   }
 }
-onMounted(() => window.addEventListener("keydown", onKey));
-onUnmounted(() => window.removeEventListener("keydown", onKey));
+/**
+ * Focus starts on the panel and comes back to whatever opened the dialog
+ * (M7's focus pass). `aria-modal` marks the page behind inert for a screen
+ * reader but does nothing to the Tab key, so the trap does that part.
+ */
+const panel = ref<HTMLElement | null>(null);
+let returnTo: HTMLElement | null = null;
+
+useFocusTrap(panel);
+
+onMounted(() => {
+  window.addEventListener("keydown", onKey);
+  returnTo = document.activeElement as HTMLElement | null;
+  panel.value?.focus();
+});
+
+onUnmounted(() => {
+  window.removeEventListener("keydown", onKey);
+  returnTo?.focus?.();
+});
 </script>
 
 <template>
   <Teleport to="body">
     <div class="backdrop" @click.self="emit('close')">
-      <div class="panel" role="dialog" aria-modal="true" aria-label="Import MIDI clip">
+      <div
+        ref="panel"
+        class="panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Import MIDI clip"
+        tabindex="-1"
+      >
         <header class="head">
           <div class="kicker">IMPORT MIDI CLIP</div>
           <button class="close" aria-label="Close" @click="emit('close')">✕</button>
@@ -202,6 +228,10 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
   background: var(--gutter);
   box-shadow: inset 0 0 0 1px var(--hair), 0 24px 60px #00000066;
   overflow: hidden;
+}
+
+.panel:focus {
+  outline: none;
 }
 
 .head {

@@ -10,7 +10,7 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
 
 ## How to work
 
-- **One milestone at a time.** M0–M5 are already complete. Start at **M6**. Build it, stop, let me verify, then commit before moving on.
+- **One milestone at a time.** M0–M7 (the whole plan) are complete. What is left is **M8**, the input-delay investigation below, which is mine to start — don't begin it unasked. Build, stop, let me verify, then commit before moving on.
 - Don't scaffold future milestones ahead of time. No placeholder files for M6–M7.
 - After each milestone, state plainly what to click to verify it against the plan's acceptance criteria.
 - Run `npm test` and `npm run build` before declaring a milestone done.
@@ -55,7 +55,7 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
 
 ## Where things stand
 
-**M0–M6 are complete.** M6 (Ableton Link) shipped: `src-tauri/src/link.rs` behind the
+**M0–M7 are complete — the plan's whole roadmap.** M6 (Ableton Link) shipped: `src-tauri/src/link.rs` behind the
 `link` cargo feature, `useLink.ts`, a chain-icon toggle with a peers badge, and a
 follower in `useTrainer` that drives tempo via `Transport.setBpm` and phase via
 `Transport.anchorTo`. `docs/ableton-playalong.md` documents it, including the
@@ -143,18 +143,59 @@ that does not exist. The app icon's 16px variant is also not generated — §15
 asks for hand-tuned geometry there rather than a mechanical downscale, so
 `npm run icons` starts at 32px.
 
-### Next up: M7 — persistence
+### M7 — polish & package (done)
 
-From the plan: SQLite (or the Tauri store) for practice history — per-lesson bests,
-streaks, a session log. Notes:
+**Timing calibration.** `src/engine/calibration.ts` is the pure half: `tapError`
+places a strike against the nearest click on a fixed grid, `summarizeTaps`
+reduces a set to a median and a median absolute deviation. Median throughout —
+two ragged taps out of sixteen are certain on a first run and must move the
+answer by nothing. The spread is reported so a loose set is *called* loose
+rather than quietly applied. `useCalibration` runs the click on a plain
+interval queued onto the audio clock: no transport, no scorer, so the only
+thing measured is the gap between click and strike. **Taps are fed
+`rawHitTime`, not `hardwareHitTime`** — applying the offset under test would
+report only its residual. `settings.latencyMs` is then subtracted from every
+*hardware* strike; a mouse click or a computer key carries no offset, having no
+rig to cancel.
 
-- Settings and the last lesson already persist through `src/stores/persist.ts`
-  (Tauri store plugin). Invariant 7 still holds: no `localStorage`.
-- `AdvanceTracker` (`src/engine/adaptive.ts`) already tracks the lesson-clear streak
-  in memory — that is the natural thing to persist first.
+**Persistence.** Settings, last lesson and per-lesson history already persisted;
+M7 added `latencyMs` and, the real gap, **imported clips**. They used to live
+for the session, which left `history` holding runs for a lesson that no longer
+existed. `src/engine/library.ts` validates what comes back out of the store —
+a lesson with no notes does not fail at the store, it fails three screens later
+inside the scorer. Invariant 7 still holds: no `localStorage`.
+
+The plan's "streaks, a session log" were **not** built. `AdvanceTracker` resets
+every `play()` and clears at a streak of one, so persisting it would persist a
+number that is always zero; a session log nothing reads is dead weight. Say so
+rather than building either — and if a streak is wanted, it needs a reason to
+exist first.
+
+**Focus and motion.** `styles.css` now carries one global `:focus-visible` rule,
+because per-component rings meant the dialogs' buttons had none. `useFocusTrap`
+keeps Tab inside a modal — `aria-modal` marks the page behind inert for a
+screen reader and does *nothing* to the Tab key. Both dialogs take focus on open
+and hand it back on close. Reduced motion is one global `* { animation: none
+!important; transition: none !important; }`; don't repeat it per component.
+
+**Packaging.** `docs/packaging.md` is the reference. Signing credentials come
+from environment/secrets only, never a checked-in file, and the release workflow
+completes without them by producing unsigned artefacts. `src-tauri/Info.plist`
+is merged automatically by tauri-bundler and carries
+`NSLocalNetworkUsageDescription` — from macOS 15, Link without it is denied the
+LAN silently, which looks exactly like Link being broken.
+
+Two things deliberately left for the user to decide, both cheap now and
+expensive later: the identifier is still `com.local.rhythmtrainer` (changing it
+orphans the store — settings, calibration and history), and `productName` is
+"Rhythm Trainer" while the app calls itself Melodable.
+
+**The calibration dialog is not in any design handoff.** It is built in the
+dialogs' existing language rather than inventing one, and wants drawing.
+
 - Don't reintroduce automatic tempo changes; tempo stays hand-set on the bar.
 
-### After M7: M8 — the intermittent input delay
+### What's left: M8 — the intermittent input delay
 
 Parked deliberately until everything else is built, because it is a
 troubleshooting milestone and not a feature: **do not start it early, and do not

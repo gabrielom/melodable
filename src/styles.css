@@ -228,3 +228,18 @@ button { font-family: inherit; color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/*
+ * Keyboard focus is visible by default, everywhere, rather than per component.
+ * Several controls had no ring at all — the dialogs' buttons among them —
+ * because each component was remembering this for itself and some did not.
+ * Components still restate it where they want a different offset; nothing has
+ * to remember it to be reachable.
+ *
+ * `:focus-visible` and not `:focus`, so a mouse press does not leave a ring
+ * behind on a button that was only clicked.
+ */
+:focus-visible {
+  outline: 1px solid var(--head);
+  outline-offset: 1px;
+}

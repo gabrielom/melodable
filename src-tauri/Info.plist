@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Merged into the bundled app's Info.plist by tauri-bundler (macOS only).
+
+  Ableton Link is a local-network protocol: it discovers peers over UDP on the
+  LAN and will not find Ableton without permission to do so. From macOS 15 that
+  permission is prompted for, and an app with no usage string is denied without
+  ever showing the prompt — which looks exactly like Link being broken, since
+  the toggle turns on and the peer count simply stays at zero.
+
+  Only the keys here are merged; everything else in the bundle's Info.plist is
+  still generated from tauri.conf.json.
+-->
+<plist version="1.0">
+  <dict>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Melodable uses your local network to find Ableton Live and other Ableton Link apps, so the trainer can follow their tempo and grid.</string>
+    <key>NSBonjourServices</key>
+    <array>
+      <string>_ableton-link._udp</string>
+    </array>
+  </dict>
+</plist>
