@@ -346,11 +346,12 @@ const chartLabel = computed(() => {
 .leg b { font-size: 9.5px; color: var(--txt2); }
 .swatch { width: 6px; height: 6px; border-radius: 1px; }
 
-/* Run history. The 620x78 viewBox scales uniformly to whatever width the
+/* Run history. The 620x148 viewBox scales uniformly to whatever width the
    panel column has — deliberately *not* `preserveAspectRatio: none`, which
    would squash the gridline labels and the badge's text along one axis.
-   `overflow` stays visible so the badge can rise into the header's gap, which
-   is where the design puts it on a high score. */
+   Since handoff 10 §2 doubled the plot's range the badge sits *inside* the
+   box even on a full-marks run, so nothing depends on `overflow` any more;
+   it stays visible only so a stroke on the edge is not clipped. */
 .history { display: flex; flex-direction: column; gap: 6px; }
 .hhead { display: flex; align-items: baseline; justify-content: space-between; }
 /* The headline figure of the block, so the largest thing in it. */

@@ -5,14 +5,14 @@ const CAP = 40;
 
 describe("run-history geometry", () => {
   it("maps accuracy onto the design's plot band", () => {
-    expect(yOf(0)).toBe(62);
-    expect(yOf(1)).toBe(7);
-    expect(yOf(0.5)).toBeCloseTo(34.5, 9);
+    expect(yOf(0)).toBe(132);
+    expect(yOf(1)).toBe(22);
+    expect(yOf(0.5)).toBeCloseTo(77, 9);
   });
 
   it("clamps a value outside 0..1 rather than drawing off the chart", () => {
-    expect(yOf(-1)).toBe(62);
-    expect(yOf(3)).toBe(7);
+    expect(yOf(-1)).toBe(132);
+    expect(yOf(3)).toBe(22);
   });
 
   it("keeps the plot clear of the axis rule", () => {
@@ -69,12 +69,25 @@ describe("historyChart", () => {
     expect(c.badge!.x + BADGE.w).toBeLessThanOrEqual(VIEW.w);
   });
 
-  it("lets the badge rise into the header but not past it", () => {
-    // A perfect run puts the dot at the top of the plot, so the badge has to
-    // go somewhere — up, but only as far as the ceiling.
-    expect(historyChart([0.5, 1], CAP).badge!.y).toBe(-10);
+  it("keeps the badge inside the box, even on a full-marks run", () => {
+    // Handoff 10 §2: the taller plot leaves room above a perfect run, so the
+    // badge no longer hangs outside the viewBox relying on overflow.
+    const perfect = historyChart([0.5, 1], CAP).badge!;
+    expect(perfect.y).toBe(0);
+    expect(perfect.y + BADGE.h).toBeLessThanOrEqual(VIEW.h);
     // A low run keeps its badge attached to the dot instead.
     expect(historyChart([0.1, 0.4], CAP).badge!.y).toBeGreaterThan(0);
+  });
+
+  it("never lets the badge leave the box at any accuracy", () => {
+    // From 1% up, so the current run always beats the 0% before it and there
+    // is a badge to place at all.
+    for (let pct = 1; pct <= 100; pct++) {
+      const badge = historyChart([0, pct / 100], CAP).badge;
+      expect(badge).not.toBeNull();
+      expect(badge!.y).toBeGreaterThanOrEqual(0);
+      expect(badge!.y + BADGE.h).toBeLessThanOrEqual(VIEW.h);
+    }
   });
 
   it("labels the first attempt only once there is more than one", () => {

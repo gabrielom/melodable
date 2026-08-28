@@ -6,20 +6,26 @@
  * pinning in a test rather than eyeballing on screen once.
  *
  * Everything here is in the chart's own coordinate space, not the screen's:
- * the SVG is drawn on a fixed 620 x 78 viewBox and scaled to whatever width
+ * the SVG is drawn on a fixed 620 x 148 viewBox and scaled to whatever width
  * the panel column has, so none of it depends on layout.
  */
 
-/** The design's viewBox. */
-export const VIEW = { w: 620, h: 78 } as const;
+/**
+ * The design's viewBox.
+ *
+ * Handoff 10 §2 doubled the height. At the old 55px of range the climb from a
+ * first attempt to a good one was a shallow drift; at 110px it reads as
+ * progress, which is the only reason the block is on the screen at all.
+ */
+export const VIEW = { w: 620, h: 148 } as const;
 /** Left gutter carries the axis labels; the plot starts after it. */
 const PLOT_X0 = 26;
 const PLOT_X1 = 614;
-/** 0% sits at y=62, 100% at y=7. */
-const PLOT_Y0 = 62;
-const PLOT_SPAN = 55;
+/** 0% sits at y=132, 100% at y=22. */
+const PLOT_Y0 = 132;
+const PLOT_SPAN = 110;
 /** The rule under the plot, with a dot at each end. */
-export const AXIS_Y = 71;
+export const AXIS_Y = 141;
 export const AXIS_DOT_R = 2.6;
 export const DOT_R = 3.1;
 export const CURRENT_DOT_R = 4.1;
@@ -30,12 +36,11 @@ export const GRID_VALUES = [100, 50] as const;
 /** The BEST flag above the current dot. */
 export const BADGE = { w: 42, h: 14, gap: 5 } as const;
 /**
- * How far the badge may spill above the viewBox. The chart sits under its own
- * header with a gap, and the design lets the badge rise into it rather than
- * pushing the plot down — but only so far, or a full-marks run would collide
- * with the header text.
+ * How far the badge may rise. With 100% at y=22 there is room for the badge
+ * above a full-marks run *inside* the box, so it no longer hangs outside and
+ * no longer depends on `overflow: visible` to be seen at all (handoff 10 §2).
  */
-const BADGE_CEILING = -10;
+const BADGE_CEILING = 0;
 
 /**
  * Horizontal step between attempts.
