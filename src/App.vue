@@ -139,6 +139,8 @@ const {
   lessonPitches,
   totalLoops,
   linkQuantum,
+  sheetAvailable,
+  sheetOn,
   play,
   stop,
   setBpm,
@@ -744,10 +746,14 @@ watch(
       </template>
 
       <div v-if="view === 'trainer'" class="seg" role="group" aria-label="Note direction">
+        <!-- Notation has no vertical form, so while sheet is on the falling
+             option is dead rather than hidden — a control that vanishes is
+             harder to understand than one that is plainly unavailable. -->
         <button
           class="seg-i icon"
-          :class="{ on: settings.laneOrientation === 'vertical' }"
-          data-tip="Notes fall top to bottom"
+          :class="{ on: settings.laneOrientation === 'vertical' && !sheetOn }"
+          :disabled="sheetOn"
+          :data-tip="sheetOn ? 'Sheet view has no falling form' : 'Notes fall top to bottom'"
           aria-label="Falling notes"
           @click="settings.laneOrientation = 'vertical'"
         >
@@ -755,12 +761,39 @@ watch(
         </button>
         <button
           class="seg-i icon"
-          :class="{ on: settings.laneOrientation === 'horizontal' }"
+          :class="{ on: settings.laneOrientation === 'horizontal' || sheetOn }"
           data-tip="Notes scroll right to left"
           aria-label="Scrolling notes"
           @click="settings.laneOrientation = 'horizontal'"
         >
           →
+        </button>
+      </div>
+
+      <!-- Roll or notation. Piano only: a treble staff read by pitch, with a
+           keyboard under it, says nothing about a drum pad — so for a pads
+           lesson the pair is simply not there. -->
+      <div
+        v-if="view === 'trainer' && sheetAvailable"
+        class="seg"
+        role="group"
+        aria-label="Note display"
+      >
+        <button
+          class="seg-i"
+          :class="{ on: settings.laneMode === 'roll' }"
+          data-tip="Notes as a falling roll"
+          @click="settings.laneMode = 'roll'"
+        >
+          ROLL
+        </button>
+        <button
+          class="seg-i"
+          :class="{ on: settings.laneMode === 'sheet' }"
+          data-tip="Notes as notation on a staff"
+          @click="settings.laneMode = 'sheet'"
+        >
+          SHEET
         </button>
       </div>
 
@@ -1091,10 +1124,10 @@ watch(
 
         <!-- The keyboard rotates to the left edge when notes scroll sideways,
              so every semitone row still lines up with its own key. -->
-        <div v-else class="piano-stage" :class="settings.laneOrientation">
+        <div v-else class="piano-stage" :class="sheetOn ? 'horizontal sheet' : settings.laneOrientation">
           <canvas ref="laneCanvas" class="lane-canvas piano-canvas" />
           <PianoKeyboard
-            :rotated="settings.laneOrientation === 'horizontal'"
+            :rotated="!sheetOn && settings.laneOrientation === 'horizontal'"
             :active="activeNotes"
             :low-note="pianoRange[0]"
             :high-note="pianoRange[1]"
@@ -1251,6 +1284,9 @@ watch(
   cursor: pointer;
 }
 .ico:hover { background: var(--hover); color: var(--txt); }
+/* Handoff 10 draws the disabled orientation at 0.32. */
+.seg-i:disabled { opacity: 0.32; cursor: default; }
+.seg-i:disabled:hover { background: none; }
 .ico:focus-visible,
 .transport:focus-visible,
 .seg-i:focus-visible,
@@ -1602,6 +1638,11 @@ watch(
 }
 /* Rows are semitones, so the keyboard stands on its side beside them. */
 .piano-stage.horizontal { flex-direction: row-reverse; }
+/* Sheet reads by staff position rather than by row, so the keyboard lies flat
+   under the staff and names the notes (handoff 10 §1.6) rather than lining up
+   with anything. It overrides `.horizontal`, which sheet also carries. */
+.piano-stage.sheet { flex-direction: column; }
+.piano-stage.sheet :deep(.keyboard) { flex: none; height: 108px; }
 .piano-canvas { flex: 1; min-height: 0; min-width: 0; }
 
 .toast {

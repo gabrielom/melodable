@@ -29,6 +29,8 @@ import type { AudioEngine } from "@/engine/audio";
 import type { LaneRenderer } from "@/views/lane-frame";
 import { PadLanes } from "@/views/pads/PadLanes";
 import { PianoRoll } from "@/views/piano/PianoRoll";
+import { SheetStaff } from "@/views/sheet/SheetStaff";
+import { useNotationFont } from "@/composables/useNotationFont";
 import { Overview } from "@/views/Overview";
 import { normalizeRange } from "@/engine/pitch";
 
@@ -228,10 +230,31 @@ export function useTrainer(
     return visibleLoopSpan(absBeat, transport.loopBeats, view?.behind ?? 0, view?.ahead ?? 0);
   }
 
-  /** Build the renderer matching the current lesson's instrument. */
+  /**
+   * Sheet mode is available, which is not the same as switched on.
+   *
+   * Piano only: handoff 10 draws a treble staff read by pitch and a keyboard
+   * under it, and neither says anything about a drum pad. Six of the seven
+   * built-ins are pads, so for most of the library the ROLL/SHEET pair is
+   * simply not there — a percussion staff was never drawn and inventing one
+   * is not the same as building this handoff.
+   */
+  const sheetAvailable = computed(() => isPiano.value);
+  /** Canvas cannot wait for a webfont, so the staff holds until it is here. */
+  const { ready: notationReady } = useNotationFont();
+  /** The view actually in force, once availability is taken into account. */
+  const sheetOn = computed(() => sheetAvailable.value && settings.laneMode === "sheet");
+
+  /** Build the renderer matching the current lesson and view mode. */
   function buildRenderer(): void {
     const el = canvasEl.value;
-    renderer = el ? (isPiano.value ? new PianoRoll(el) : new PadLanes(el)) : null;
+    renderer = el
+      ? sheetOn.value && notationReady.value
+        ? new SheetStaff(el)
+        : isPiano.value
+          ? new PianoRoll(el)
+          : new PadLanes(el)
+      : null;
     renderer?.resize();
 
     const oel = overviewEl?.value ?? null;
@@ -726,9 +749,11 @@ export function useTrainer(
     () => resetForLesson(),
   );
 
-  // Rebuild the renderer when the canvas mounts/swaps or the instrument
-  // changes (pads ↔ piano use different canvases and renderers).
-  watch([canvasEl, overviewEl ?? ref(null), isPiano], () => buildRenderer());
+  // Rebuild the renderer when the canvas mounts/swaps, the instrument changes
+  // (pads ↔ piano use different canvases and renderers), or the view mode does.
+  watch([canvasEl, overviewEl ?? ref(null), isPiano, sheetOn, notationReady], () =>
+    buildRenderer(),
+  );
 
   onMounted(() => {
     raf = requestAnimationFrame(frame);
@@ -759,6 +784,8 @@ export function useTrainer(
     totalLoops,
     loopBeats,
     linkQuantum,
+    sheetAvailable,
+    sheetOn,
     runBeats,
     play,
     stop,

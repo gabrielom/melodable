@@ -48,6 +48,40 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
 - Dragging also needs **`core:window:allow-start-dragging`** in `src-tauri/capabilities/default.json`. `core:default` does *not* include it, and the shim swallows the rejection, so the failure is silent and looks like a CSS problem: the window still moves on the click that focuses it (AppKit handles that one) and double-click-zoom still works (`internal-toggle-maximize` *is* in the default set). Don't drop that grant.
 - Keep `-webkit-user-select: none` alongside the unprefixed rule. WKWebView only honours the plain property from Safari 17, and a live text selection beats the drag on the same mousedown.
 - **App icons**: `npm run icons` renders the PNGs full-bleed for Windows/Linux and builds `icon.icns` inset to Apple's grid (824 of 1024). macOS needs that inset or the icon renders visibly larger than every other app in the Dock; the other platforms don't. In `tauri dev` on macOS there is no `.app`, so the Dock icon comes from the icns embedded into the binary by `generate_context!` — `src-tauri/build.rs` carries a `rerun-if-changed=icons` because tauri-build doesn't emit one, and without it an icon change never recompiles and the old artwork stays baked in.
+- **Sheet is a third trainer mode, not a third instrument** (handoff 10 §1).
+  `ROLL | SHEET` swaps the renderer under the same transport and scorer —
+  invariant 4 still holds, and `SheetStaff` is a renderer plus a pitch→staff
+  mapping like the other two. It is **horizontal only** (notation has no
+  vertical form, so the `↓` control is disabled, not hidden) and **piano
+  only**: a treble staff read by pitch with a keyboard under it says nothing
+  about a drum pad, and no percussion staff was ever drawn. Six of the seven
+  built-ins are pads, so for most of the library the pair is simply absent —
+  `sheetAvailable` is the gate.
+- **Notation comes from Noto Music, vendored in `src/assets/fonts`** — never
+  drawn by hand and never fetched from a CDN. Two numbers are measured off the
+  font binary rather than estimated, and `tests/notation.test.ts` pins both: a
+  notehead is `0.252em` tall (so `fontSize = staffSpace / 0.252`) and its
+  centre sits `0.134em` above the alphabetic baseline. Replace the font and
+  re-measure; do not assume they carry over. **Canvas cannot wait for a
+  webfont** — `ctx.font` falls back silently and the frame is already painted
+  — so `useNotationFont` loads it and the sheet renderer is not built until it
+  is in.
+- **What the font does not give you, and what to do instead** (§1.4): the
+  augmentation dot is a combining mark with no advance width, so it is drawn;
+  there is no beam glyph, and the stemmed glyphs carry their own flags, so a
+  beamed group is assembled from bare heads, stems and beams; and every
+  stemmed glyph is stem-**up**, which the frames accept. A **chord shares one
+  stem** — drawing each note's own glyph stacks a stem per head and reads as a
+  smear, which matters because the only piano built-in is called First Chords.
+- **Sheet's zoom is derived, not fixed.** §1.7 leaves it open: at 60px per beat
+  a sixteenth falls 15px after its neighbour while a notehead is 19px wide.
+  `sheetPxPerBeat` keeps the roll's five bars unless the lesson's closest pair
+  would collide, then zooms in until it clears — so nothing is ever drawn
+  colliding and nothing zooms further than it must.
+- The **window floor stays 1052** after adding the `ROLL | SHEET` pair. It was
+  re-measured, per the rule above: the piano-plus-sheet bar fits at 1026px,
+  inside the existing floor, because the floor is set by the longest *pads*
+  title ("Syncopated Groove") and pads never show the pair.
 - **The bar's icons are SVG paths, not characters.** Volume, import and Ableton Link carry path data copied verbatim from handoff 08. They were a system glyph (`⇪`) and hand-built curves before, and that is exactly why they drifted from the drawings — a character is at the mercy of the font stack and the platform's rasteriser. **Do not substitute a font character, an emoji, an icon-set component, or rebuild the curves from `border-radius`.** They ink from `currentColor`, which `.ico` sets to `--txt2` — the same value handoff 08 names for both themes.
 - **Home-bar-only controls**: the instrument switch, the Ableton Link toggle and the import button. All three are decisions made *before* a run — what to play, what is plugged in, what is in the library — and the trainer bar is the one that is tight for width. Link stays joined once you start; there is simply no toggle mid-run.
 - **Bar tooltips are `data-tip`, never `title`.** WKWebView's native tooltip is not dependable in the titlebar — late, often absent, sometimes a flash — so `BarTooltip.vue` draws them from one delegated listener. A control opts in by carrying the attribute. **Do not leave `title` on the same element**: the platform would draw its own on top, which is the thing being replaced. `data-tip` is a tooltip and not a name, so a glyph-only button still needs its own `aria-label`. Dialogs and the monitor keep plain `title` — they are ordinary page content and behave normally.

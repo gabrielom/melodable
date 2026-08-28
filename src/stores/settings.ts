@@ -20,6 +20,13 @@ export type PadLayout = "4x4" | "2x8";
 export type LaneOrientation = "vertical" | "horizontal";
 
 /**
+ * How the run is drawn: the falling-note roll, or real notation on a staff
+ * (handoff 10 §1). Sheet is horizontal only and piano only — a treble staff
+ * and a keyboard cannot say anything about a drum pad.
+ */
+export type LaneMode = "roll" | "sheet";
+
+/**
  * The subset of settings we persist across launches (Tauri store, M3).
  * `instrument` is intentionally absent — from M5 the active view follows the
  * restored lesson's instrument, so persisting it separately would conflict.
@@ -36,6 +43,7 @@ interface SettingsSnapshot {
   monitorOpen: boolean;
   padLayout: PadLayout;
   laneOrientation: LaneOrientation;
+  laneMode: LaneMode;
   pianoLow: number;
   pianoHigh: number;
   latencyMs: number;
@@ -77,6 +85,8 @@ export const useSettings = defineStore("settings", () => {
   const padLayout = ref<PadLayout>("4x4");
   /** Scrolling (right-to-left) is the designed view; falling is the alternative. */
   const laneOrientation = ref<LaneOrientation>("horizontal");
+  /** Roll or notation. The roll is the default — sheet is the specialist view. */
+  const laneMode = ref<LaneMode>("roll");
 
   /** Fallback piano range (C3..C6) when a lesson has no notes to frame. */
   const pianoLow = ref(48);
@@ -118,6 +128,7 @@ export const useSettings = defineStore("settings", () => {
       if (typeof saved.monitorOpen === "boolean") monitorOpen.value = saved.monitorOpen;
       if (saved.padLayout) padLayout.value = saved.padLayout;
       if (saved.laneOrientation) laneOrientation.value = saved.laneOrientation;
+      if (saved.laneMode === "roll" || saved.laneMode === "sheet") laneMode.value = saved.laneMode;
       if (typeof saved.pianoLow === "number") pianoLow.value = saved.pianoLow;
       if (typeof saved.pianoHigh === "number") pianoHigh.value = saved.pianoHigh;
       if (typeof saved.latencyMs === "number") latencyMs.value = clampLatency(saved.latencyMs);
@@ -128,7 +139,7 @@ export const useSettings = defineStore("settings", () => {
   // Persist on change. Guarded so the async hydrate above doesn't get
   // clobbered by an initial write before it lands.
   watch(
-    [theme, volNotes, volGuide, volMetronome, soundOutput, metronome, monitorOpen, padLayout, laneOrientation, pianoLow, pianoHigh, latencyMs],
+    [theme, volNotes, volGuide, volMetronome, soundOutput, metronome, monitorOpen, padLayout, laneOrientation, laneMode, pianoLow, pianoHigh, latencyMs],
     () => {
     if (!hydrated.value) return;
     void persistSet("settings", {
@@ -141,6 +152,7 @@ export const useSettings = defineStore("settings", () => {
       monitorOpen: monitorOpen.value,
       padLayout: padLayout.value,
       laneOrientation: laneOrientation.value,
+      laneMode: laneMode.value,
       pianoLow: pianoLow.value,
       pianoHigh: pianoHigh.value,
       latencyMs: latencyMs.value,
@@ -159,6 +171,7 @@ export const useSettings = defineStore("settings", () => {
     monitorOpen,
     padLayout,
     laneOrientation,
+    laneMode,
     pianoLow,
     pianoHigh,
     latencyMs,
