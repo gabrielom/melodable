@@ -1,39 +1,31 @@
-# Geist
+# Bundled fonts
 
-Self-hosted subset of the [Geist](https://vercel.com/font) family — the
-typefaces the trainer redesign specifies. Vendored rather than pulled from the
-`geist` npm package, which depends on Next.js, and rather than Google Fonts,
-because the app must render offline inside the Tauri webview.
+All three are vendored rather than fetched at runtime: the app is a desktop
+build that has to work offline, and a webview has no business reaching out to
+a CDN to draw its own UI.
 
-Six files, the only weights the UI uses:
+| Family | Files | Licence |
+| --- | --- | --- |
+| Geist | `Geist-*.woff2` | SIL Open Font License 1.1 |
+| Geist Mono | `GeistMono-*.woff2` | SIL Open Font License 1.1 |
+| Noto Music | `NotoMusic.woff2` | SIL Open Font License 1.1 |
 
-| File | Used for |
-|---|---|
-| `Geist-Regular.woff2` | body copy, dropdown rows |
-| `Geist-Medium.woff2` | lesson title |
-| `Geist-SemiBold.woff2` | home heading, lesson-card names, summary title |
-| `GeistMono-Regular.woff2` | score labels |
-| `GeistMono-Medium.woff2` | control labels, lane names, tempo, score values |
-| `GeistMono-Bold.woff2` | the letter inside a piano note (canvas only) |
+## Noto Music
 
-Licensed under the SIL Open Font License 1.1 — see `LICENSE.txt`. Wired up by
-the `@font-face` block at the top of `src/styles.css`.
+Copyright 2022 The Noto Project Authors — <https://github.com/notofonts/music>.
+Licence text: <https://scripts.sil.org/OFL>.
 
-## Why SemiBold is here
+Added for the sheet view (handoff 10 §1.3), which draws real notation rather
+than hand-built shapes. Converted from the Google Fonts TTF
+(`notomusic/v21`, 174KB) to woff2 (73KB) with `fonttools`.
 
-The UI asks for `font-weight: 600` in four places. With only 400 and 500
-present the browser took the 500 and *synthesised* the extra weight by
-thickening its outlines, which reads as ragged, blobby headings — counters
-filling in, terminals smearing. It is easy to miss because it is invisible to
-measurement: `measureText` reported the same advance width for 500, 600 and
-700. If a new weight is ever asked for, vendor the face rather than letting
-the browser fake it.
+Two numbers are measured from the font binary rather than estimated, and
+`src/engine/notation.ts` depends on both:
 
-## Canvas and webfonts
+- **notehead height = 0.252em**, so `fontSize = staffSpace / 0.252`
+- **notehead centre sits 0.134em above the alphabetic baseline**
 
-`GeistMono-Bold` is used only by the canvas. Canvas does not download
-webfonts — it resolves `ctx.font` against faces the document has already
-loaded, and silently falls back to a system face for anything else. Every
-other weight here is on a DOM element somewhere, so the document fetches it;
-this one is asked for explicitly in `src/main.ts`. Delete that line and the
-piano's note letters quietly stop being Geist.
+Both were read off the glyph bounds of `U+1D15D` (the whole note, which is a
+bare head with no stem) at `unitsPerEm = 1000`, and they agree with the figures
+handoff 10 §1.3 quotes. `tests/notation.test.ts` pins them; if the font is ever
+replaced, re-measure rather than assuming they carry over.
