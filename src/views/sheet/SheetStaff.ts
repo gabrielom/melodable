@@ -92,6 +92,9 @@ interface Placed {
   fig: Engraved;
   ink: string;
   laneIndex: number;
+  /** On screen this frame. Culling decides what is *drawn*, never how the
+   *  music is grouped — see `notes`. */
+  visible: boolean;
 }
 
 export class SheetStaff implements LaneRenderer {
@@ -289,12 +292,15 @@ export class SheetStaff implements LaneRenderer {
     const size = SPACE / NOTEHEAD_EM_HEIGHT;
     const W = this.el.clientWidth;
 
-    // Place everything first: beaming and chording both need to see the
-    // neighbours before anything is drawn.
+    // Place *every* instance, not just the ones on screen.
+    //
+    // Culling here is what made each note flick between a beam and a flag: as
+    // a note's partner crossed the edge of the window the group lost a member,
+    // and the survivor fell back to the font's flagged glyph. Grouping has to
+    // see the whole phrase; only drawing is clipped.
     const placed: Placed[] = [];
     for (const inst of f.instances) {
       const x = xOfBeat(this.absBeatOf(inst, f));
-      if (x < CLEF_GUTTER - 60 || x > W + 60) continue;
       const step = staffStep(inst.lane);
       const laneIndex = Math.max(0, f.hueOrder.indexOf(inst.lane));
       placed.push({
@@ -305,23 +311,37 @@ export class SheetStaff implements LaneRenderer {
         fig: f.noteValues.get(inst.beat) ?? figureFor(inst.duration),
         ink: noteInk(f, inst, laneIndex),
         laneIndex,
+        visible: x >= CLEF_GUTTER - 60 && x <= W + 60,
       });
     }
-    placed.sort((a, b) => a.x - b.x || a.step - b.step);
+    // Sorted by written position, not by x: exact lesson data cannot reorder
+    // itself under floating-point drift the way a reconstructed x can.
+    placed.sort(
+      (a, b) =>
+        a.inst.loopIndex - b.inst.loopIndex || a.inst.beat - b.inst.beat || a.step - b.step,
+    );
 
     // Notes struck together are one column with one stem, not neighbours.
-    // The only piano lesson in the library is called First Chords, so this is
-    // the common case rather than an edge one.
+    // Keyed on the written beat rather than a pixel distance, so a chord is a
+    // chord at any zoom and never half-splits as the staff scrolls.
     const columns: Placed[][] = [];
     for (const n of placed) {
       const last = columns[columns.length - 1];
-      if (last && Math.abs(last[0].x - n.x) < 1) last.push(n);
+      const same =
+        last &&
+        last[0].inst.loopIndex === n.inst.loopIndex &&
+        last[0].inst.beat === n.inst.beat;
+      if (same) last.push(n);
       else columns.push([n]);
     }
 
     // Beaming runs over columns, not notes: a chord of eighths beams once.
     const groups = beamGroups(
-      columns.map((c) => ({ beat: this.absBeatOf(c[0].inst, f), figure: c[0].fig.figure })),
+      columns.map((c) => ({
+        beat: c[0].inst.beat,
+        figure: c[0].fig.figure,
+        loop: c[0].inst.loopIndex,
+      })),
       f.beatsPerBar,
     );
     const beamed = new Set<number>();
@@ -332,6 +352,7 @@ export class SheetStaff implements LaneRenderer {
 
     for (let i = 0; i < columns.length; i++) {
       const col = columns[i];
+      if (!col.some((n) => n.visible)) continue;
       for (const n of col) {
         this.highlight(f, n);
         this.ledgers(n);
@@ -359,11 +380,11 @@ export class SheetStaff implements LaneRenderer {
     }
 
     for (const g of groups) {
-      this.beamGroup(
-        g.members.map((m) => columns[m]),
-        g.beams,
-        size,
-      );
+      const cols = g.members.map((m) => columns[m]);
+      // Drawn whole if any part of it is on screen; the canvas clips the rest,
+      // which is what keeps a beam entering from the edge intact.
+      if (!cols.some((c) => c.some((n) => n.visible))) continue;
+      this.beamGroup(cols, g.beams, size);
     }
   }
 

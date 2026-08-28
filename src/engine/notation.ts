@@ -243,9 +243,19 @@ export interface BeamGroup {
 
 /** What `beamGroups` needs to know about a note. */
 export interface BeamCandidate {
-  /** Beats from the start of the loop. */
+  /**
+   * Beats from the start of the loop — the note's *written* position.
+   *
+   * Exact lesson data, never a position reconstructed from the clock. A beat
+   * recomputed each frame jitters in its last bits, and a note sitting on a
+   * beat line then falls either side of `Math.floor` from one frame to the
+   * next: the group breaks and reforms, and the note is seen to flick between
+   * a beam and a flag.
+   */
   beat: number;
   figure: Figure;
+  /** Which repeat of the pattern. A group never spans two. */
+  loop?: number;
 }
 
 /**
@@ -262,6 +272,7 @@ export function beamGroups(notes: readonly BeamCandidate[], beatsPerBar: number)
   const groups: BeamGroup[] = [];
   let run: number[] = [];
   let runBeat = -1;
+  let runLoop = -1;
 
   const flush = () => {
     if (run.length > 1) {
@@ -280,11 +291,16 @@ export function beamGroups(notes: readonly BeamCandidate[], beatsPerBar: number)
       flush();
       continue;
     }
-    // Which beat of the bar this note falls in; a new beat starts a new group.
+    // Which beat of the bar this note falls in; a new beat starts a new group,
+    // and so does a new repeat of the pattern.
     const inBar = ((n.beat % beatsPerBar) + beatsPerBar) % beatsPerBar;
     const beatIndex = Math.floor(inBar + 1e-9);
-    if (run.length > 0 && beatIndex !== runBeat) flush();
-    if (run.length === 0) runBeat = beatIndex;
+    const loop = n.loop ?? 0;
+    if (run.length > 0 && (beatIndex !== runBeat || loop !== runLoop)) flush();
+    if (run.length === 0) {
+      runBeat = beatIndex;
+      runLoop = loop;
+    }
     run.push(i);
   }
   flush();

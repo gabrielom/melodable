@@ -183,6 +183,27 @@ describe("beamGroups", () => {
     expect(g).toEqual([{ members: [0, 1], beams: 1 }]);
   });
 
+  it("never beams across a repeat, however the beats line up", () => {
+    // The last eighth of one pass and the first of the next share a beat
+    // index; without the loop they would be beamed into each other.
+    const spanning = [
+      { beat: 3.5, figure: "eighth" as const, loop: 0 },
+      { beat: 3.5, figure: "eighth" as const, loop: 1 },
+    ];
+    expect(beamGroups(spanning, 4)).toEqual([]);
+  });
+
+  it("still beams within one repeat when the loop is given", () => {
+    const g = beamGroups(
+      [
+        { beat: 0, figure: "eighth" as const, loop: 2 },
+        { beat: 0.5, figure: "eighth" as const, loop: 2 },
+      ],
+      4,
+    );
+    expect(g).toEqual([{ members: [0, 1], beams: 1 }]);
+  });
+
   it("counts beams per figure the way the font's flags do", () => {
     expect(FIGURE_BEAMS.quarter).toBe(0);
     expect(FIGURE_BEAMS.eighth).toBe(1);
