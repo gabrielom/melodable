@@ -56,6 +56,27 @@ export function pxPerBeat(track: number, beatsPerBar: number): number {
 }
 
 /**
+ * The whole beats to rule, covering the visible track with a beat of margin
+ * either side so a line entering the edge is never drawn a frame late.
+ *
+ * `behind` and `ahead` are the renderer's own window — beats of timeline on
+ * each side of the playhead. Deriving the range any other way invites the bug
+ * this exists to prevent: a range that slides at a different rate from the
+ * track it is meant to cover, so barlines wink in and out as the two drift
+ * past each other.
+ */
+export function gridBeatRange(
+  absBeat: number,
+  behind: number,
+  ahead: number,
+): { first: number; last: number } {
+  return {
+    first: Math.floor(absBeat - behind) - 1,
+    last: Math.ceil(absBeat + ahead) + 1,
+  };
+}
+
+/**
  * The tempo grid, as absolute beat positions to rule, coarsest last so it
  * paints on top. `from`/`to` are absolute beats bounding the visible track.
  *

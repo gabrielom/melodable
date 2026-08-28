@@ -29,7 +29,7 @@ import {
   staffStep,
   type Engraved,
 } from "@/engine/notation";
-import { noteInk, paintCountIn, pxPerBeat } from "@/views/lane-geometry";
+import { gridBeatRange, noteInk, paintCountIn, pxPerBeat } from "@/views/lane-geometry";
 import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
 import type { NoteInstance } from "@/engine/scoring";
 
@@ -154,7 +154,7 @@ export class SheetStaff implements LaneRenderer {
     // Staff position of a pitch, as a y on the canvas.
     const yOfStep = (step: number) => bottomLineY - step * HALF_SPACE;
 
-    this.grid(f, trackX, W, topLineY, beatPx, xOfBeat);
+    this.grid(f, trackX, W, topLineY, xOfBeat);
     this.staffLines(ctx, trackX, W - trackX, topLineY, p.txt3);
     this.notes(f, xOfBeat, yOfStep);
     this.historyFade(f, trackX, hitX, H);
@@ -223,12 +223,14 @@ export class SheetStaff implements LaneRenderer {
     trackX: number,
     W: number,
     topLineY: number,
-    beatPx: number,
     xOfBeat: (b: number) => number,
   ): void {
     const ctx = this.ctx;
-    const first = Math.floor(f.absBeat - (xOfBeat(0) - trackX) / beatPx) - 1;
-    const last = first + Math.ceil((W - trackX) / beatPx) + 2;
+    // From the window this frame is drawing, the way the roll does it. Deriving
+    // it from `xOfBeat(0)` counted `absBeat` twice, so the range crept forward
+    // at double speed and slid out from under the track — which is why a
+    // barline would go missing and then reappear a few seconds later.
+    const { first, last } = gridBeatRange(f.absBeat, this.window.behind, this.window.ahead);
 
     for (let b = first; b <= last; b++) {
       const x = xOfBeat(b);
