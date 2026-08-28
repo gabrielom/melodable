@@ -10,6 +10,7 @@
  */
 
 import type { NoteInstance } from "@/engine/scoring";
+import type { Engraved } from "@/engine/notation";
 import type { Palette, Theme } from "@/engine/theme";
 import type { InstrumentType } from "@/engine/types";
 import type { LaneOrientation, PadLayout } from "@/stores/settings";
@@ -67,6 +68,15 @@ export interface LaneFrame {
   /** Piano: visible key range (inclusive), lane === MIDI pitch. */
   lowNote: number;
   highNote: number;
+
+  /**
+   * Sheet: the engraved value of each onset in the loop, keyed by beat.
+   *
+   * Computed from the whole lesson rather than from `instances`, which only
+   * carries what is on screen — a note's value depends on the gap to the note
+   * *after* it, and that one may not be visible yet.
+   */
+  noteValues: ReadonlyMap<number, Engraved>;
 }
 
 /**

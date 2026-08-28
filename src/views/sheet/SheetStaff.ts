@@ -136,7 +136,7 @@ export class SheetStaff implements LaneRenderer {
     // Zoom: the roll's five bars unless the lesson's closest pair would
     // collide at that scale, in which case zoom in until it clears (§1.7).
     const rollPx = pxPerBeat(trackW, f.beatsPerBar);
-    const gap = smallestGap(f.instances.map((i) => i.beat));
+    const gap = smallestGap([...f.noteValues.keys()]);
     const beatPx = sheetPxPerBeat(gap, rollPx);
 
     const hitX = trackX + trackW * PLAYHEAD_FRAC;
@@ -192,7 +192,11 @@ export class SheetStaff implements LaneRenderer {
     const ctx = this.ctx;
     const g = ctx.createLinearGradient(trackX, 0, hitX, 0);
     g.addColorStop(0, f.palette.lane);
-    g.addColorStop(1, "transparent");
+    // *Not* `transparent`, which is transparent **black**: a gradient to it
+    // interpolates the colour toward black as the alpha falls, so a light bed
+    // fades through a grey slab on its way to nothing. Fade the bed's own
+    // colour to zero alpha instead and only the notes underneath change.
+    g.addColorStop(1, fadeOut(f.palette.lane));
     ctx.fillStyle = g;
     ctx.fillRect(trackX, 0, hitX - trackX, H);
   }
@@ -298,7 +302,7 @@ export class SheetStaff implements LaneRenderer {
         x,
         y: yOfStep(step),
         step,
-        fig: figureFor(inst.duration),
+        fig: f.noteValues.get(inst.beat) ?? figureFor(inst.duration),
         ink: noteInk(f, inst, laneIndex),
         laneIndex,
       });
@@ -508,6 +512,20 @@ export class SheetStaff implements LaneRenderer {
       }
     }
   }
+}
+
+/**
+ * The same colour at zero alpha, for the far end of a fade.
+ *
+ * Canvas gradients interpolate premultiplied-ish in sRGB, so a stop of
+ * `transparent` drags the colour toward black on the way out. Anything but the
+ * colour's own transparent form leaves a visible cast.
+ */
+function fadeOut(hex: string): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return "rgba(0,0,0,0)";
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},0)`;
 }
 
 /** Beams a placed note carries, dot included (a dot never adds a beam). */

@@ -9,6 +9,7 @@ import {
   accidentalFor,
   beamGroups,
   beatsOf,
+  engraveOnsets,
   figureFor,
   ledgerSteps,
   sheetPxPerBeat,
@@ -229,5 +230,75 @@ describe("smallestGap", () => {
   it("has an answer for one note, or none", () => {
     expect(smallestGap([1])).toBe(0);
     expect(smallestGap([])).toBe(0);
+  });
+});
+
+/**
+ * The bug this fixes: `lessonTargets` zeroes any duration under the hold
+ * floor, so every quaver reached the renderer as `duration: 0` and was drawn
+ * as a crotchet — no flag, no beam, four times the music in a bar.
+ */
+describe("engraveOnsets", () => {
+  const FLOOR = 0.75;
+  const at = (spec: Array<[number, number]>) => spec.map(([beat, duration]) => ({ beat, duration }));
+
+  it("reads a bar of quavers as quavers, not crotchets", () => {
+    // What an imported eighth-note run actually looks like after the floor.
+    const notes = at([[0, 0], [0.5, 0], [1, 0], [1.5, 0], [2, 0], [2.5, 0], [3, 0], [3.5, 0]]);
+    const v = engraveOnsets(notes, 4, FLOOR);
+    for (const beat of [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5]) {
+      expect(v.get(beat)).toEqual({ figure: "eighth", dotted: false });
+    }
+  });
+
+  it("reads a bar of crotchets as crotchets", () => {
+    const v = engraveOnsets(at([[0, 0], [1, 0], [2, 0], [3, 0]]), 4, FLOOR);
+    for (const beat of [0, 1, 2, 3]) {
+      expect(v.get(beat)).toEqual({ figure: "quarter", dotted: false });
+    }
+  });
+
+  it("keeps a written length that survived the floor", () => {
+    // A half note is a real hold and says so itself.
+    const v = engraveOnsets(at([[0, 2], [2, 2]]), 4, FLOOR);
+    expect(v.get(0)).toEqual({ figure: "half", dotted: false });
+  });
+
+  it("runs the last onset to the end of the loop", () => {
+    expect(engraveOnsets(at([[0, 0], [3.5, 0]]), 4, FLOOR).get(3.5)).toEqual({
+      figure: "eighth",
+      dotted: false,
+    });
+    expect(engraveOnsets(at([[0, 0], [3, 0]]), 4, FLOOR).get(3)).toEqual({
+      figure: "quarter",
+      dotted: false,
+    });
+  });
+
+  it("gives a chord one value, spoken for by its longest note", () => {
+    const v = engraveOnsets(at([[0, 2], [0, 0], [0, 1]]), 4, FLOOR);
+    expect(v.size).toBe(1);
+    expect(v.get(0)).toEqual({ figure: "half", dotted: false });
+  });
+
+  it("reads sixteenths as sixteenths", () => {
+    const v = engraveOnsets(at([[0, 0], [0.25, 0], [0.5, 0], [0.75, 0]]), 4, FLOOR);
+    expect(v.get(0)).toEqual({ figure: "sixteenth", dotted: false });
+    // The last of the run still runs to the next onset, not to the bar end.
+    expect(v.get(0.5)).toEqual({ figure: "sixteenth", dotted: false });
+  });
+
+  it("reads a dotted-quaver against a semiquaver", () => {
+    const v = engraveOnsets(at([[0, 0], [0.75, 0]]), 4, FLOOR);
+    expect(v.get(0)).toEqual({ figure: "eighth", dotted: true });
+  });
+
+  it("never lets a written length outrun the loop", () => {
+    const v = engraveOnsets(at([[0, 99]]), 4, FLOOR);
+    expect(v.get(0)).toEqual({ figure: "whole", dotted: false });
+  });
+
+  it("has an answer for an empty loop", () => {
+    expect(engraveOnsets([], 4, FLOOR).size).toBe(0);
   });
 });

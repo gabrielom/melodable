@@ -12,6 +12,7 @@ import { useSettings } from "@/stores/settings";
 import { useLessons } from "@/stores/lessons";
 import { useHistory } from "@/stores/history";
 import type { HoldResult, LinkState, Rating } from "@/engine/types";
+import { HOLD_MIN_BEATS } from "@/engine/types";
 import { Transport, phaseDelta, START_DELAY, type StartGrid } from "@/engine/transport";
 import { PALETTE } from "@/engine/theme";
 import {
@@ -31,6 +32,7 @@ import { PadLanes } from "@/views/pads/PadLanes";
 import { PianoRoll } from "@/views/piano/PianoRoll";
 import { SheetStaff } from "@/views/sheet/SheetStaff";
 import { useNotationFont } from "@/composables/useNotationFont";
+import { engraveOnsets } from "@/engine/notation";
 import { Overview } from "@/views/Overview";
 import { normalizeRange } from "@/engine/pitch";
 
@@ -190,6 +192,15 @@ export function useTrainer(
    * bar, which is what lets the press time choose.
    */
   const linkQuantum = computed(() => lesson.value.beatsPerBar);
+
+  /**
+   * What each onset is *worth* as notation, which is not what it is worth as a
+   * hold. `lessonTargets` zeroes any duration under the hold floor, so reading
+   * the figure off `duration` drew every quaver as a crotchet.
+   */
+  const noteValues = computed(() =>
+    engraveOnsets(targets.value, loopBeats.value, HOLD_MIN_BEATS),
+  );
   const totalLoops = computed(() => lessonRepeats(lesson.value));
   /** The whole run in beats — what the overview strip spans. */
   const runBeats = computed(() => totalLoops.value * loopBeats.value);
@@ -344,6 +355,7 @@ export function useTrainer(
       padLayout: settings.padLayout,
       lowNote: pianoRange.value[0],
       highNote: pianoRange.value[1],
+      noteValues: noteValues.value,
     });
   }
 

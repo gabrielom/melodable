@@ -128,6 +128,46 @@ export function beatsOf(e: Engraved): number {
   return FIGURE_BEATS[e.figure] * (e.dotted ? 1.5 : 1);
 }
 
+/**
+ * The engraved value of every distinct onset in a loop.
+ *
+ * **Not the note's `duration`.** That answers a different question — how long
+ * you must hold it — and `lessonTargets` deliberately zeroes anything under
+ * `HOLD_MIN_BEATS`, because a short note is not a hold. Read as notation that
+ * turns every quaver in a piece into a crotchet: no flag, no beam, and a bar
+ * of eighths drawn as four times too much music.
+ *
+ * What decides a note's *shape* is the rhythmic slot it occupies, which is the
+ * distance to the next onset. So: use the written length when it survived the
+ * hold floor and is therefore real, and otherwise fill in from the gap.
+ *
+ * Notes struck together are one onset and take one value — a chord is a
+ * column, and its longest written note speaks for it.
+ */
+export function engraveOnsets(
+  notes: readonly { beat: number; duration: number }[],
+  loopBeats: number,
+  holdFloor: number,
+): Map<number, Engraved> {
+  const held = new Map<number, number>();
+  for (const n of notes) {
+    held.set(n.beat, Math.max(held.get(n.beat) ?? 0, n.duration));
+  }
+  const onsets = [...held.keys()].sort((a, b) => a - b);
+
+  const out = new Map<number, Engraved>();
+  for (let i = 0; i < onsets.length; i++) {
+    const beat = onsets[i];
+    // The last onset runs to the end of the loop, where the pattern repeats.
+    const next = i + 1 < onsets.length ? onsets[i + 1] : loopBeats;
+    const gap = Math.max(0, next - beat);
+    const written = held.get(beat) ?? 0;
+    const value = written >= holdFloor ? Math.min(written, loopBeats) : gap;
+    out.set(beat, figureFor(value));
+  }
+  return out;
+}
+
 // ------------------------------------------------------------------- pitch
 
 /** Diatonic index within an octave, and whether the pitch is a raised note. */
