@@ -47,6 +47,15 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
 - The bar carries **`data-tauri-drag-region="deep"`**, not the bare attribute. Tauri's shim walks up from the clicked node and stops at the first interactive element, so controls opt out of dragging by themselves; the bare form only catches direct hits on the header, which at this density is gaps and nothing else. Anything non-interactive that hangs off the bar — the dropdowns — needs `="false"` so a click on its own chrome doesn't drag the window. `-webkit-app-region` is Electron-only and does nothing here.
 - Dragging also needs **`core:window:allow-start-dragging`** in `src-tauri/capabilities/default.json`. `core:default` does *not* include it, and the shim swallows the rejection, so the failure is silent and looks like a CSS problem: the window still moves on the click that focuses it (AppKit handles that one) and double-click-zoom still works (`internal-toggle-maximize` *is* in the default set). Don't drop that grant.
 - Keep `-webkit-user-select: none` alongside the unprefixed rule. WKWebView only honours the plain property from Safari 17, and a live text selection beats the drag on the same mousedown.
+- **The name macOS shows in dev is the binary's filename, not `productName`.**
+  `tauri dev` runs the cargo output directly — there is no `.app` — so the Dock
+  hover and cmd-tab read the executable, which was `rhythm-trainer` long after
+  everything else had been renamed. Fixed with a `[[bin]] name = "Melodable"`
+  target in `src-tauri/Cargo.toml`, which is what Tauri's own docs point at;
+  `mainBinaryName` is applied at bundle time and so never reaches dev. The
+  crate stays lowercase `melodable`. A *bundled* build takes its name from
+  `productName` and was always right — if a built app still shows the old one,
+  that is the LaunchServices cache, not the bundle.
 - **App icons**: `npm run icons` renders the PNGs full-bleed for Windows/Linux and builds `icon.icns` inset to Apple's grid (824 of 1024). macOS needs that inset or the icon renders visibly larger than every other app in the Dock; the other platforms don't. In `tauri dev` on macOS there is no `.app`, so the Dock icon comes from the icns embedded into the binary by `generate_context!` — `src-tauri/build.rs` carries a `rerun-if-changed=icons` because tauri-build doesn't emit one, and without it an icon change never recompiles and the old artwork stays baked in.
 - **The run-history chart fills its axis at any count.** `stepFor` divides the
   number of attempts, not `MAX_ATTEMPTS`: six runs span the same width as
