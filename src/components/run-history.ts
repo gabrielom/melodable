@@ -87,18 +87,24 @@ export interface HistoryChart {
   path: string;
   first: HistoryPoint | null;
   current: HistoryPoint | null;
-  /** True only when this run beat every attempt before it. */
-  isBest: boolean;
-  /** Where the BEST flag goes. Null when `isBest` is false. */
-  badge: { x: number; y: number } | null;
+  /**
+   * The highest-scoring attempt, earliest on a tie — the one the BEST flag
+   * names when it is hovered. Null when there is nothing to compare.
+   */
+  bestIndex: number | null;
   gridlines: Array<{ value: number; y: number }>;
 }
 
-/** The badge sits over the current dot, kept inside the chart's width. */
-function badgeFor(current: HistoryPoint): { x: number; y: number } {
+/**
+ * Where the BEST flag goes above a dot, kept inside the chart's box.
+ *
+ * Takes any point rather than assuming the current one: the flag is shown on
+ * hover now, and the best run is not always the latest.
+ */
+export function badgeAt(point: HistoryPoint): { x: number; y: number } {
   return {
-    x: Math.min(Math.max(0, current.x - BADGE.w / 2), VIEW.w - BADGE.w),
-    y: Math.max(BADGE_CEILING, current.y - CURRENT_DOT_R - BADGE.gap - BADGE.h),
+    x: Math.min(Math.max(0, point.x - BADGE.w / 2), VIEW.w - BADGE.w),
+    y: Math.max(BADGE_CEILING, point.y - CURRENT_DOT_R - BADGE.gap - BADGE.h),
   };
 }
 
@@ -112,10 +118,14 @@ export function historyChart(attempts: readonly number[]): HistoryChart {
   const current = points.length ? points[points.length - 1] : null;
   // A single dot has no line, and no "first" to label — it *is* the first.
   const first = points.length > 1 ? points[0] : null;
-  const previous = attempts.slice(0, -1);
-  // Strictly beat, not matched: repeating your best is not a new one, and a
-  // badge that shows up on every run is decoration.
-  const isBest = previous.length > 0 && attempts[attempts.length - 1] > Math.max(...previous);
+
+  // Earliest on a tie: the run that *reached* the mark owns it, not a later
+  // one that merely matched it.
+  let bestIndex: number | null = null;
+  for (let i = 0; i < attempts.length; i++) {
+    if (bestIndex === null || attempts[i] > attempts[bestIndex]) bestIndex = i;
+  }
+
   return {
     points,
     path:
@@ -124,8 +134,7 @@ export function historyChart(attempts: readonly number[]): HistoryChart {
         : "",
     first,
     current,
-    isBest,
-    badge: isBest && current ? badgeFor(current) : null,
+    bestIndex,
     gridlines: GRID_VALUES.map((value) => ({ value, y: yOf(value / 100) })),
   };
 }

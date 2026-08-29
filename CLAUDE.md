@@ -57,6 +57,15 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   run lands — and that is accepted, not overlooked. It also retires the
   label-collision rule: `THIS RUN` is now always hard right, so the centred
   attempt count can never be pushed aside.
+- **The chart's numbers are on hover, not stamped on it.** Every dot has a
+  transparent 12px target — a 3px circle is not a pointer target — and hovering
+  one names its score below the dot. The **BEST flag is hover-only too**, over
+  the highest attempt wherever it sits (earliest on a tie), which is not always
+  the latest run. It used to sit permanently over the current dot; the header's
+  `NEW BEST` already says that, so the flag was saying it twice. Tip below the
+  dot and flag above, deliberately: they collided when both wanted the space
+  above, and scores cluster near the top of the plot so below is the empty
+  half.
 - **Sheet is a third trainer mode, not a third instrument** (handoff 10 §1).
   `ROLL | SHEET` swaps the renderer under the same transport and scorer —
   invariant 4 still holds, and `SheetStaff` is a renderer plus a pitch→staff

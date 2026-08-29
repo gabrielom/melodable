@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { AXIS_Y, BADGE, VIEW, historyChart, stepFor, xOf, yOf } from "@/components/run-history";
+import {
+  AXIS_Y,
+  BADGE,
+  VIEW,
+  badgeAt,
+  historyChart,
+  stepFor,
+  xOf,
+  yOf,
+} from "@/components/run-history";
 
 /** A full history, for the cases that care about the busiest chart. */
 
@@ -65,9 +74,8 @@ describe("historyChart", () => {
     expect(c.path).toBe("");
     expect(c.first).toBeNull();
     expect(c.current).not.toBeNull();
-    // Nothing to beat, so no badge either.
-    expect(c.isBest).toBe(false);
-    expect(c.badge).toBeNull();
+    // It is trivially its own best, being the only one.
+    expect(c.bestIndex).toBe(0);
   });
 
   it("puts a second attempt at the far right, opposite the first", () => {
@@ -88,39 +96,43 @@ describe("historyChart", () => {
     expect(historyChart([0.42]).points[0].x).toBe(26);
   });
 
-  it("badges a run only when it beat every attempt before it", () => {
-    expect(historyChart([0.4, 0.5, 0.9]).isBest).toBe(true);
-    expect(historyChart([0.4, 0.9, 0.5]).isBest).toBe(false);
-    // Matching your best is not beating it.
-    expect(historyChart([0.9, 0.9]).isBest).toBe(false);
+  it("names the highest attempt as the best, wherever it sits", () => {
+    expect(historyChart([0.4, 0.5, 0.9]).bestIndex).toBe(2);
+    // Not always the latest: a good run in the middle keeps the flag.
+    expect(historyChart([0.4, 0.9, 0.5]).bestIndex).toBe(1);
+  });
+
+  it("gives a tie to the run that reached the mark first", () => {
+    expect(historyChart([0.9, 0.9]).bestIndex).toBe(0);
+  });
+
+  it("has no best to name with no attempts at all", () => {
+    expect(historyChart([]).bestIndex).toBeNull();
   });
 
   it("keeps the badge inside the chart at full capacity", () => {
     const full = Array.from({ length: CAP }, (_, i) => i / CAP);
     const c = historyChart(full);
-    expect(c.badge).not.toBeNull();
-    expect(c.badge!.x).toBeGreaterThanOrEqual(0);
-    expect(c.badge!.x + BADGE.w).toBeLessThanOrEqual(VIEW.w);
+    const badge = badgeAt(c.points[c.bestIndex!]);
+    expect(badge.x).toBeGreaterThanOrEqual(0);
+    expect(badge.x + BADGE.w).toBeLessThanOrEqual(VIEW.w);
   });
 
   it("keeps the badge inside the box, even on a full-marks run", () => {
     // Handoff 10 §2: the taller plot leaves room above a perfect run, so the
     // badge no longer hangs outside the viewBox relying on overflow.
-    const perfect = historyChart([0.5, 1]).badge!;
+    const perfect = badgeAt(historyChart([0.5, 1]).points[1]);
     expect(perfect.y).toBe(0);
     expect(perfect.y + BADGE.h).toBeLessThanOrEqual(VIEW.h);
     // A low run keeps its badge attached to the dot instead.
-    expect(historyChart([0.1, 0.4]).badge!.y).toBeGreaterThan(0);
+    expect(badgeAt(historyChart([0.1, 0.4]).points[1]).y).toBeGreaterThan(0);
   });
 
   it("never lets the badge leave the box at any accuracy", () => {
-    // From 1% up, so the current run always beats the 0% before it and there
-    // is a badge to place at all.
-    for (let pct = 1; pct <= 100; pct++) {
-      const badge = historyChart([0, pct / 100]).badge;
-      expect(badge).not.toBeNull();
-      expect(badge!.y).toBeGreaterThanOrEqual(0);
-      expect(badge!.y + BADGE.h).toBeLessThanOrEqual(VIEW.h);
+    for (let pct = 0; pct <= 100; pct++) {
+      const badge = badgeAt(historyChart([0, pct / 100]).points[1]);
+      expect(badge.y).toBeGreaterThanOrEqual(0);
+      expect(badge.y + BADGE.h).toBeLessThanOrEqual(VIEW.h);
     }
   });
 
@@ -139,6 +151,6 @@ describe("historyChart", () => {
     const c = historyChart([]);
     expect(c.points).toEqual([]);
     expect(c.current).toBeNull();
-    expect(c.badge).toBeNull();
+    expect(c.bestIndex).toBeNull();
   });
 });

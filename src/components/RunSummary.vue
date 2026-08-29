@@ -10,7 +10,7 @@
  * answering here is whether you are getting better, and it takes more than
  * one run to answer.
  */
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { PALETTE } from "@/engine/theme";
 import { useSettings } from "@/stores/settings";
 import type { HoldResult, InstrumentType, Rating } from "@/engine/types";
@@ -21,6 +21,7 @@ import {
   CURRENT_DOT_R,
   DOT_R,
   VIEW,
+  badgeAt,
   historyChart,
 } from "@/components/run-history";
 
@@ -128,6 +129,30 @@ const nowLeft = computed(() => `${nowPct.value}%`);
  */
 const countAside = computed(() => false);
 
+/**
+ * Which dot the pointer is over, if any.
+ *
+ * The chart is a shape to read at a glance; the numbers behind it are there
+ * for when you want them, not stamped over every dot. Hovering one names its
+ * score, and names it BEST when it is the best of them.
+ */
+const hovered = ref<number | null>(null);
+const hoveredPoint = computed(() =>
+  hovered.value === null ? null : (chart.value.points[hovered.value] ?? null),
+);
+/** The BEST flag, shown over the best dot only while it is hovered. */
+const hoverBadge = computed(() =>
+  hovered.value !== null && hovered.value === chart.value.bestIndex && hoveredPoint.value
+    ? badgeAt(hoveredPoint.value)
+    : null,
+);
+/** Position the tip in the plot's own box, which the SVG fills exactly. */
+const tipStyle = computed(() => {
+  const pt = hoveredPoint.value;
+  if (!pt) return {};
+  return { left: `${(pt.x / VIEW.w) * 100}%`, top: `${(pt.y / VIEW.h) * 100}%` };
+});
+
 /** The chart is a picture; a screen reader gets the same facts as a sentence. */
 const chartLabel = computed(() => {
   const n = props.attempts.length;
@@ -185,6 +210,7 @@ const chartLabel = computed(() => {
           <b class="hscore num">{{ score }}%</b>
         </div>
 
+        <div class="hplot">
         <svg
           class="chart"
           :viewBox="`0 0 ${VIEW.w} ${VIEW.h}`"
@@ -220,26 +246,45 @@ const chartLabel = computed(() => {
             :r="CURRENT_DOT_R"
           />
 
-          <!-- Only when the run actually beat every attempt before it: a badge
-               that always appears is decoration. -->
-          <g v-if="chart.badge">
+          <!-- The flag names the best run, and only while that dot is hovered:
+               a badge that always shows is decoration, and the header already
+               says NEW BEST when this run earned one. -->
+          <g v-if="hoverBadge">
             <rect
               class="badge"
-              :x="chart.badge.x"
-              :y="chart.badge.y"
+              :x="hoverBadge.x"
+              :y="hoverBadge.y"
               :width="BADGE.w"
               :height="BADGE.h"
               rx="2"
             />
             <text
               class="badge-t"
-              :x="chart.badge.x + BADGE.w / 2"
-              :y="chart.badge.y + BADGE.h / 2 + 3"
+              :x="hoverBadge.x + BADGE.w / 2"
+              :y="hoverBadge.y + BADGE.h / 2 + 3"
             >
               BEST
             </text>
           </g>
+
+          <!-- Invisible targets, wider than the dots: a 3px circle is not
+               something a pointer should have to find. -->
+          <circle
+            v-for="(pt, i) in chart.points"
+            :key="`hit${i}`"
+            class="hit"
+            :cx="pt.x"
+            :cy="pt.y"
+            r="12"
+            @mouseenter="hovered = i"
+            @mouseleave="hovered = null"
+          />
         </svg>
+
+        <span v-if="hoveredPoint" class="htip" :style="tipStyle">
+          {{ Math.round(hoveredPoint.value * 100) }}%
+        </span>
+        </div>
 
         <!-- Each label sits where the thing it describes sits: the two ends
              track their own dots, the count is centred under the axis. -->
@@ -352,6 +397,33 @@ const chartLabel = computed(() => {
 .hscore { font-size: 15px; color: var(--txt); }
 
 .chart { display: block; width: 100%; height: auto; overflow: visible; }
+
+/* The plot's own box, so the hover tip can be placed in the chart's
+   coordinates as percentages rather than guessed at in pixels. */
+.hplot { position: relative; }
+
+/* Wider than the dot it covers — a 3px circle is not a pointer target. */
+.hit { fill: transparent; cursor: default; }
+
+/* The score behind a dot, on demand.
+   Below the dot, not above: the BEST flag owns the space above and the two
+   would sit on top of each other. Scores cluster near the top of the plot, so
+   below is the empty half. The transform does the centring, which keeps the
+   percentage position exact at any chart width. */
+.htip {
+  position: absolute;
+  transform: translate(-50%, 60%);
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--bar);
+  box-shadow: inset 0 0 0 1px var(--hair);
+  color: var(--txt);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
 
 .grid line { stroke: #00000014; stroke-width: 1; }
 :root[data-theme="dark"] .grid line { stroke: #ffffff10; }
