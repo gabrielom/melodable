@@ -96,6 +96,21 @@ export interface HistoryChart {
 }
 
 /**
+ * The score chip below a dot. Same box as the BEST flag — same height, same
+ * corner, same type — so the two read as one language on hover. Narrower,
+ * because it holds four characters rather than a word.
+ */
+export const TIP = { w: 34, h: 14, gap: 5 } as const;
+
+/** Where the score chip goes below a dot, kept inside the chart's box. */
+export function tipAt(point: HistoryPoint): { x: number; y: number } {
+  return {
+    x: Math.min(Math.max(0, point.x - TIP.w / 2), VIEW.w - TIP.w),
+    y: Math.min(VIEW.h - TIP.h, point.y + CURRENT_DOT_R + TIP.gap),
+  };
+}
+
+/**
  * Where the BEST flag goes above a dot, kept inside the chart's box.
  *
  * Takes any point rather than assuming the current one: the flag is shown on

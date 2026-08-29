@@ -21,8 +21,10 @@ import {
   CURRENT_DOT_R,
   DOT_R,
   VIEW,
+  TIP,
   badgeAt,
   historyChart,
+  tipAt,
 } from "@/components/run-history";
 
 const props = defineProps<{
@@ -146,12 +148,8 @@ const hoverBadge = computed(() =>
     ? badgeAt(hoveredPoint.value)
     : null,
 );
-/** Position the tip in the plot's own box, which the SVG fills exactly. */
-const tipStyle = computed(() => {
-  const pt = hoveredPoint.value;
-  if (!pt) return {};
-  return { left: `${(pt.x / VIEW.w) * 100}%`, top: `${(pt.y / VIEW.h) * 100}%` };
-});
+/** Where the score chip sits, in the chart's own coordinates. */
+const tipBox = computed(() => (hoveredPoint.value ? tipAt(hoveredPoint.value) : null));
 
 /** The chart is a picture; a screen reader gets the same facts as a sentence. */
 const chartLabel = computed(() => {
@@ -210,7 +208,6 @@ const chartLabel = computed(() => {
           <b class="hscore num">{{ score }}%</b>
         </div>
 
-        <div class="hplot">
         <svg
           class="chart"
           :viewBox="`0 0 ${VIEW.w} ${VIEW.h}`"
@@ -267,6 +264,23 @@ const chartLabel = computed(() => {
             </text>
           </g>
 
+          <!-- The score, in the flag's box but not its colour: green is a
+               rating here (`--rate-perfect`), and a 62% run wearing it would
+               be saying "perfect" about a poor one. -->
+          <g v-if="tipBox && hoveredPoint">
+            <rect
+              class="tipbox"
+              :x="tipBox.x"
+              :y="tipBox.y"
+              :width="TIP.w"
+              :height="TIP.h"
+              rx="2"
+            />
+            <text class="tip-t" :x="tipBox.x + TIP.w / 2" :y="tipBox.y + TIP.h / 2 + 3">
+              {{ Math.round(hoveredPoint.value * 100) }}%
+            </text>
+          </g>
+
           <!-- Invisible targets, wider than the dots: a 3px circle is not
                something a pointer should have to find. -->
           <circle
@@ -280,11 +294,6 @@ const chartLabel = computed(() => {
             @mouseleave="hovered = null"
           />
         </svg>
-
-        <span v-if="hoveredPoint" class="htip" :style="tipStyle">
-          {{ Math.round(hoveredPoint.value * 100) }}%
-        </span>
-        </div>
 
         <!-- Each label sits where the thing it describes sits: the two ends
              track their own dots, the count is centred under the axis. -->
@@ -398,31 +407,23 @@ const chartLabel = computed(() => {
 
 .chart { display: block; width: 100%; height: auto; overflow: visible; }
 
-/* The plot's own box, so the hover tip can be placed in the chart's
-   coordinates as percentages rather than guessed at in pixels. */
-.hplot { position: relative; }
-
 /* Wider than the dot it covers — a 3px circle is not a pointer target. */
 .hit { fill: transparent; cursor: default; }
 
-/* The score behind a dot, on demand.
-   Below the dot, not above: the BEST flag owns the space above and the two
-   would sit on top of each other. Scores cluster near the top of the plot, so
-   below is the empty half. The transform does the centring, which keeps the
-   percentage position exact at any chart width. */
-.htip {
-  position: absolute;
-  transform: translate(-50%, 60%);
-  padding: 2px 6px;
-  border-radius: 3px;
-  background: var(--bar);
-  box-shadow: inset 0 0 0 1px var(--hair);
-  color: var(--txt);
+/* The score behind a dot, on demand — the BEST flag's box, in the flag's
+   type, but never the flag's fill: `--rate-perfect` is a *rating*, and a 62%
+   run wearing it would be reading as a judgement of that run. So the chip is
+   the panel's own surface with the standard hairline, which is what every
+   other neutral field in the app wears.
+   Below the dot, not above: the flag owns the space above and the two would
+   overlap on the best run's dot, which is the one you hover first. */
+.tipbox { fill: var(--bar); stroke: var(--hair); stroke-width: 1; }
+.tip-t {
   font-family: var(--mono);
-  font-size: 9.5px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  pointer-events: none;
+  font-size: 8px;
+  letter-spacing: 1.1px;
+  fill: var(--txt);
+  text-anchor: middle;
 }
 
 .grid line { stroke: #00000014; stroke-width: 1; }

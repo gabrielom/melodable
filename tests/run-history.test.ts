@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   AXIS_Y,
   BADGE,
+  TIP,
   VIEW,
   badgeAt,
   historyChart,
   stepFor,
+  tipAt,
   xOf,
   yOf,
 } from "@/components/run-history";
@@ -152,5 +154,42 @@ describe("historyChart", () => {
     expect(c.points).toEqual([]);
     expect(c.current).toBeNull();
     expect(c.bestIndex).toBeNull();
+  });
+});
+
+describe("the hovered score's chip", () => {
+  it("never overlaps the BEST flag, which is why it sits below", () => {
+    // Both appear together on the best run's dot — the first one a pointer
+    // finds. Overlapping there would make each unreadable.
+    for (let pct = 0; pct <= 100; pct++) {
+      const point = historyChart([0, pct / 100]).points[1];
+      const badge = badgeAt(point);
+      const tip = tipAt(point);
+      expect(tip.y).toBeGreaterThanOrEqual(badge.y + BADGE.h);
+    }
+  });
+
+  it("stays inside the box at every accuracy", () => {
+    for (let pct = 0; pct <= 100; pct++) {
+      const tip = tipAt(historyChart([0, pct / 100]).points[1]);
+      expect(tip.y).toBeGreaterThanOrEqual(0);
+      expect(tip.y + TIP.h).toBeLessThanOrEqual(VIEW.h);
+    }
+  });
+
+  it("stays inside the box at either end of the axis", () => {
+    // The first and last dots sit hard against the edges, so a centred chip
+    // would hang off both.
+    const c = historyChart([0.4, 0.5, 0.6]);
+    for (const point of c.points) {
+      const tip = tipAt(point);
+      expect(tip.x).toBeGreaterThanOrEqual(0);
+      expect(tip.x + TIP.w).toBeLessThanOrEqual(VIEW.w);
+    }
+  });
+
+  it("centres on the dot when there is room", () => {
+    const point = historyChart([0.4, 0.5, 0.6]).points[1];
+    expect(tipAt(point).x + TIP.w / 2).toBeCloseTo(point.x);
   });
 });
