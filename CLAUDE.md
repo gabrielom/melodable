@@ -75,6 +75,20 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   dot and flag above, deliberately: they collided when both wanted the space
   above, and scores cluster near the top of the plot so below is the empty
   half.
+- **Both chips are the same box, and neither wears the flag's colour.** Same
+  height, corner and type; `badgeAt` and `tipAt` place them. But green is
+  `--rate-perfect`, a *rating*, so a 62% run wearing it would read as a
+  judgement of that run — the score chip takes `--bar` with the standard
+  hairline instead. They stand `gap` off the dot rather than tucked against
+  it, because the **mouse cursor hangs down and to the right of what it is
+  over** and a chip any closer sits under the arrow pointing at it; that
+  clearance is ~21 viewBox units, measured against a 19px arrow and the
+  chart's ~0.93 units-to-the-pixel scale, and `tests/run-history.test.ts`
+  pins it. Under about 22% there is no room below, so the chip **flips
+  above** and the flag stacks above *it* — clamping to the floor instead
+  would lay the chip across the dot it names. The viewBox is 10 taller than
+  handoff 10 §2 drew it, with the plot 10 lower inside it, purely as headroom
+  for the enlarged flag over a full-marks run; `PLOT_SPAN` is untouched.
 - **Sheet is a third trainer mode, not a third instrument** (handoff 10 §1).
   `ROLL | SHEET` swaps the renderer under the same transport and scorer —
   invariant 4 still holds, and `SheetStaff` is a renderer plus a pitch→staff

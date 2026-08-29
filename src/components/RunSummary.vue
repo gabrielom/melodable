@@ -258,7 +258,7 @@ const chartLabel = computed(() => {
             <text
               class="badge-t"
               :x="hoverBadge.x + BADGE.w / 2"
-              :y="hoverBadge.y + BADGE.h / 2 + 3"
+              :y="hoverBadge.y + BADGE.h / 2 + 3.6"
             >
               BEST
             </text>
@@ -276,7 +276,7 @@ const chartLabel = computed(() => {
               :height="TIP.h"
               rx="2"
             />
-            <text class="tip-t" :x="tipBox.x + TIP.w / 2" :y="tipBox.y + TIP.h / 2 + 3">
+            <text class="tip-t" :x="tipBox.x + TIP.w / 2" :y="tipBox.y + TIP.h / 2 + 3.6">
               {{ Math.round(hoveredPoint.value * 100) }}%
             </text>
           </g>
@@ -394,7 +394,7 @@ const chartLabel = computed(() => {
 .leg b { font-size: 9.5px; color: var(--txt2); }
 .swatch { width: 6px; height: 6px; border-radius: 1px; }
 
-/* Run history. The 620x148 viewBox scales uniformly to whatever width the
+/* Run history. The 620x158 viewBox scales uniformly to whatever width the
    panel column has — deliberately *not* `preserveAspectRatio: none`, which
    would squash the gridline labels and the badge's text along one axis.
    Since handoff 10 §2 doubled the plot's range the badge sits *inside* the
@@ -417,13 +417,14 @@ const chartLabel = computed(() => {
    other neutral field in the app wears.
    Below the dot, not above: the flag owns the space above and the two would
    overlap on the best run's dot, which is the one you hover first. */
-.tipbox { fill: var(--bar); stroke: var(--hair); stroke-width: 1; }
+.tipbox { fill: var(--bar); stroke: var(--hair); stroke-width: 1; pointer-events: none; }
 .tip-t {
   font-family: var(--mono);
-  font-size: 8px;
-  letter-spacing: 1.1px;
+  font-size: 10px;
+  letter-spacing: 1.2px;
   fill: var(--txt);
   text-anchor: middle;
+  pointer-events: none;
 }
 
 .grid line { stroke: #00000014; stroke-width: 1; }
@@ -455,13 +456,14 @@ const chartLabel = computed(() => {
 /* This run: the accuracy colour, a size larger — the one point the eye should
    find without looking for it. */
 .now { fill: var(--rate-perfect); }
-.badge { fill: var(--rate-perfect); }
+.badge { fill: var(--rate-perfect); pointer-events: none; }
 .badge-t {
   font-family: var(--mono);
-  font-size: 8px;
-  letter-spacing: 1.1px;
+  font-size: 10px;
+  letter-spacing: 1.2px;
   fill: var(--win);
   text-anchor: middle;
+  pointer-events: none;
 }
 
 .hfoot {

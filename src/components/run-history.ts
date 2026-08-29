@@ -13,19 +13,24 @@
 /**
  * The design's viewBox.
  *
- * Handoff 10 §2 doubled the height. At the old 55px of range the climb from a
- * first attempt to a good one was a shallow drift; at 110px it reads as
- * progress, which is the only reason the block is on the screen at all.
+ * Handoff 10 §2 doubled the *range* — `PLOT_SPAN`, untouched here. At the old
+ * 55px the climb from a first attempt to a good one was a shallow drift; at
+ * 110px it reads as progress, which is the only reason the block is on screen.
+ *
+ * The box is 10 taller than that handoff drew it, and the plot sits 10 lower
+ * inside it, which is headroom for the enlarged BEST flag above a full-marks
+ * run. Everything scales to the panel's width, so the extra buys about nine
+ * screen pixels of height and changes the size of nothing.
  */
-export const VIEW = { w: 620, h: 148 } as const;
+export const VIEW = { w: 620, h: 158 } as const;
 /** Left gutter carries the axis labels; the plot starts after it. */
 const PLOT_X0 = 26;
 const PLOT_X1 = 614;
-/** 0% sits at y=132, 100% at y=22. */
-const PLOT_Y0 = 132;
+/** 0% sits at y=142, 100% at y=32. */
+const PLOT_Y0 = 142;
 const PLOT_SPAN = 110;
 /** The rule under the plot, with a dot at each end. */
-export const AXIS_Y = 141;
+export const AXIS_Y = 151;
 export const AXIS_DOT_R = 2.6;
 export const DOT_R = 3.1;
 export const CURRENT_DOT_R = 4.1;
@@ -33,8 +38,14 @@ export const CURRENT_DOT_R = 4.1;
  *  read, not a table. */
 export const GRID_VALUES = [100, 50] as const;
 
-/** The BEST flag above the current dot. */
-export const BADGE = { w: 42, h: 14, gap: 5 } as const;
+/**
+ * The BEST flag above the hovered dot.
+ *
+ * `gap` is the reason both chips stand this far off: the mouse cursor hangs
+ * down and to the right of the point it is over, so a chip tucked against the
+ * dot is a chip under the arrow. It clears the pointer instead.
+ */
+export const BADGE = { w: 52, h: 18, gap: 18 } as const;
 /**
  * How far the badge may rise. With 100% at y=22 there is room for the badge
  * above a full-marks run *inside* the box, so it no longer hangs outside and
@@ -100,13 +111,35 @@ export interface HistoryChart {
  * corner, same type — so the two read as one language on hover. Narrower,
  * because it holds four characters rather than a word.
  */
-export const TIP = { w: 34, h: 14, gap: 5 } as const;
+export const TIP = { w: 44, h: 18, gap: 18 } as const;
 
-/** Where the score chip goes below a dot, kept inside the chart's box. */
-export function tipAt(point: HistoryPoint): { x: number; y: number } {
+/** A chip centred on a dot, pulled back inside the chart's left/right edges. */
+function chipX(point: HistoryPoint, width: number): number {
+  return Math.min(Math.max(0, point.x - width / 2), VIEW.w - width);
+}
+
+export interface TipBox {
+  x: number;
+  y: number;
+  /** True when the chip sits above the dot instead of below it. */
+  flipped: boolean;
+}
+
+/**
+ * Where the score chip goes: below the dot, standing clear of the cursor.
+ *
+ * A run in the bottom fifth has no room down there, and clamping the chip to
+ * the floor — what this did before it was this far out — would lay it across
+ * the very dot it is naming. So it flips above instead, which is empty at
+ * those scores by definition.
+ */
+export function tipAt(point: HistoryPoint): TipBox {
+  const below = point.y + CURRENT_DOT_R + TIP.gap;
+  const flipped = below + TIP.h > VIEW.h;
   return {
-    x: Math.min(Math.max(0, point.x - TIP.w / 2), VIEW.w - TIP.w),
-    y: Math.min(VIEW.h - TIP.h, point.y + CURRENT_DOT_R + TIP.gap),
+    x: chipX(point, TIP.w),
+    y: flipped ? point.y - CURRENT_DOT_R - TIP.gap - TIP.h : below,
+    flipped,
   };
 }
 
@@ -115,11 +148,16 @@ export function tipAt(point: HistoryPoint): { x: number; y: number } {
  *
  * Takes any point rather than assuming the current one: the flag is shown on
  * hover now, and the best run is not always the latest.
+ *
+ * When the score chip has flipped above, the flag stacks above *it* — the two
+ * appear together on the best dot, which is the first one a pointer finds.
  */
 export function badgeAt(point: HistoryPoint): { x: number; y: number } {
+  const tip = tipAt(point);
+  const ceiling = tip.flipped ? tip.y - BADGE.gap - BADGE.h : BADGE_CEILING;
   return {
-    x: Math.min(Math.max(0, point.x - BADGE.w / 2), VIEW.w - BADGE.w),
-    y: Math.max(BADGE_CEILING, point.y - CURRENT_DOT_R - BADGE.gap - BADGE.h),
+    x: chipX(point, BADGE.w),
+    y: tip.flipped ? ceiling : Math.max(ceiling, point.y - CURRENT_DOT_R - BADGE.gap - BADGE.h),
   };
 }
 

@@ -18,14 +18,14 @@ const CAP = 40;
 
 describe("run-history geometry", () => {
   it("maps accuracy onto the design's plot band", () => {
-    expect(yOf(0)).toBe(132);
-    expect(yOf(1)).toBe(22);
-    expect(yOf(0.5)).toBeCloseTo(77, 9);
+    expect(yOf(0)).toBe(142);
+    expect(yOf(1)).toBe(32);
+    expect(yOf(0.5)).toBeCloseTo(87, 9);
   });
 
   it("clamps a value outside 0..1 rather than drawing off the chart", () => {
-    expect(yOf(-1)).toBe(132);
-    expect(yOf(3)).toBe(22);
+    expect(yOf(-1)).toBe(142);
+    expect(yOf(3)).toBe(32);
   });
 
   it("keeps the plot clear of the axis rule", () => {
@@ -165,7 +165,22 @@ describe("the hovered score's chip", () => {
       const point = historyChart([0, pct / 100]).points[1];
       const badge = badgeAt(point);
       const tip = tipAt(point);
+      // The flag is always the upper of the two, flipped or not.
       expect(tip.y).toBeGreaterThanOrEqual(badge.y + BADGE.h);
+    }
+  });
+
+  it("stands clear of the dot, so the cursor is never on top of it", () => {
+    // The complaint this answers: tucked against the dot, the chip sat under
+    // the arrow that was pointing at it.
+    for (let pct = 0; pct <= 100; pct++) {
+      const point = historyChart([0, pct / 100]).points[1];
+      const tip = tipAt(point);
+      const clearance = tip.flipped ? point.y - (tip.y + TIP.h) : tip.y - point.y;
+      // A macOS arrow is about 19px tall below its hotspot, and the chart
+      // renders at roughly 0.93 viewBox units to the pixel in the summary's
+      // column — so it takes about 21 units to get out from under it.
+      expect(clearance).toBeGreaterThanOrEqual(21);
     }
   });
 
@@ -175,6 +190,28 @@ describe("the hovered score's chip", () => {
       expect(tip.y).toBeGreaterThanOrEqual(0);
       expect(tip.y + TIP.h).toBeLessThanOrEqual(VIEW.h);
     }
+  });
+
+  it("flips above a run too low to have room below it", () => {
+    // Clamping to the floor instead would draw the chip over its own dot.
+    const low = historyChart([0.5, 0]).points[1];
+    const tipLow = tipAt(low);
+    expect(tipLow.flipped).toBe(true);
+    expect(tipLow.y + TIP.h).toBeLessThan(low.y);
+
+    // And a normal score is not flipped — below is the resting side.
+    const mid = historyChart([0.5, 0.8]).points[1];
+    expect(tipAt(mid).flipped).toBe(false);
+    expect(tipAt(mid).y).toBeGreaterThan(mid.y);
+  });
+
+  it("stacks the flag above the flipped chip, not through it", () => {
+    const low = historyChart([0, 0]).points[1];
+    const tip = tipAt(low);
+    const badge = badgeAt(low);
+    expect(tip.flipped).toBe(true);
+    expect(badge.y + BADGE.h).toBeLessThanOrEqual(tip.y);
+    expect(badge.y).toBeGreaterThanOrEqual(0);
   });
 
   it("stays inside the box at either end of the axis", () => {
