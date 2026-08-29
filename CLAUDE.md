@@ -48,6 +48,15 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
 - Dragging also needs **`core:window:allow-start-dragging`** in `src-tauri/capabilities/default.json`. `core:default` does *not* include it, and the shim swallows the rejection, so the failure is silent and looks like a CSS problem: the window still moves on the click that focuses it (AppKit handles that one) and double-click-zoom still works (`internal-toggle-maximize` *is* in the default set). Don't drop that grant.
 - Keep `-webkit-user-select: none` alongside the unprefixed rule. WKWebView only honours the plain property from Safari 17, and a live text selection beats the drag on the same mousedown.
 - **App icons**: `npm run icons` renders the PNGs full-bleed for Windows/Linux and builds `icon.icns` inset to Apple's grid (824 of 1024). macOS needs that inset or the icon renders visibly larger than every other app in the Dock; the other platforms don't. In `tauri dev` on macOS there is no `.app`, so the Dock icon comes from the icns embedded into the binary by `generate_context!` — `src-tauri/build.rs` carries a `rerun-if-changed=icons` because tauri-build doesn't emit one, and without it an icon change never recompiles and the old artwork stays baked in.
+- **The run-history chart fills its axis at any count.** `stepFor` divides the
+  number of attempts, not `MAX_ATTEMPTS`: six runs span the same width as
+  twenty-eight, oldest at the left and this run hard right. It used to divide
+  the capacity so the spacing never changed and dots marched rightwards, which
+  left a short history huddled in the left fifth of an empty chart. The trade
+  is that the chart rescales as history accumulates — a dot moves when the next
+  run lands — and that is accepted, not overlooked. It also retires the
+  label-collision rule: `THIS RUN` is now always hard right, so the centred
+  attempt count can never be pushed aside.
 - **Sheet is a third trainer mode, not a third instrument** (handoff 10 §1).
   `ROLL | SHEET` swaps the renderer under the same transport and scorer —
   invariant 4 still holds, and `SheetStaff` is a renderer plus a pitch→staff

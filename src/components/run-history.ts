@@ -45,17 +45,27 @@ const BADGE_CEILING = 0;
 /**
  * Horizontal step between attempts.
  *
- * Fixed, not stretched to fill: a second attempt should read as two dots near
- * the left, not as a chart with two points. It is derived from the *full*
- * capacity so the spacing never changes as history accumulates — dots march
- * rightwards across runs instead of the whole chart rescaling under you.
+ * Stretched to fill: the attempts always span the whole axis, whether there
+ * are six of them or the full twenty-eight, so the shape of the climb is the
+ * same size to read at any point in a lesson's life.
+ *
+ * It used to divide the *capacity* instead, which kept the spacing fixed and
+ * marched the dots rightwards as history accumulated — six attempts then
+ * huddled into the left fifth of a mostly empty chart, which is the one thing
+ * the block is on screen to avoid.
  */
-export function stepFor(capacity: number): number {
-  return capacity > 1 ? (PLOT_X1 - PLOT_X0) / (capacity - 1) : 0;
+export function stepFor(count: number): number {
+  return count > 1 ? (PLOT_X1 - PLOT_X0) / (count - 1) : 0;
 }
 
-export function xOf(index: number, capacity: number): number {
-  return PLOT_X0 + index * stepFor(capacity);
+/**
+ * Where the `index`-th of `count` attempts sits.
+ *
+ * Oldest at the left, this run hard right. A lone attempt has no span to
+ * stretch across and starts at the left, where a history begins.
+ */
+export function xOf(index: number, count: number): number {
+  return PLOT_X0 + index * stepFor(count);
 }
 
 /** Accuracy 0..1 to a y in the plot. Clamped, so a rogue value stays inside. */
@@ -94,10 +104,11 @@ function badgeFor(current: HistoryPoint): { x: number; y: number } {
 
 /**
  * Lay the attempts out. `attempts` is oldest first and includes the run that
- * has just finished, which is always the last point.
+ * has just finished, which is always the last point and always the rightmost.
  */
-export function historyChart(attempts: readonly number[], capacity: number): HistoryChart {
-  const points = attempts.map((value, i) => ({ x: xOf(i, capacity), y: yOf(value), value }));
+export function historyChart(attempts: readonly number[]): HistoryChart {
+  const n = attempts.length;
+  const points = attempts.map((value, i) => ({ x: xOf(i, n), y: yOf(value), value }));
   const current = points.length ? points[points.length - 1] : null;
   // A single dot has no line, and no "first" to label — it *is* the first.
   const first = points.length > 1 ? points[0] : null;

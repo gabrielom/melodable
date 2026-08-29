@@ -23,7 +23,6 @@ import {
   VIEW,
   historyChart,
 } from "@/components/run-history";
-import { MAX_ATTEMPTS } from "@/stores/history";
 
 const props = defineProps<{
   lessonName: string;
@@ -104,16 +103,15 @@ const heldPct = computed(() =>
  * attempts in hand, so the dots march rightwards as history accumulates
  * instead of the whole chart rescaling under you after every run.
  */
-const chart = computed(() => historyChart(props.attempts, MAX_ATTEMPTS));
+const chart = computed(() => historyChart(props.attempts));
 
 /**
  * The two dot-anchored footer labels, as percentages across the chart.
  *
- * The design's rule is that a label sits where the thing it describes sits,
- * and with fewer attempts than the chart holds the last dot is nowhere near
- * the right edge — so `THIS RUN` has to follow it rather than pin to the
- * panel. `FIRST` reads from its dot rightwards; `THIS RUN` is centred on the
- * last and clamped so a full history does not push it off the edge.
+ * A label sits where the thing it describes sits. Now that the attempts always
+ * span the full axis, `FIRST` reads from the left-hand dot rightwards and
+ * `THIS RUN` sits under the right-hand one, clamped so it cannot be pushed off
+ * the edge.
  */
 const pctOf = (x: number) => (x / VIEW.w) * 100;
 const firstLeft = computed(() => `${pctOf(chart.value.first?.x ?? 0)}%`);
@@ -121,18 +119,14 @@ const nowPct = computed(() => Math.min(pctOf(chart.value.current?.x ?? 0), 92));
 const nowLeft = computed(() => `${nowPct.value}%`);
 
 /**
- * The attempt count is centred under the axis, except when `THIS RUN` has
- * moved into that space.
+ * The attempt count is centred under the axis, and now always can be.
  *
- * The design's frame only shows a full history, where the last dot is hard
- * right and the two never meet. Partway through — roughly a dozen attempts in
- * — the dot sits near the middle and the two labels overlap. The count gives
- * way rather than the dot-anchored one, because the right end is empty in
- * exactly those cases, and moving a label the axis owns is a smaller lie than
- * moving one that names a dot.
+ * It used to have to step aside: with fixed spacing the current dot drifted
+ * across the middle as history accumulated, and around a dozen attempts in it
+ * collided with the centred count. The dots span the full axis now, so
+ * `THIS RUN` is always hard right and the two can never meet.
  */
-const COLLIDE_PCT = 13;
-const countAside = computed(() => Math.abs(nowPct.value - 50) < COLLIDE_PCT);
+const countAside = computed(() => false);
 
 /** The chart is a picture; a screen reader gets the same facts as a sentence. */
 const chartLabel = computed(() => {
