@@ -349,6 +349,7 @@ export function useTrainer(
       palette: palette.value,
       theme: settings.theme,
       orientation: settings.laneOrientation,
+      mono: sheetOn.value && settings.sheetInk === "mono",
       instrument: lesson.value.instrument,
       hueOrder: isPiano.value ? lessonPitches.value : lanes.value,
       padLanes: lanes.value,

@@ -43,6 +43,13 @@ export interface LaneFrame {
   orientation: LaneOrientation;
 
   /**
+   * Engrave in plain ink instead of the instrument hues. Sheet only — the
+   * falling views set it false, since a lane stack with its hues removed has
+   * nothing left to tell one lane from another.
+   */
+  mono: boolean;
+
+  /**
    * Which of the two views this is. The renderer knows already, but the shared
    * colour rule doesn't — pads and piano take the same hue list in a different
    * order, so `noteInk` has to be told which.

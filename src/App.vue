@@ -18,6 +18,7 @@ import { AudioEngine, type Bus } from "@/engine/audio";
 import { PADS, PAD_KEY_MAP, PIANO_KEY_MAP, noteToPad } from "@/engine/gm";
 import { parseMidiFile, midiToLesson, type ParsedMidi } from "@/engine/midi-file";
 import type { MidiMessage, InstrumentType } from "@/engine/types";
+import { PALETTE, hueOf } from "@/engine/theme";
 
 import DeviceMenu from "@/components/DeviceMenu.vue";
 import MidiMonitor from "@/components/MidiMonitor.vue";
@@ -530,6 +531,17 @@ function onKeyUp(e: KeyboardEvent) {
 }
 
 // ------------------------------------------------------------------- theme
+/**
+ * The hue on the "coloured" notehead button.
+ *
+ * Read from the palette, not restated as a literal: it is the colour the
+ * staff's lowest voice is actually wearing, so the button cannot drift out of
+ * step with the page it describes. Full strength rather than the `dim` a
+ * target wears — the icon is a symbol standing for the whole set, not a sample
+ * of one note.
+ */
+const firstHue = computed(() => hueOf(PALETTE[settings.theme], "piano", 0).full);
+
 // The palette lives in CSS custom properties keyed off `data-theme` on <html>;
 // the canvas renderers get the same values as data via `engine/theme.ts`.
 watch(
@@ -745,15 +757,21 @@ watch(
         <i class="divider" />
       </template>
 
-      <div v-if="view === 'trainer'" class="seg" role="group" aria-label="Note direction">
-        <!-- Notation has no vertical form, so while sheet is on the falling
-             option is dead rather than hidden — a control that vanishes is
-             harder to understand than one that is plainly unavailable. -->
+      <!-- One slot, two pairs. Sheet has no direction to choose — notation has
+           no falling form — so rather than sit there dead the slot spends
+           itself on the choice sheet *does* have: hues or plain ink. Same
+           `.seg`, same two 20px icon buttons, so the bar's width does not
+           move and the window floor is untouched. -->
+      <div
+        v-if="view === 'trainer' && !sheetOn"
+        class="seg"
+        role="group"
+        aria-label="Note direction"
+      >
         <button
           class="seg-i icon"
-          :class="{ on: settings.laneOrientation === 'vertical' && !sheetOn }"
-          :disabled="sheetOn"
-          :data-tip="sheetOn ? 'Sheet view has no falling form' : 'Notes fall top to bottom'"
+          :class="{ on: settings.laneOrientation === 'vertical' }"
+          data-tip="Notes fall top to bottom"
           aria-label="Falling notes"
           @click="settings.laneOrientation = 'vertical'"
         >
@@ -761,12 +779,43 @@ watch(
         </button>
         <button
           class="seg-i icon"
-          :class="{ on: settings.laneOrientation === 'horizontal' || sheetOn }"
+          :class="{ on: settings.laneOrientation === 'horizontal' }"
           data-tip="Notes scroll right to left"
           aria-label="Scrolling notes"
           @click="settings.laneOrientation = 'horizontal'"
         >
           →
+        </button>
+      </div>
+
+      <!-- The notehead is drawn, not typed: it is the object being described,
+           and at 11px a font glyph is at the mercy of the fallback stack. The
+           coloured one takes the hue the staff's lowest voice actually wears,
+           read from the palette rather than restated here, so the button can
+           never disagree with the page. The plain one inks from
+           `currentColor`, so it inverts with the chip like every other icon. -->
+      <div v-if="view === 'trainer' && sheetOn" class="seg" role="group" aria-label="Note ink">
+        <button
+          class="seg-i icon ink"
+          :class="{ on: settings.sheetInk === 'colour' }"
+          data-tip="Noteheads in the instrument colours"
+          aria-label="Coloured noteheads"
+          @click="settings.sheetInk = 'colour'"
+        >
+          <svg class="nh" viewBox="0 0 14 14" aria-hidden="true">
+            <ellipse cx="7" cy="7" rx="4.6" ry="3.2" :fill="firstHue" transform="rotate(-20 7 7)" />
+          </svg>
+        </button>
+        <button
+          class="seg-i icon ink"
+          :class="{ on: settings.sheetInk === 'mono' }"
+          data-tip="Noteheads in plain ink"
+          aria-label="Plain noteheads"
+          @click="settings.sheetInk = 'mono'"
+        >
+          <svg class="nh" viewBox="0 0 14 14" aria-hidden="true">
+            <ellipse cx="7" cy="7" rx="4.6" ry="3.2" fill="currentColor" transform="rotate(-20 7 7)" />
+          </svg>
         </button>
       </div>
 
@@ -1432,6 +1481,8 @@ watch(
   cursor: pointer;
   white-space: nowrap;
 }
+/* The notehead icon fills the 20px button the way the glyphs do. */
+.nh { width: 13px; height: 13px; display: block; }
 .seg-i.icon {
   /* Regular, like `.ico`: these are Unicode symbols from a fallback face, and
      a medium weight there is synthesised rather than drawn. */
@@ -1447,8 +1498,11 @@ watch(
    surface is the same grey, so a lighter fill would read as nothing. */
 .seg-i.on { background: var(--active); color: var(--active-txt); }
 .seg-i.on:hover { background: var(--active); }
-/* Direction icons take the accent when active in dark, the inverted ink in light. */
-:root[data-theme="dark"] .seg-i.icon.on { color: var(--head); }
+/* Direction icons take the accent when active in dark, the inverted ink in light.
+   Not the ink pair: its plain notehead draws from `currentColor`, and the
+   accent is a colour — a selected "no colour" button rendering cyan would be
+   saying the opposite of what it does. It keeps the ordinary inverted ink. */
+:root[data-theme="dark"] .seg-i.icon.on:not(.ink) { color: var(--head); }
 .caret { font-size: 6.5px; font-style: normal; opacity: 0.7; }
 
 .wordmark {

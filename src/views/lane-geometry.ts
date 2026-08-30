@@ -28,14 +28,20 @@ import type { LaneFrame } from "@/views/lane-frame";
  * During the count-in nothing has been judged at all, so everything takes its
  * tint whatever the scorer says. A count-in showing greens and ambers would be
  * showing results that do not exist.
+ *
+ * `mono` (sheet only) drops the *target* half of that to plain ink — the
+ * printed page, where a notehead's colour says nothing and its position on the
+ * staff says everything. It leaves the *result* half alone, because a rating
+ * is not decoration: it is the only thing on screen that answers how the run
+ * went, and a trainer that cannot say so is not a trainer.
  */
 export function noteInk(
-  f: Pick<LaneFrame, "palette" | "instrument" | "countIn">,
+  f: Pick<LaneFrame, "palette" | "instrument" | "countIn" | "mono">,
   inst: Pick<NoteInstance, "resolved" | "rating">,
   laneIndex: number,
 ): string {
   if (inst.resolved && inst.rating && !f.countIn) return f.palette.rating[inst.rating];
-  return hueOf(f.palette, f.instrument, laneIndex).dim;
+  return f.mono ? f.palette.txt : hueOf(f.palette, f.instrument, laneIndex).dim;
 }
 
 /**

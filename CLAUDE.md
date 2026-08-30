@@ -32,6 +32,28 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
 - Two themes, `dark` and `light`, swapped by `data-theme` on `<html>` from `settings.theme`. Light is one flat grey, so on-states **invert** to a dark chip and every field needs the `--outline` hairline — a lighter fill reads as nothing.
 - **Two colour languages, and a note wears exactly one.** The **instrument hues** name a lane or a pitch — *what* to hit. The **rating** colours name a result — *how well*. They share no value, so a dimmed target can never be misread as a judgement. `noteInk` (`src/views/lane-geometry.ts`) is the single place that decides, and every renderer goes through it. The switch is `resolved`, not which side of the playhead a note is on: a note sitting on the playhead has no result yet. During the count-in nothing is judged, so everything shows its tint.
 - Rating colors live in the palette: `PALETTE[theme].rating[r]` (`src/engine/theme.ts`). Renderers read that, never a hardcoded rating colour.
+- **Mono ink is sheet's, and it takes only the first of those two languages.**
+  `settings.sheetInk` (`colour` | `mono`) sets `LaneFrame.mono`, and `noteInk`
+  answers `palette.txt` instead of the lane's dim hue — the printed page, where
+  a notehead's colour says nothing and its place on the staff says everything.
+  The **rating half is untouched**, decided with the user: a result is not
+  decoration, it is the only thing on screen that answers how the run went, so
+  a mono staff still turns red where you missed. `tests/note-ink.test.ts` pins
+  both halves in both themes. The falling views never set it — strip a lane
+  stack of its hues and nothing is left to tell one lane from another — and
+  that is why the toggle is sheet-only rather than a global preference.
+- **One bar slot, two pairs.** In roll the slot holds `↓ →`; in sheet it holds
+  the two noteheads, because notation has no falling form and the slot was
+  otherwise sitting there disabled. Both groups are a `.seg` of two 20px
+  `.seg-i.icon` buttons and both measure **46px**, so the swap moves nothing
+  else and the window floor is untouched — keep it that way if either pair
+  changes. The noteheads are drawn SVG ellipses for the reason the bar's other
+  icons are (a font glyph is at the mercy of the fallback stack); the coloured
+  one reads `hueOf(PALETTE[theme], "piano", 0).full` rather than restating a
+  literal, so it cannot drift from the staff. The plain one inks from
+  `currentColor` and is therefore excluded from the dark `.seg-i.icon.on`
+  accent rule via `:not(.ink)` — a selected "no colour" button rendering cyan
+  says the opposite of what it does.
 - **A lesson is a finite run, not an endless loop.** The pattern plays
   `lesson.repeats` times (built-ins are 16 bars, 39-55s) and then ends; the run
   is scored as a whole, and clearing one clean run advances the library.
