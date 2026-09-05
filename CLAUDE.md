@@ -120,12 +120,35 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   about a drum pad, and no percussion staff was ever drawn. Six of the seven
   built-ins are pads, so for most of the library the pair is simply absent —
   `sheetAvailable` is the gate.
+- **The key signature is derived from the lesson, not authored on it.** An
+  imported clip carries no key, and asking the player to name one before they
+  can read the staff is a worse trade than reading it off the notes.
+  `keySignatureFor` costs every signature by the only measure that shows on the
+  page — how many *notes* fall outside its scale — and takes the cheapest, with
+  a tie going to the simpler signature. So a bare triad, which is diatonic to
+  three keys, is written in the plainest of them rather than an arbitrary one,
+  and **a lesson that uses only part of a scale will honestly get a smaller
+  signature**; that is the rule working, not a bug. Major and relative minor
+  share a signature, so there is no mode to guess. `spell` then places and
+  inks each note against it: bare in the key, a natural where the signature
+  would alter it, a sharp or flat outside it — which is what makes flat keys
+  spell as flats instead of the sharp equivalents the key-less pair gave them.
+  `spell(p, 0)` reproduces `staffStep`/`accidentalFor` exactly, and
+  `tests/notation.test.ts` pins that plus a full round trip over every key and
+  every pitch.
 - **Notation comes from Noto Music, vendored in `src/assets/fonts`** — never
   drawn by hand and never fetched from a CDN. Two numbers are measured off the
   font binary rather than estimated, and `tests/notation.test.ts` pins both: a
   notehead is `0.252em` tall (so `fontSize = staffSpace / 0.252`) and its
   centre sits `0.134em` above the alphabetic baseline. Replace the font and
-  re-measure; do not assume they carry over. **Canvas cannot wait for a
+  re-measure; do not assume they carry over. The accidentals add a third set,
+  measured the same way but from each glyph's **counter** — the hole it
+  encloses, which is the part an engraver lines up with the note. The sharp's
+  and the natural's land on the notehead centre to three decimals, which is the
+  font saying they are drawn to sit level with a head; the flat's is `0.1175em`
+  and does not, because its bowl hangs below a stem that rises out of the way.
+  The clef's ink runs to `0.661em`, which is what `SIG_X0` clears so the key
+  signature does not sit on top of it. **Canvas cannot wait for a
   webfont** — `ctx.font` falls back silently and the frame is already painted
   — so `useNotationFont` loads it and the sheet renderer is not built until it
   is in.

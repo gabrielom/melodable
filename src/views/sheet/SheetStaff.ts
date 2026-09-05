@@ -16,18 +16,21 @@
  */
 
 import {
+  ACCIDENTAL,
+  ACCIDENTAL_EM_CENTRE,
   CLEF_TREBLE,
   GLYPH,
   NOTEHEAD_EM_CENTRE,
   NOTEHEAD_EM_HEIGHT,
-  accidentalFor,
   beamGroups,
   figureFor,
   ledgerSteps,
   sheetPxPerBeat,
+  signatureMarks,
   smallestGap,
-  staffStep,
+  spell,
   type Engraved,
+  type SignatureMark,
 } from "@/engine/notation";
 import { gridBeatRange, noteInk, paintCountIn, pxPerBeat } from "@/views/lane-geometry";
 import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
@@ -39,9 +42,28 @@ const HALF_SPACE = SPACE / 2;
 const LINE_W = 1.4;
 const STAFF_H = SPACE * 4;
 
-/** The clef's own column: five short staff lines, then a rule. */
+/**
+ * The clef's own column: five short staff lines, then a rule.
+ *
+ * This is the width with no key signature. A signature widens it — the column
+ * holds clef, key and metre, and the music starts after all three — so the
+ * track origin is `this.gutter`, computed per frame, and not this constant.
+ */
 const CLEF_GUTTER = 92;
 const CLEF_RULE_W = 1;
+
+/**
+ * Where the signature starts, and the gap it leaves before the metre.
+ *
+ * The clef is drawn at x=10 and its ink runs to 0.661em of the staff size —
+ * 54.6px — so the first accidental starts clear of that, not on top of it.
+ * Both numbers are measured off the font rather than guessed; change the staff
+ * size and they want re-deriving.
+ */
+const SIG_X0 = 58;
+const SIG_TAIL = 8;
+/** Accidentals are drawn smaller than a notehead, in the signature and before a note. */
+const ACCIDENTAL_SCALE = 0.62;
 
 const BARLINE_W = 1.8;
 /** Beat hairlines run this much past the staff, top and bottom. */
@@ -89,6 +111,8 @@ interface Placed {
   /** Centre of the notehead. */
   y: number;
   step: number;
+  /** What the key leaves to be drawn before this note, if anything. */
+  accidental: "sharp" | "flat" | "natural" | null;
   fig: Engraved;
   ink: string;
   laneIndex: number;
@@ -100,6 +124,8 @@ interface Placed {
 export class SheetStaff implements LaneRenderer {
   private ctx: CanvasRenderingContext2D;
   private window: VisibleWindow = { behind: 0, ahead: 0 };
+  /** Left column's width this frame: clef, key signature and metre. */
+  private gutter = CLEF_GUTTER;
 
   constructor(private readonly el: HTMLCanvasElement) {
     const ctx = el.getContext("2d");
@@ -128,8 +154,11 @@ export class SheetStaff implements LaneRenderer {
     const H = this.el.clientHeight;
     ctx.clearRect(0, 0, W, H);
 
-    const trackX = CLEF_GUTTER;
-    const trackW = Math.max(1, W - CLEF_GUTTER);
+    // The key signature lives in the gutter, so it sets the track's origin.
+    const marks = signatureMarks(f.keyFifths);
+    this.gutter = CLEF_GUTTER + this.signatureWidth(marks);
+    const trackX = this.gutter;
+    const trackW = Math.max(1, W - trackX);
 
     // The staff sits above the space the keyboard leaves, centred in what is
     // left rather than pinned, so the view breathes at any window height.
@@ -158,7 +187,7 @@ export class SheetStaff implements LaneRenderer {
     this.staffLines(ctx, trackX, W - trackX, topLineY, p.txt3);
     this.notes(f, xOfBeat, yOfStep);
     this.historyFade(f, trackX, hitX, H);
-    this.clefGutter(f, topLineY, bottomLineY);
+    this.clefGutter(f, marks, topLineY, bottomLineY);
 
     // Playhead last of the chrome, so it reads over the notation.
     ctx.fillStyle = p.head;
@@ -251,15 +280,35 @@ export class SheetStaff implements LaneRenderer {
     }
   }
 
-  /** The clef's column: its own staff lines, the clef, 4/4, and a rule. */
-  private clefGutter(f: LaneFrame, topLineY: number, bottomLineY: number): void {
+  /**
+   * How much width the key signature needs, measured rather than assumed —
+   * the advance of the glyph the font actually has, so the column fits it at
+   * any staff size and for either accidental.
+   */
+  private signatureWidth(marks: readonly SignatureMark[]): number {
+    if (marks.length === 0) return 0;
+    const ctx = this.ctx;
+    ctx.font = `${(SPACE / NOTEHEAD_EM_HEIGHT) * ACCIDENTAL_SCALE}px ${MUSIC}`;
+    let w = 0;
+    for (const m of marks) w += ctx.measureText(ACCIDENTAL[m.accidental]).width;
+    return w + SIG_TAIL;
+  }
+
+  /** The clef's column: its own staff lines, the clef, the key, 4/4, a rule. */
+  private clefGutter(
+    f: LaneFrame,
+    marks: readonly SignatureMark[],
+    topLineY: number,
+    bottomLineY: number,
+  ): void {
     const ctx = this.ctx;
     const p = f.palette;
+    const gutter = this.gutter;
 
     // Opaque, so notation scrolling off the left disappears behind it.
     ctx.fillStyle = p.lane;
-    ctx.fillRect(0, 0, CLEF_GUTTER, this.el.clientHeight);
-    this.staffLines(ctx, 0, CLEF_GUTTER, topLineY, p.txt3);
+    ctx.fillRect(0, 0, gutter, this.el.clientHeight);
+    this.staffLines(ctx, 0, gutter, topLineY, p.txt3);
 
     const size = SPACE / NOTEHEAD_EM_HEIGHT;
     ctx.fillStyle = p.txt;
@@ -269,18 +318,33 @@ export class SheetStaff implements LaneRenderer {
     // The treble clef curls around G4 — the second line up.
     ctx.fillText(CLEF_TREBLE, 10, bottomLineY - 2 * HALF_SPACE + NOTEHEAD_EM_CENTRE * size);
 
+    // The key signature, between clef and metre — where a reader looks for it,
+    // and the reason a note in the key needs no accidental of its own.
+    const accSize = size * ACCIDENTAL_SCALE;
+    ctx.font = `${accSize}px ${MUSIC}`;
+    let x = SIG_X0;
+    for (const m of marks) {
+      const glyph = ACCIDENTAL[m.accidental];
+      ctx.fillText(
+        glyph,
+        x,
+        bottomLineY - m.step * HALF_SPACE + ACCIDENTAL_EM_CENTRE[m.accidental] * accSize,
+      );
+      x += ctx.measureText(glyph).width;
+    }
+
     // Time signature, stacked in the two halves of the staff.
     ctx.font = `600 ${SPACE * 1.5}px ${SANS}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    const sigX = CLEF_GUTTER - 24;
+    const sigX = gutter - 24;
     ctx.fillText(String(f.beatsPerBar), sigX, topLineY + SPACE);
     ctx.fillText("4", sigX, topLineY + SPACE * 3);
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
 
     ctx.fillStyle = p.hair;
-    ctx.fillRect(CLEF_GUTTER - CLEF_RULE_W, 0, CLEF_RULE_W, this.el.clientHeight);
+    ctx.fillRect(gutter - CLEF_RULE_W, 0, CLEF_RULE_W, this.el.clientHeight);
   }
 
   // ------------------------------------------------------------ the notes
@@ -303,17 +367,20 @@ export class SheetStaff implements LaneRenderer {
     const placed: Placed[] = [];
     for (const inst of f.instances) {
       const x = xOfBeat(this.absBeatOf(inst, f));
-      const step = staffStep(inst.lane);
+      // Spelled in the lesson's key, so a note the signature already covers
+      // arrives bare and one outside it says so.
+      const { step, accidental } = spell(inst.lane, f.keyFifths);
       const laneIndex = Math.max(0, f.hueOrder.indexOf(inst.lane));
       placed.push({
         inst,
         x,
         y: yOfStep(step),
         step,
+        accidental,
         fig: f.noteValues.get(inst.beat) ?? figureFor(inst.duration),
         ink: noteInk(f, inst, laneIndex),
         laneIndex,
-        visible: x >= CLEF_GUTTER - 60 && x <= W + 60,
+        visible: x >= this.gutter - 60 && x <= W + 60,
       });
     }
     // Sorted by written position, not by x: exact lesson data cannot reorder
@@ -469,11 +536,16 @@ export class SheetStaff implements LaneRenderer {
   }
 
   private accidental(n: Placed, size: number): void {
-    if (accidentalFor(n.inst.lane) !== "sharp") return;
+    if (!n.accidental) return;
     const ctx = this.ctx;
+    const accSize = size * ACCIDENTAL_SCALE;
     ctx.fillStyle = n.ink;
-    ctx.font = `${size * 0.62}px ${MUSIC}`;
-    ctx.fillText("♯", n.x - SPACE * 1.5, n.y + NOTEHEAD_EM_CENTRE * size * 0.62);
+    ctx.font = `${accSize}px ${MUSIC}`;
+    ctx.fillText(
+      ACCIDENTAL[n.accidental],
+      n.x - SPACE * 1.5,
+      n.y + ACCIDENTAL_EM_CENTRE[n.accidental] * accSize,
+    );
   }
 
   /**

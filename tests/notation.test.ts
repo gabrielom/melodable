@@ -3,10 +3,15 @@ import {
   BOTTOM_LINE_PITCH,
   FIGURE_BEAMS,
   FIGURE_BEATS,
+  ACCIDENTAL_EM_CENTRE,
   MIN_NOTE_GAP_PX,
   NOTEHEAD_EM_CENTRE,
   NOTEHEAD_EM_HEIGHT,
   accidentalFor,
+  keySignatureFor,
+  signatureAlters,
+  signatureMarks,
+  spell,
   beamGroups,
   beatsOf,
   engraveOnsets,
@@ -32,6 +37,18 @@ describe("the font's measured constants", () => {
 
   it("seats the notehead centre just above the baseline", () => {
     expect(NOTEHEAD_EM_CENTRE).toBeCloseTo(0.134, 3);
+  });
+
+  it("lines the sharp and the natural up with a notehead, and not the flat", () => {
+    // Measured from each glyph's counter — the hole it encloses, which is the
+    // part that sits on the line. Noto draws the sharp and the natural to
+    // land level with a notehead, and it says so to three decimal places.
+    expect(ACCIDENTAL_EM_CENTRE.sharp).toBeCloseTo(NOTEHEAD_EM_CENTRE, 3);
+    expect(ACCIDENTAL_EM_CENTRE.natural).toBeCloseTo(NOTEHEAD_EM_CENTRE, 3);
+    // The flat is the exception: its bowl hangs below a stem that rises out
+    // of the way, so centring it like the others lifts it off its own line.
+    expect(ACCIDENTAL_EM_CENTRE.flat).toBeCloseTo(0.1175, 4);
+    expect(ACCIDENTAL_EM_CENTRE.flat).toBeLessThan(NOTEHEAD_EM_CENTRE);
   });
 });
 
@@ -321,5 +338,175 @@ describe("engraveOnsets", () => {
 
   it("has an answer for an empty loop", () => {
     expect(engraveOnsets([], 4, FLOOR).size).toBe(0);
+  });
+});
+
+// ------------------------------------------------------------ key signature
+
+/** Pitch classes of a scale, from a tonic and the major pattern. */
+const major = (tonic: number) => [0, 2, 4, 5, 7, 9, 11].map((s) => 60 + tonic + s);
+
+describe("signatureMarks", () => {
+  it("draws nothing at all for C", () => {
+    expect(signatureMarks(0)).toEqual([]);
+  });
+
+  it("puts E major's four sharps where an engraver puts them", () => {
+    // F♯ top line, C♯ third space, G♯ above the staff, D♯ fourth line — the
+    // shape a reader recognises before reading any of them.
+    expect(signatureMarks(4)).toEqual([
+      { step: 8, accidental: "sharp" },
+      { step: 5, accidental: "sharp" },
+      { step: 9, accidental: "sharp" },
+      { step: 6, accidental: "sharp" },
+    ]);
+  });
+
+  it("puts B♭ major's two flats on B and E", () => {
+    expect(signatureMarks(-2)).toEqual([
+      { step: 4, accidental: "flat" },
+      { step: 7, accidental: "flat" },
+    ]);
+  });
+
+  it("keeps every accidental within reach of the staff", () => {
+    // Ledger lines in a signature would be an engraving error; the positions
+    // are chosen so all seven sit on or just above the five lines.
+    for (let f = -7; f <= 7; f++) {
+      for (const m of signatureMarks(f)) {
+        expect(m.step).toBeGreaterThanOrEqual(0);
+        expect(m.step).toBeLessThanOrEqual(9);
+      }
+    }
+  });
+
+  it("grows one accidental at a time, keeping the ones before it", () => {
+    for (let f = 1; f <= 7; f++) {
+      expect(signatureMarks(f)).toHaveLength(f);
+      expect(signatureMarks(f).slice(0, f - 1)).toEqual(signatureMarks(f - 1));
+      expect(signatureMarks(-f).slice(0, f - 1)).toEqual(signatureMarks(-(f - 1)));
+    }
+  });
+});
+
+describe("keySignatureFor", () => {
+  it("finds E major from the notes of E major", () => {
+    // The case this was built for: an imported clip in four sharps.
+    expect(keySignatureFor(major(4))).toBe(4);
+  });
+
+  it("finds the signature of every major key from its own scale", () => {
+    // Five each way. Beyond that the signatures start meeting their own
+    // enharmonic twins, which is the next test.
+    for (let fifths = -5; fifths <= 5; fifths++) {
+      // Tonic of the major key with this signature, as a pitch class.
+      const tonic = ((fifths * 7) % 12 + 12) % 12;
+      expect(keySignatureFor(major(tonic))).toBe(fifths);
+    }
+  });
+
+  it("takes the simpler of two signatures that sound the same", () => {
+    // C♯ major and D♭ major are the same seven keys on the controller. Seven
+    // sharps or five flats, and nobody writes the seven.
+    expect(keySignatureFor(major(1))).toBe(-5);
+    // At six each way there is nothing to choose on count, and the tie is
+    // settled toward sharps rather than by whichever was tested first.
+    expect(keySignatureFor(major(6))).toBe(6);
+  });
+
+  it("reads the relative minor as the same signature, there being one", () => {
+    // A natural minor is C major's seven pitch classes from a different
+    // tonic, and a signature cannot tell the two apart — nor need it.
+    const aMinor = [0, 2, 3, 5, 7, 8, 10].map((s) => 69 + s);
+    expect(keySignatureFor(aMinor)).toBe(0);
+    // Likewise C♯ minor, which is the minor of the case this was built for.
+    const cSharpMinor = [0, 2, 3, 5, 7, 8, 10].map((s) => 61 + s);
+    expect(keySignatureFor(cSharpMinor)).toBe(4);
+  });
+
+  it("stays in C for a fragment that fits several keys equally", () => {
+    // A bare C major triad is diatonic to C, F and G alike. The tie goes to
+    // the plainest, not to whichever was tried first.
+    expect(keySignatureFor([60, 64, 67])).toBe(0);
+  });
+
+  it("is not swayed by one passing accidental", () => {
+    // Notes are counted, not pitch classes, so a single chromatic cannot
+    // outvote a tonic that sounds twenty times.
+    const cMajor = Array.from({ length: 20 }, (_, i) => major(0)[i % 7]);
+    expect(keySignatureFor([...cMajor, 61])).toBe(0);
+  });
+
+  it("has an answer for a lesson with no notes", () => {
+    expect(keySignatureFor([])).toBe(0);
+  });
+
+  it("never picks a key that costs more accidentals than another", () => {
+    const notes = major(4);
+    const cost = (fifths: number) =>
+      notes.filter((p) => spell(p, fifths).accidental !== null).length;
+    const chosen = keySignatureFor(notes);
+    for (let f = -7; f <= 7; f++) expect(cost(chosen)).toBeLessThanOrEqual(cost(f));
+  });
+});
+
+describe("spell", () => {
+  it("agrees with the C-major answer when there is no signature", () => {
+    // `staffStep` and `accidentalFor` are the old, key-less pair. In C they
+    // are still right, and this pins that nothing moved for existing lessons.
+    for (let p = 36; p <= 96; p++) {
+      expect(spell(p, 0)).toEqual({ step: staffStep(p), accidental: accidentalFor(p) });
+    }
+  });
+
+  it("draws E major's own notes bare — the whole point of a signature", () => {
+    for (const p of major(4)) expect(spell(p, 4).accidental).toBeNull();
+  });
+
+  it("keeps a sharpened note on its unaltered letter", () => {
+    // F♯5 in E major sits on the top line, where F sits, and takes nothing.
+    expect(spell(78, 4)).toEqual({ step: 8, accidental: null });
+    // In C it is the same line, but now it has to say so.
+    expect(spell(78, 0)).toEqual({ step: 8, accidental: "sharp" });
+  });
+
+  it("asks for a natural where the signature would sharpen", () => {
+    // F♮5 in E major: the signature says F♯, so the F has to be cancelled.
+    expect(spell(77, 4)).toEqual({ step: 8, accidental: "natural" });
+  });
+
+  it("spells a flat key with flats, not their sharp equivalents", () => {
+    // B♭4 in F major is a B on the third line, covered by the signature —
+    // not the A♯ the key-less spelling gave it.
+    expect(spell(70, -1)).toEqual({ step: 4, accidental: null });
+    expect(spell(70, 0).accidental).toBe("sharp");
+  });
+
+  it("lands every pitch on a line or space the signature agrees with", () => {
+    // Round trip: whatever it spells, reading the staff position and the
+    // accidental back has to give the pitch that went in.
+    const semitone = { sharp: 1, flat: -1, natural: 0, null: 0 } as const;
+    for (let fifths = -7; fifths <= 7; fifths++) {
+      const alters = signatureAlters(fifths);
+      for (let pitch = 36; pitch <= 96; pitch++) {
+        const { step, accidental } = spell(pitch, fifths);
+        // Step back to a letter and octave, then to a sounding pitch.
+        const diatonic = step + 30; // bottom line E4 is diatonic 30
+        const letter = ((diatonic % 7) + 7) % 7;
+        const octave = Math.floor(diatonic / 7);
+        const natural = (octave + 1) * 12 + [0, 2, 4, 5, 7, 9, 11][letter];
+        const alter = accidental === null ? alters[letter] : semitone[accidental];
+        expect(natural + alter).toBe(pitch);
+      }
+    }
+  });
+
+  it("never draws an accidental a note does not need", () => {
+    // In its own key every scale degree is bare; the count of accidentals in
+    // a scale is exactly zero, whatever the key.
+    for (let fifths = -7; fifths <= 7; fifths++) {
+      const tonic = ((fifths * 7) % 12 + 12) % 12;
+      for (const p of major(tonic)) expect(spell(p, fifths).accidental).toBeNull();
+    }
   });
 });

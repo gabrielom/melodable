@@ -32,7 +32,7 @@ import { PadLanes } from "@/views/pads/PadLanes";
 import { PianoRoll } from "@/views/piano/PianoRoll";
 import { SheetStaff } from "@/views/sheet/SheetStaff";
 import { useNotationFont } from "@/composables/useNotationFont";
-import { engraveOnsets } from "@/engine/notation";
+import { engraveOnsets, keySignatureFor } from "@/engine/notation";
 import { Overview } from "@/views/Overview";
 import { normalizeRange } from "@/engine/pitch";
 
@@ -201,6 +201,15 @@ export function useTrainer(
   const noteValues = computed(() =>
     engraveOnsets(targets.value, loopBeats.value, HOLD_MIN_BEATS),
   );
+  /**
+   * The key the lesson is written in, derived from its own pitches — imported
+   * clips carry no key, and asking the player to name one before they can read
+   * the staff would be a worse trade than getting it right from the notes.
+   * Pads have no pitch, so there is nothing to derive and nothing that reads it.
+   */
+  const keyFifths = computed(() =>
+    isPiano.value ? keySignatureFor(targets.value.map((t) => t.lane)) : 0,
+  );
   const totalLoops = computed(() => lessonRepeats(lesson.value));
   /** The whole run in beats — what the overview strip spans. */
   const runBeats = computed(() => totalLoops.value * loopBeats.value);
@@ -350,6 +359,7 @@ export function useTrainer(
       theme: settings.theme,
       orientation: settings.laneOrientation,
       mono: sheetOn.value && settings.sheetInk === "mono",
+      keyFifths: keyFifths.value,
       instrument: lesson.value.instrument,
       hueOrder: isPiano.value ? lessonPitches.value : lanes.value,
       padLanes: lanes.value,

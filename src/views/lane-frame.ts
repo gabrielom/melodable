@@ -50,6 +50,12 @@ export interface LaneFrame {
   mono: boolean;
 
   /**
+   * The lesson's key signature, as its place on the circle of fifths. Sheet
+   * only; the falling views have no clef to put it after.
+   */
+  keyFifths: number;
+
+  /**
    * Which of the two views this is. The renderer knows already, but the shared
    * colour rule doesn't — pads and piano take the same hue list in a different
    * order, so `noteInk` has to be told which.

@@ -55,6 +55,22 @@ export const NOTEHEAD_EM_HEIGHT = 0.252;
 /** Notehead centre, in em above the alphabetic baseline. */
 export const NOTEHEAD_EM_CENTRE = 0.134;
 
+/**
+ * Where an accidental's own centre sits, in em above the baseline.
+ *
+ * Measured the same way, from the counter — the hole the glyph encloses, which
+ * is the part an engraver lines up with the note. The sharp's and the
+ * natural's land on `NOTEHEAD_EM_CENTRE` to three decimal places, which is the
+ * font telling us they are drawn to sit level with a notehead. The flat's does
+ * not: its bowl hangs below a stem that rises out of the way, so centring it
+ * like the others lifts it off its own line.
+ */
+export const ACCIDENTAL_EM_CENTRE = {
+  sharp: 0.134,
+  natural: 0.134,
+  flat: 0.1175,
+} as const;
+
 /** Codepoints, all verified present in the bundled Noto Music. */
 export const GLYPH: Record<Figure, string> = {
   whole: "\u{1D15D}",
@@ -204,12 +220,157 @@ export function staffStep(pitch: number): number {
 /**
  * The accidental to draw before `pitch`, in the key of C.
  *
- * Sharps only: the lessons are in C, and choosing between F♯ and G♭ needs a
- * key signature the app does not carry. A flat-spelled import will read as its
- * sharp equivalent, which is the same key on the controller.
+ * Sharps only, which is all the key of C ever needs. `spell` supersedes this
+ * for a lesson in any other key — it is kept because it is the honest answer
+ * for C, and `spell(pitch, 0)` is pinned against it.
  */
 export function accidentalFor(pitch: number): "sharp" | null {
   return PITCH_CLASS[((pitch % 12) + 12) % 12][1] ? "sharp" : null;
+}
+
+// --------------------------------------------------------- key signatures
+
+/** Semitones above C for the seven letters, C D E F G A B. */
+const LETTER_SEMITONE = [0, 2, 4, 5, 7, 9, 11] as const;
+
+/**
+ * The order accidentals join a signature — F C G D A E B for sharps, and the
+ * same list backwards for flats. This is not a style choice: it is what makes
+ * each signature a run of consecutive fifths, so every scale degree is
+ * spelled on its own letter.
+ */
+const SHARP_LETTERS = [3, 0, 4, 1, 5, 2, 6] as const;
+const FLAT_LETTERS = [6, 2, 5, 1, 4, 0, 3] as const;
+
+/**
+ * Where each accidental of a signature is written, as a diatonic step above
+ * the bottom line (E4). These are the engraved positions, not derived ones:
+ * the shape a signature makes on the staff is fixed by convention, and a
+ * reader recognises four sharps by that shape before reading any of them.
+ *
+ * Treble: F♯ on the top line, C♯ in the third space, G♯ above the staff, and
+ * so on down the list.
+ */
+const SHARP_STEPS = [8, 5, 9, 6, 3, 7, 4] as const;
+const FLAT_STEPS = [4, 7, 3, 6, 2, 5, 1] as const;
+
+/** The most accidentals a signature can carry. */
+export const MAX_FIFTHS = 7;
+
+export interface SignatureMark {
+  /** Diatonic step above the bottom staff line. */
+  step: number;
+  accidental: "sharp" | "flat";
+}
+
+/**
+ * The accidentals of a signature, in the order they are written.
+ *
+ * `fifths` is the signature's place on the circle: +4 is four sharps (E major
+ * or C♯ minor), −2 is two flats, 0 is none. The signature names a *pair* of
+ * keys, major and its relative minor, and the app never has to choose between
+ * them — what is drawn is the same either way.
+ */
+export function signatureMarks(fifths: number): SignatureMark[] {
+  const n = Math.min(MAX_FIFTHS, Math.abs(Math.trunc(fifths)));
+  const steps = fifths >= 0 ? SHARP_STEPS : FLAT_STEPS;
+  const accidental = fifths >= 0 ? "sharp" : "flat";
+  return Array.from({ length: n }, (_, i) => ({ step: steps[i], accidental }));
+}
+
+/** Semitone shift the signature applies to each letter, C..B. */
+export function signatureAlters(fifths: number): number[] {
+  const out = [0, 0, 0, 0, 0, 0, 0];
+  const n = Math.min(MAX_FIFTHS, Math.abs(Math.trunc(fifths)));
+  const letters = fifths >= 0 ? SHARP_LETTERS : FLAT_LETTERS;
+  for (let i = 0; i < n; i++) out[letters[i]] += fifths >= 0 ? 1 : -1;
+  return out;
+}
+
+export interface Spelling {
+  /** Diatonic step above the bottom staff line — which line or space. */
+  step: number;
+  /** What to draw before the notehead, or null when the signature covers it. */
+  accidental: "sharp" | "flat" | "natural" | null;
+}
+
+/**
+ * Where `pitch` is written on the staff in a given key, and what accidental it
+ * needs there.
+ *
+ * The signature does the work: a note the signature already alters is drawn
+ * bare, one it alters the *other* way needs a natural, and anything outside
+ * the key takes a sharp in a sharp key or a flat in a flat key. This is the
+ * difference between a page of E major and the same music in C with a sharp
+ * stuck on four notes out of seven.
+ *
+ * The octave comes out of the arithmetic rather than being assumed, so B♯ and
+ * C♭ land on the letter they are spelled with and not the one they sound like.
+ */
+export function spell(pitch: number, fifths: number): Spelling {
+  const alters = signatureAlters(fifths);
+  const pc = ((pitch % 12) + 12) % 12;
+  const at = (letter: number, alter: number): Spelling => ({
+    // Exact: the octave that puts this letter, so altered, on this pitch.
+    step: ((pitch - alter - LETTER_SEMITONE[letter]) / 12 - 1) * 7 + letter - BOTTOM_LINE_DIATONIC,
+    accidental: alter === alters[letter] ? null : alter === 0 ? "natural" : alter > 0 ? "sharp" : "flat",
+  });
+
+  // In the key, so nothing to draw.
+  for (let l = 0; l < 7; l++) {
+    if (((LETTER_SEMITONE[l] + alters[l]) % 12 + 12) % 12 === pc) return at(l, alters[l]);
+  }
+  // The letter's own natural, which the signature is altering — so, a natural.
+  for (let l = 0; l < 7; l++) {
+    if (LETTER_SEMITONE[l] === pc && alters[l] !== 0) return at(l, 0);
+  }
+  // Outside the key: raise in a sharp key, lower in a flat one.
+  const dir = fifths < 0 ? -1 : 1;
+  for (let l = 0; l < 7; l++) {
+    if (((LETTER_SEMITONE[l] + alters[l] + dir) % 12 + 12) % 12 === pc) {
+      return at(l, alters[l] + dir);
+    }
+  }
+  // Nothing a single accidental can reach (a double alteration). Fall back to
+  // the C-major spelling rather than refusing to draw the note at all.
+  return { step: staffStep(pitch), accidental: accidentalFor(pitch) };
+}
+
+/**
+ * The key signature that suits a set of pitches.
+ *
+ * Chosen by the only measure that matters on the page: how many accidentals
+ * the reader would have to be shown. Every candidate signature is costed as
+ * the number of *notes* — not pitch classes, so a passing chromatic does not
+ * outvote a tonic — that fall outside its scale, and the cheapest wins. A tie
+ * goes to the simpler signature, so a fragment that fits several keys equally
+ * is written in the plainest of them rather than an arbitrary one.
+ *
+ * Major and relative minor share a signature, so there is no mode to guess.
+ */
+export function keySignatureFor(pitches: readonly number[]): number {
+  if (pitches.length === 0) return 0;
+
+  const count = new Array(12).fill(0) as number[];
+  for (const p of pitches) count[((p % 12) + 12) % 12]++;
+
+  let best = 0;
+  let bestCost = Infinity;
+  // Sharps before flats at equal cost and equal size: a tie between the two is
+  // a coin toss, and this repertoire is written sharp.
+  for (const fifths of [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 7, -7]) {
+    const alters = signatureAlters(fifths);
+    const inKey = new Array(12).fill(false) as boolean[];
+    for (let l = 0; l < 7; l++) inKey[(((LETTER_SEMITONE[l] + alters[l]) % 12) + 12) % 12] = true;
+
+    let cost = 0;
+    for (let pc = 0; pc < 12; pc++) if (!inKey[pc]) cost += count[pc];
+    if (cost < bestCost - 1e-9) {
+      bestCost = cost;
+      best = fifths;
+    }
+  }
+  return best;
 }
 
 /** Steps of the five staff lines, bottom to top. */
