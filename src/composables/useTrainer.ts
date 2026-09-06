@@ -563,18 +563,27 @@ export function useTrainer(
    * Grade a strike on a lane — a pad index for pads, a MIDI pitch for piano.
    * `time` is the hit's audio-clock time; defaults to now (mouse/keyboard).
    * Hardware callers pass the converted midir timestamp. Returns the rating,
-   * or null for strays/count-in/stopped.
+   * `"wrong"` for a strike that was charged as one, or null when nothing was
+   * scored — count-in, stopped, or a strike too far off to grade but near
+   * enough a note to be an attempt at it. That last one still draws a dot.
    */
   function strike(lane: number, time?: number): Rating | "wrong" | null {
     if (!playing.value) return null;
     const now = audio.now;
     if (transport.position(now).countIn) return null;
-    const res = scorer.hit(lane, time ?? now);
-    if (res.kind === "ignored") return null;
-    if (res.kind === "wrong") {
-      // Marked where it was struck, not where the note is — there is no note.
-      wrongMarks.push({ lane, time: time ?? now });
+    const at = time ?? now;
+    const res = scorer.hit(lane, at);
+    if (res.kind !== "hit") {
+      // Both kinds get a dot, because both are a strike the player can see
+      // they made. Only `wrong` is charged — an `ignored` one was near enough
+      // a note to be an attempt at it, and that note's own miss is the
+      // charge. The difference is a scoring rule, not something the eye needs
+      // to be told: what it wants to know is *where* the strike landed, and
+      // for an attempt that is the gap between the dot and the notehead it
+      // sits beside — the timing error, drawn.
+      wrongMarks.push({ lane, time: at });
       addPop(lane, "miss");
+      if (res.kind === "ignored") return null;
       syncStats();
       return "wrong";
     }

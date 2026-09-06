@@ -73,7 +73,10 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   stops one mistake being billed twice:** a note struck 150ms late grades as
   nothing and its target is swept as a miss a moment later, so calling the
   strike wrong as well would take two zeros for one error. Inside the grace the
-  strike is `ignored` and silent. The check looks at targets *regardless of
+  strike is `ignored` and costs nothing — **but it still draws its dot.** The
+  grace is a scoring rule, not a reason to hide the strike: the eye wants to
+  know *where* it landed, and for an attempt that is the gap between the dot
+  and the notehead beside it — the timing error, drawn. The check looks at targets *regardless of
   `resolved`*, because by the time a late strike lands its target has usually
   been swept already — that is the case the grace exists for. A consequence
   worth knowing: in a lane whose notes are closer together than twice the
