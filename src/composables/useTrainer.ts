@@ -33,6 +33,7 @@ import { PianoRoll } from "@/views/piano/PianoRoll";
 import { SheetStaff } from "@/views/sheet/SheetStaff";
 import { useNotationFont } from "@/composables/useNotationFont";
 import { engraveOnsets, keySignatureFor } from "@/engine/notation";
+import { chordsForLoop, hasHarmony } from "@/engine/harmony";
 import type { WrongMark } from "@/views/lane-geometry";
 import { Overview } from "@/views/Overview";
 import { normalizeRange } from "@/engine/pitch";
@@ -236,6 +237,24 @@ export function useTrainer(
   const keyFifths = computed(() =>
     isPiano.value && settings.keyOverride !== null ? settings.keyOverride : derivedKey.value,
   );
+  /**
+   * The harmony under the lesson, derived from its notes (handoff 11 §1.5).
+   *
+   * Only when degrees are on: the ribbon is the harmonic half of that reading
+   * and means nothing beside letter names. Empty for pads, and empty when the
+   * lesson yields no chords at all, which is the renderers' signal to draw no
+   * strip rather than a row of empty blocks.
+   */
+  const chords = computed(() => {
+    if (!isPiano.value || settings.noteLabel !== "degree") return [];
+    const found = chordsForLoop(
+      targets.value,
+      lesson.value.beatsPerBar,
+      lesson.value.bars,
+      keyFifths.value,
+    );
+    return hasHarmony(found) ? found : [];
+  });
   const totalLoops = computed(() => lessonRepeats(lesson.value));
   /** The whole run in beats — what the overview strip spans. */
   const runBeats = computed(() => totalLoops.value * loopBeats.value);
@@ -393,6 +412,7 @@ export function useTrainer(
       wrongMarks: pos ? wrongMarks : NO_MARKS,
       keyFifths: keyFifths.value,
       labelMode: isPiano.value ? settings.noteLabel : "note",
+      chords: chords.value,
       instrument: lesson.value.instrument,
       hueOrder: isPiano.value ? lessonPitches.value : lanes.value,
       padLanes: lanes.value,

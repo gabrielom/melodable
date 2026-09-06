@@ -14,6 +14,7 @@ import type { Engraved } from "@/engine/notation";
 import type { Palette, Theme } from "@/engine/theme";
 import type { InstrumentType } from "@/engine/types";
 import type { WrongMark } from "@/views/lane-geometry";
+import type { Chord } from "@/engine/harmony";
 import type { LaneOrientation, NoteLabel, PadLayout } from "@/stores/settings";
 
 export interface LaneFrame {
@@ -62,6 +63,13 @@ export interface LaneFrame {
    * rule are the same run either way.
    */
   labelMode: NoteLabel;
+
+  /**
+   * One chord per bar of the loop, derived from the lesson's own notes; null
+   * where a bar has none. Empty when there is no harmony to show — the ribbon
+   * hides rather than drawing a row of empty blocks (handoff 11 §1.5).
+   */
+  chords: readonly (Chord | null)[];
 
   /**
    * Strikes that hit nothing, still fading. Drawn at the playhead on the row

@@ -8,7 +8,8 @@
  * disagree with what is actually on screen.
  */
 
-import { hueOf, type Theme } from "@/engine/theme";
+import { contrastRatio, hueOf, type HueName, type Palette, type Theme } from "@/engine/theme";
+import { chordName, romanOf, type Chord } from "@/engine/harmony";
 import type { NoteInstance } from "@/engine/scoring";
 import type { LaneFrame } from "@/views/lane-frame";
 
@@ -99,6 +100,125 @@ export function paintWrong(
   ctx.stroke();
   ctx.fill();
   ctx.restore();
+}
+
+// ------------------------------------------------------- chord ribbon
+
+/** The strip's height (handoff 11 §1.4). */
+export const RIBBON_H = 38;
+/** The numeral is set in a serif; the absolute name under it in the app's mono. */
+const RIBBON_SERIF = 'Georgia, "Times New Roman", serif';
+const RIBBON_MONO = '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
+
+/**
+ * Which hue names each function.
+ *
+ * §1.4 names four — I blue, IV teal, V bronze, vi violet — and leaves the
+ * other three, so those are ours: cool for the pre-dominants, warm for the
+ * leading tone. Taken from the instrument palette rather than invented, so the
+ * ribbon cannot introduce a colour the app does not already own.
+ */
+const FUNCTION_HUE: readonly HueName[] = [
+  "blue", "indigo", "plum", "teal", "bronze", "violet", "olive",
+];
+
+/** The two inks a block may take. Contrast-picked, never alpha-muted (§1.4). */
+const BLOCK_INK = ["#f7f9fb", "#08131a"] as const;
+
+export interface RibbonFrame {
+  /** One entry per bar of the loop; null where a bar has no notes. */
+  chords: readonly (Chord | null)[];
+  beatsPerBar: number;
+  /** Absolute beat under the playhead. */
+  absBeat: number;
+  fromBeat: number;
+  toBeat: number;
+  /** The key the chords are named in. */
+  keyFifths: number;
+  xOfBeat: (beat: number) => number;
+  palette: Palette;
+  theme: Theme;
+  /** Left edge of the strip, and its width. */
+  x: number;
+  w: number;
+  /** Top of the strip. */
+  y: number;
+  /** Label column inside the strip, or 0 when the view has none. */
+  gutter: number;
+}
+
+/**
+ * The chord ribbon: one block per bar, under the field.
+ *
+ * A map, not a score — **it never takes a timing colour**, whatever happened
+ * in the bar. History is marked by a rule rather than by dimming: an earlier
+ * draft of the design dimmed past chords and they read as disabled.
+ *
+ * Drawn on the lane's own canvas from the lane's own `xOfBeat`, so the blocks
+ * and the bar lines above them cannot disagree — the reason the playhead can
+ * be carried straight through it.
+ */
+export function paintRibbon(ctx: CanvasRenderingContext2D, f: RibbonFrame): void {
+  const bpb = Math.max(1, f.beatsPerBar);
+  const loop = f.chords.length;
+  if (loop === 0) return;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(f.x + f.gutter, f.y, f.w - f.gutter, RIBBON_H);
+  ctx.clip();
+
+  const current = Math.floor(f.absBeat / bpb);
+  const first = Math.floor(f.fromBeat / bpb);
+  const last = Math.ceil(f.toBeat / bpb);
+  for (let bar = first; bar <= last; bar++) {
+    if (bar < 0) continue;
+    const chord = f.chords[((bar % loop) + loop) % loop];
+    if (!chord) continue;
+    const x0 = f.xOfBeat(bar * bpb);
+    const x1 = f.xOfBeat((bar + 1) * bpb);
+    const fill = f.palette.hues[FUNCTION_HUE[(chord.degree - 1) % 7]].full;
+    ctx.fillStyle = fill;
+    ctx.fillRect(x0, f.y, x1 - x0 - 1, RIBBON_H);
+
+    const ink = contrastRatio(BLOCK_INK[0], fill) >= contrastRatio(BLOCK_INK[1], fill)
+      ? BLOCK_INK[0]
+      : BLOCK_INK[1];
+    const cx = (x0 + x1) / 2;
+    ctx.fillStyle = ink;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = `15px ${RIBBON_SERIF}`;
+    ctx.fillText(romanOf(chord), cx, f.y + 21);
+    ctx.font = `7.5px ${RIBBON_MONO}`;
+    ctx.fillText(chordName(chord, f.keyFifths), cx, f.y + 31);
+
+    // The bar you are in gets a full inner border; the bars behind you get a
+    // rule along the top. Both in the playhead's colour, so "where I am" and
+    // "where I have been" are told in the same voice as the playhead itself.
+    ctx.fillStyle = f.palette.head;
+    if (bar === current) {
+      ctx.fillRect(x0, f.y, x1 - x0 - 1, 2);
+      ctx.fillRect(x0, f.y + RIBBON_H - 2, x1 - x0 - 1, 2);
+      ctx.fillRect(x0, f.y, 2, RIBBON_H);
+      ctx.fillRect(x1 - 3, f.y, 2, RIBBON_H);
+    } else if (bar < current) {
+      ctx.fillRect(x0, f.y, x1 - x0 - 1, 3);
+    }
+  }
+  ctx.restore();
+
+  if (f.gutter > 0) {
+    ctx.save();
+    ctx.fillStyle = f.palette.lane;
+    ctx.fillRect(f.x, f.y, f.gutter, RIBBON_H);
+    ctx.fillStyle = f.palette.txt3;
+    ctx.font = `8px ${RIBBON_MONO}`;
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillText("CHORD", f.x + f.gutter - 10, f.y + RIBBON_H / 2);
+    ctx.restore();
+  }
 }
 
 /**

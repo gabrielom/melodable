@@ -16,7 +16,7 @@
         "title": "Melodable",
         "width": 1280,
         "height": 780,
-        "minWidth": 1052,
+        "minWidth": 1180,
         "minHeight": 620,
         "resizable": true,
         "fullscreen": false,

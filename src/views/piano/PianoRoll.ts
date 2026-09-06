@@ -25,8 +25,10 @@ import {
   paintHold,
   paintVeil,
   pxPerBeat,
+  RIBBON_H,
   ROW_INK,
   WRONG_DOT_R,
+  paintRibbon,
   paintWrong,
 } from "@/views/lane-geometry";
 import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
@@ -283,7 +285,12 @@ export class PianoRoll implements LaneRenderer {
 
   // ----------------------------------------------------------- horizontal
 
-  private drawHorizontal(f: LaneFrame, W: number, H: number): void {
+  private drawHorizontal(f: LaneFrame, fullW: number, fullH: number): void {
+    // The ribbon takes a band off the bottom, so the note field is what is
+    // left. Nothing else in here needs to know it is there.
+    const ribbon = f.chords.length > 0 ? RIBBON_H : 0;
+    const W = fullW;
+    const H = fullH - ribbon;
     const ctx = this.ctx;
     const low = f.lowNote;
     const high = f.highNote;
@@ -386,8 +393,30 @@ export class PianoRoll implements LaneRenderer {
       paintVeil(ctx, f.palette.lane, [trackX, 0], [hitX, 0], [trackX, 0, hitX - trackX, H]);
     }
 
+    if (ribbon > 0) {
+      paintRibbon(ctx, {
+        chords: f.chords,
+        beatsPerBar: f.beatsPerBar,
+        absBeat: f.absBeat,
+        fromBeat: f.absBeat - halfBeats,
+        toBeat: f.absBeat + halfBeats,
+        keyFifths: f.keyFifths,
+        xOfBeat: (beat) => hitX + (beat - f.absBeat) * beatPx,
+        palette: f.palette,
+        theme: f.theme,
+        x: trackX,
+        w: trackW,
+        y: H,
+        // No label column: the keyboard already owns the column to the left
+        // of this canvas, so there is nowhere inside it for one to go.
+        gutter: 0,
+      });
+    }
+
+    // The playhead runs the whole height, ribbon included, so the strip and
+    // the field can never look like they disagree about where you are.
     ctx.fillStyle = f.palette.head;
-    ctx.fillRect(Math.round(hitX) - 1, 0, 2, H);
+    ctx.fillRect(Math.round(hitX) - 1, 0, 2, fullH);
 
     this.countIn(f, W, H);
   }

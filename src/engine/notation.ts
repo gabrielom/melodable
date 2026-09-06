@@ -250,7 +250,9 @@ export function accidentalFor(pitch: number): "sharp" | null {
 // --------------------------------------------------------- key signatures
 
 /** Semitones above C for the seven letters, C D E F G A B. */
-const LETTER_SEMITONE = [0, 2, 4, 5, 7, 9, 11] as const;
+export const LETTER_SEMITONE = [0, 2, 4, 5, 7, 9, 11] as const;
+/** Their names, in the same order. */
+export const LETTER_NAME = ["C", "D", "E", "F", "G", "A", "B"] as const;
 
 /**
  * The order accidentals join a signature — F C G D A E B for sharps, and the

@@ -36,8 +36,10 @@ import {
   type SignatureMark,
 } from "@/engine/notation";
 import {
+  RIBBON_H,
   WRONG_DOT_R,
   gridBeatRange,
+  paintRibbon,
   noteInk,
   paintCountIn,
   paintWrong,
@@ -182,8 +184,11 @@ export class SheetStaff implements LaneRenderer {
     const trackW = Math.max(1, W - trackX);
 
     // The staff sits above the space the keyboard leaves, centred in what is
-    // left rather than pinned, so the view breathes at any window height.
-    const topLineY = Math.round((H - STAFF_H) / 2);
+    // left rather than pinned, so the view breathes at any window height. The
+    // ribbon takes a band off the bottom before that centring happens.
+    const ribbon = f.chords.length > 0 ? RIBBON_H : 0;
+    const fieldH = H - ribbon;
+    const topLineY = Math.round((fieldH - STAFF_H) / 2);
     const bottomLineY = topLineY + STAFF_H;
 
     // Zoom: the roll's five bars unless the lesson's closest pair would
@@ -217,8 +222,30 @@ export class SheetStaff implements LaneRenderer {
         WRONG_DOT_R, p.rating.miss, p.lane);
     }
 
-    this.historyFade(f, trackX, hitX, H);
+    this.historyFade(f, trackX, hitX, fieldH);
+
     this.clefGutter(f, marks, topLineY, bottomLineY);
+
+    if (ribbon > 0) {
+      paintRibbon(ctx, {
+        chords: f.chords,
+        beatsPerBar: f.beatsPerBar,
+        absBeat: f.absBeat,
+        fromBeat: f.absBeat - this.window.behind,
+        toBeat: f.absBeat + this.window.ahead,
+        keyFifths: f.keyFifths,
+        xOfBeat,
+        palette: p,
+        theme: f.theme,
+        x: 0,
+        w: W,
+        y: fieldH,
+        // Sheet's label column is inside the canvas — the clef gutter — so
+        // the ribbon's own label lines up with it.
+        gutter: trackX,
+      });
+    }
+
 
     // Playhead last of the chrome, so it reads over the notation.
     ctx.fillStyle = p.head;
@@ -226,7 +253,11 @@ export class SheetStaff implements LaneRenderer {
       Math.round(hitX) - PLAYHEAD_W / 2,
       topLineY - PLAYHEAD_OVERHANG,
       PLAYHEAD_W,
-      STAFF_H + PLAYHEAD_OVERHANG * 2,
+      // Carried down through the ribbon when there is one, so the strip and
+      // the staff can never look like they disagree about where you are.
+      ribbon > 0
+        ? H - (topLineY - PLAYHEAD_OVERHANG)
+        : STAFF_H + PLAYHEAD_OVERHANG * 2,
     );
 
     if (f.countIn) {
