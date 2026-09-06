@@ -85,7 +85,11 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   timeline where it was struck, the played-out half of the lane becomes a
   record — three dots crowding one beat says you are rushing that beat — and it
   scrolls away like everything else, pruned off the renderer's own `behind`
-  window. Both it and a missed note are red, because both are results and the
+  window. **A mark belongs to a run**, so the frame gates them on the same
+  `pos` that chooses between live instances and the parked preview. Clearing
+  them in each stop path instead is what shipped first, and `stop()` was
+  missed: the dots stayed on the idle lane and went on scrolling, because
+  `now` advances whether the transport does or not. Both it and a missed note are red, because both are results and the
   rating language has one red; **size is what separates them**, and `paintWrong`
   rings the dot in the bed colour so it still reads sitting on a missed note of
   the same red. All five draw paths have it (pads and piano in both

@@ -110,13 +110,15 @@ export function useTrainer(
   const toast = ref<string | null>(null);
   const pops = ref<RatingPop[]>([]);
   /**
-   * Strikes that hit nothing, for the lane to draw an ✕ at the playhead.
+   * Strikes that hit nothing, for the lane to dot where they landed.
    *
    * A plain array rather than a ref: it is read once a frame by the render
    * loop and never by a template, so making it reactive would re-run Vue for
    * something canvas is already drawing (invariant 6).
    */
   const wrongMarks: WrongMark[] = [];
+  /** Handed to the lane when there is no run, so no frame allocates one. */
+  const NO_MARKS: readonly WrongMark[] = [];
 
   const midiClock = new HostClock();
 
@@ -374,7 +376,12 @@ export function useTrainer(
       theme: settings.theme,
       orientation: settings.laneOrientation,
       mono: sheetOn.value && settings.sheetInk === "mono",
-      wrongMarks,
+      // A mark belongs to a run. Stopped, the lane is showing the lesson
+      // parked at its first beat — there is nothing being played, so there is
+      // nothing to have played wrongly. Gated on the same `pos` that decides
+      // between live instances and the preview, so a stop path added later
+      // cannot forget to do it: it is one question, asked once.
+      wrongMarks: pos ? wrongMarks : NO_MARKS,
       keyFifths: keyFifths.value,
       instrument: lesson.value.instrument,
       hueOrder: isPiano.value ? lessonPitches.value : lanes.value,
@@ -438,6 +445,7 @@ export function useTrainer(
   function stop(): void {
     transport.stop();
     playing.value = false;
+    wrongMarks.length = 0;
     // The click and the guide are queued ahead of the playhead; without this
     // they keep sounding for a beat or two after the transport has stopped.
     audio.cancelScheduled("metronome", "guide");
