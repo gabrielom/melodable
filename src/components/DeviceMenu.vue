@@ -113,7 +113,19 @@ onUnmounted(() => {
  * control in the bar. The volume wrapper next door already does this, which
  * is why only this one drifted.
  */
-.wrap { position: relative; display: inline-flex; align-items: center; }
+/* Shrinks before the lesson title does (handoff 11 §3.2): under width
+   pressure the device *name* is the first thing that may give, and a higher
+   shrink factor is what puts it ahead of the title in that queue. Never below
+   46px, which still shows the connection LED and the caret — the two parts
+   that are a control rather than a label. */
+.wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 2 auto;
+  min-width: 46px;
+  overflow: hidden;
+}
 
 /* Face chip: 20px like every other bar control, LED dot showing connection. */
 .trigger {
@@ -124,6 +136,9 @@ onUnmounted(() => {
      ellipsise, which is the point: the chip has a fixed cost in the bar's
      width budget, and a device can be called anything. */
   max-width: 116px;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
   gap: 6px;

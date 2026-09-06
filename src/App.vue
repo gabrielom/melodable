@@ -686,7 +686,11 @@ watch(
          One row, all controls, down to ~1100px — below that things drop out in
          the order the design specifies (see `.app` media queries at the bottom
          of this file). -->
-    <header class="bar" :class="{ 'menu-open': openMenu !== null }" data-tauri-drag-region="deep">
+    <header
+      class="bar"
+      :class="[view, { 'menu-open': openMenu !== null }]"
+      data-tauri-drag-region="deep"
+    >
       <template v-if="view === 'trainer'">
         <button class="ico" data-tip="Back to lessons" aria-label="Back to lessons" @click="goHome">
           ✕
@@ -753,8 +757,6 @@ watch(
             CLICK
           </button>
         </div>
-
-        <i class="divider" />
       </template>
 
       <!-- One slot, two pairs. Sheet has no direction to choose — notation has
@@ -1117,9 +1119,12 @@ watch(
         @change="onImportFile"
       />
 
-      <i class="divider" />
+      <i v-if="view === 'home'" class="divider" />
 
-      <div class="seg" role="group" aria-label="Theme">
+      <!-- Theme is not a run control, and it is already here on home — the
+           same argument that moved import and the instrument switch (handoff
+           11 §3.1). Dropping it from the trainer bar is a dedup, not a loss. -->
+      <div v-if="view === 'home'" class="seg" role="group" aria-label="Theme">
         <button
           class="seg-i icon"
           :class="{ on: settings.theme === 'dark' }"
@@ -1262,6 +1267,8 @@ watch(
   display: flex;
   align-items: center;
   gap: var(--gap-bar);
+  /* The trainer bar carries far more than home's and is the one that runs out
+     of width, so it runs tighter (handoff 11 §3.1). Home keeps 9px. */
   /* Left inset clears the macOS traffic lights, which end around 66px. 72px
      left the ✕ almost touching the zoom button; 84px gives it the same kind
      of breathing room the controls have between themselves. */
@@ -1281,6 +1288,7 @@ watch(
      rather than wrapping. */
   flex-wrap: nowrap;
 }
+.bar.trainer { gap: 7px; }
 .spacer { flex: 1; min-width: 0; }
 .divider {
   width: 1px;
@@ -1538,7 +1546,9 @@ watch(
      long name push the controls off the edge. Shrinking with an ellipsis
      means no name can break the row, whatever it is called. */
   flex: 0 1 auto;
-  min-width: 0;
+  /* Last to give, and never all the way: 36px still reads as a name that has
+     been cut rather than as an empty gap where a title should be. */
+  min-width: 36px;
   font-family: var(--sans);
   font-size: 11.5px;
   font-weight: 500;
@@ -1553,7 +1563,7 @@ watch(
   flex: none;
   display: inline-flex;
   align-items: baseline;
-  gap: 11px;
+  gap: 8px;
 }
 .score { display: inline-flex; align-items: baseline; gap: 3px; }
 .score .k {
