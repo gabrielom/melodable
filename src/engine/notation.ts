@@ -56,6 +56,25 @@ export const NOTEHEAD_EM_HEIGHT = 0.252;
 export const NOTEHEAD_EM_CENTRE = 0.134;
 
 /**
+ * How far right of the glyph's origin the *notehead* sits, in em.
+ *
+ * Handoff 11 §1.2: derive from this, never from measured ink bounds. An
+ * eighth note's flag extends its ink to the right, so ink-centre puts a label
+ * ~8px off while its head is at the same offset as a quarter's.
+ *
+ * The whole note's `0.2570` is measured off the font binary and agrees with
+ * the handoff exactly. The stemmed figure is the handoff's, corroborated
+ * against the half note — the one stemmed glyph whose head is a separate
+ * contour — which measures `0.1975`, within 0.003em.
+ */
+export const NOTEHEAD_EM_DX = { stemmed: 0.2006, whole: 0.257 } as const;
+
+/** That offset for a given figure. */
+export function noteheadDx(figure: Figure): number {
+  return figure === "whole" ? NOTEHEAD_EM_DX.whole : NOTEHEAD_EM_DX.stemmed;
+}
+
+/**
  * Where an accidental's own centre sits, in em above the baseline.
  *
  * Measured the same way, from the counter — the hole the glyph encloses, which
@@ -334,6 +353,75 @@ export function spell(pitch: number, fifths: number): Spelling {
   // Nothing a single accidental can reach (a double alteration). Fall back to
   // the C-major spelling rather than refusing to draw the note at all.
   return { step: staffStep(pitch), accidental: accidentalFor(pitch) };
+}
+
+// --------------------------------------------------------- scale degrees
+
+/**
+ * Which letter the key's tonic is written on.
+ *
+ * The circle of fifths steps four letters at a time — C G D A E B F — so the
+ * tonic's letter is the signature's own position times four. That holds in
+ * both directions, which is why flats need no separate table.
+ */
+export function tonicLetter(fifths: number): number {
+  return (((Math.trunc(fifths) * 4) % 7) + 7) % 7;
+}
+
+export interface Degree {
+  /** Scale degree, 1..7 — the tonic is 1. */
+  degree: number;
+  /** Semitones off that degree: 0 diatonic, +1 raised, −1 lowered. */
+  alter: number;
+}
+
+/**
+ * `pitch` as a scale degree in a key — Hooktheory's move, and the whole point
+ * of degree mode: what the note *does* rather than what it is called.
+ *
+ * The letter comes from `spell`, so the two labellings can never disagree
+ * about which line a note is on. The alteration is **not** the notation
+ * accidental: it is measured against the scale's own version of that degree.
+ * In E major an F♮ is written with a natural sign, but it is `♭2` — the
+ * signature's F♯ is what degree 2 is, and this note is a semitone under it.
+ */
+export function degreeOf(pitch: number, fifths: number): Degree {
+  const alters = signatureAlters(fifths);
+  const step = spell(pitch, fifths).step;
+  const letter = (((step + BOTTOM_LINE_DIATONIC) % 7) + 7) % 7;
+  const scalePc = (((LETTER_SEMITONE[letter] + alters[letter]) % 12) + 12) % 12;
+  const pc = ((pitch % 12) + 12) % 12;
+  // Wrapped into (−6, 6] so a degree at the octave boundary is not read as
+  // eleven semitones away from itself.
+  const alter = ((((pc - scalePc + 18) % 12) + 12) % 12) - 6;
+  return { degree: (((letter - tonicLetter(fifths)) % 7) + 7) % 7 + 1, alter };
+}
+
+/**
+ * A degree as the roll writes it inside a notehead: the digit, then its mark.
+ *
+ * Digit-then-mark, matching `C♯` — the accidental is a qualifier on the
+ * degree, not its equal (handoff 11 §1.1). ASCII `#`/`b` rather than the music
+ * glyphs, because this is set in the same mono face as the letters it
+ * replaces and has to measure the same.
+ */
+export function degreeLabel(pitch: number, fifths: number): string {
+  const { degree, alter } = degreeOf(pitch, fifths);
+  return `${degree}${alter > 0 ? "#" : alter < 0 ? "b" : ""}`;
+}
+
+/** Tonic names by signature, for the bar's key chip. Majors, which is the
+ *  name a signature is usually called by; the relative minor shares it. */
+const TONIC_NAME: readonly string[] = [
+  "Cb", "Gb", "Db", "Ab", "Eb", "Bb", "F",
+  "C",
+  "G", "D", "A", "E", "B", "F#", "C#",
+];
+
+/** The key a signature names, as the chip writes it — "C maj", "E maj". */
+export function keyName(fifths: number): string {
+  const i = Math.max(-MAX_FIFTHS, Math.min(MAX_FIFTHS, Math.trunc(fifths))) + MAX_FIFTHS;
+  return `${TONIC_NAME[i]} maj`;
 }
 
 /**

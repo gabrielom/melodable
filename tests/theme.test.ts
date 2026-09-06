@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HUE_NAMES, PALETTE, hueOf, type HueName } from "@/engine/theme";
+import { HUE_NAMES, MIN_CONTRAST, PALETTE, contrastRatio, hueOf, readableInk, type HueName } from "@/engine/theme";
 
 /**
  * The dimmed hues are derived from the full ones rather than authored, so the
@@ -67,5 +67,47 @@ describe("instrument hues", () => {
         expect(ratings.has(p.hues[name].dim)).toBe(false);
       }
     }
+  });
+});
+
+describe("readableInk", () => {
+  it("clears the contrast floor for every hue on its own paper", () => {
+    // The reason this exists: a dimmed instrument tint on staff paper fails
+    // outright, measured at 2.27:1 light and 1.61:1 dark (handoff 11 §1.3).
+    for (const theme of ["dark", "light"] as const) {
+      const p = PALETTE[theme];
+      for (const name of Object.keys(p.hues) as HueName[]) {
+        for (const strength of ["full", "dim"] as const) {
+          const ink = readableInk(p.hues[name][strength], theme, p.lane);
+          expect(contrastRatio(ink, p.lane)).toBeGreaterThanOrEqual(MIN_CONTRAST);
+        }
+      }
+    }
+  });
+
+  it("shifts as little as it can, so the hue stays recognisable", () => {
+    // A hue that already passes is returned untouched; one that does not is
+    // moved by the smallest step on the ladder that works.
+    const p = PALETTE.dark;
+    const easy = "#ffffff";
+    expect(readableInk(easy, "dark", p.lane)).toBe(easy);
+    const hard = p.hues.blue.dim;
+    const ink = readableInk(hard, "dark", p.lane);
+    expect(ink).not.toBe(hard);
+    expect(contrastRatio(ink, p.lane)).toBeGreaterThanOrEqual(MIN_CONTRAST);
+    // One step back down the ladder would have failed, or it shifted too far.
+    expect(contrastRatio(ink, p.lane)).toBeLessThan(MIN_CONTRAST + 2);
+  });
+
+  it("walks toward black on light paper and white on dark", () => {
+    const dark = readableInk(PALETTE.dark.hues.blue.dim, "dark", PALETTE.dark.lane);
+    const light = readableInk(PALETTE.light.hues.blue.dim, "light", PALETTE.light.lane);
+    // Lighter than it started in dark, darker than it started in light.
+    expect(contrastRatio(dark, "#000000")).toBeGreaterThan(
+      contrastRatio(PALETTE.dark.hues.blue.dim, "#000000"),
+    );
+    expect(contrastRatio(light, "#ffffff")).toBeGreaterThan(
+      contrastRatio(PALETTE.light.hues.blue.dim, "#ffffff"),
+    );
   });
 });

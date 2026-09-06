@@ -25,11 +25,14 @@ import {
   beamGroups,
   figureFor,
   ledgerSteps,
+  degreeLabel,
+  noteheadDx,
   sheetPxPerBeat,
   signatureMarks,
   smallestGap,
   spell,
   type Engraved,
+  type Figure,
   type SignatureMark,
 } from "@/engine/notation";
 import {
@@ -40,6 +43,7 @@ import {
   paintWrong,
   pxPerBeat,
 } from "@/views/lane-geometry";
+import { hueOf, readableInk } from "@/engine/theme";
 import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
 import type { NoteInstance } from "@/engine/scoring";
 
@@ -106,6 +110,16 @@ const HIGHLIGHT_ALPHA = 0.2;
  * gutter in a 1164px panel — 31.7% of the track, which this rounds.
  */
 const PLAYHEAD_FRAC = 1 / 3;
+
+/**
+ * The degree row: 12px bold mono, its centre 35px below the bottom staff line.
+ * Both read off the frames — the row's box sits 28px below the line and is
+ * 14px tall.
+ */
+const DEGREE_SIZE = 12;
+const DEGREE_DROP = 35;
+/** Between two digits of one chord. */
+const DEGREE_GAP = 4;
 
 const SANS = '"Geist", ui-sans-serif, system-ui, sans-serif';
 const MONO = '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
@@ -192,7 +206,7 @@ export class SheetStaff implements LaneRenderer {
 
     this.grid(f, trackX, W, topLineY, xOfBeat);
     this.staffLines(ctx, trackX, W - trackX, topLineY, p.txt3);
-    this.notes(f, xOfBeat, yOfStep);
+    this.notes(f, xOfBeat, yOfStep, bottomLineY);
 
     // A wrong strike, on the staff line of the note actually played. Notation
     // has a place for every pitch, so this one is never homeless the way a
@@ -370,6 +384,7 @@ export class SheetStaff implements LaneRenderer {
     f: LaneFrame,
     xOfBeat: (b: number) => number,
     yOfStep: (s: number) => number,
+    bottomLineY: number,
   ): void {
     const ctx = this.ctx;
     const size = SPACE / NOTEHEAD_EM_HEIGHT;
@@ -452,7 +467,7 @@ export class SheetStaff implements LaneRenderer {
         ctx.font = `${size}px ${MUSIC}`;
         ctx.fillText(
           GLYPH[n.fig.figure],
-          n.x - this.headHalfWidth(size),
+          n.x - this.headHalfWidth(size, n.fig.figure),
           n.y + NOTEHEAD_EM_CENTRE * size,
         );
       } else if (!beamed.has(i)) {
@@ -460,7 +475,7 @@ export class SheetStaff implements LaneRenderer {
         // would stack a stem per notehead, which is not how a chord is
         // engraved and reads as a smear at this size.
         for (const n of col) this.head(n, size);
-        this.stem(col, size);
+        this.stem(col);
       }
       for (const n of col) if (n.fig.dotted) this.dot(n);
     }
@@ -472,6 +487,8 @@ export class SheetStaff implements LaneRenderer {
       if (!cols.some((c) => c.some((n) => n.visible))) continue;
       this.beamGroup(cols, g.beams, size);
     }
+
+    if (f.labelMode === "degree") this.degreeRow(f, columns, bottomLineY);
   }
 
   /**
@@ -503,12 +520,60 @@ export class SheetStaff implements LaneRenderer {
   }
 
   /** One stem for a column, from its lowest head past its highest. */
-  private stem(col: Placed[], size: number): void {
+  /**
+   * The degree row under the staff (handoff 11 §1.2).
+   *
+   * A notehead is 17px of solid ink and carries no text, so unlike the roll
+   * there is nowhere to put the label *inside* it. It goes on its own line
+   * below the staff and above the keyboard, which is also where Hooktheory
+   * puts its numerals.
+   *
+   * Centred on `x`, which is the notehead's centre and not the glyph's ink —
+   * an eighth note's flag reaches right, and centring on ink would put the
+   * digit several pixels off a note whose head is exactly where a quarter's
+   * would be.
+   *
+   * A chord shares one x, so its digits are set side by side and the group is
+   * centred on the column. The frames do not draw that case; a single note is
+   * unaffected, and stacking them was not an option in a one-line row.
+   */
+  private degreeRow(f: LaneFrame, cols: Placed[][], bottomLineY: number): void {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.font = `700 ${DEGREE_SIZE}px ${MONO}`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    const y = bottomLineY + DEGREE_DROP;
+    for (const col of cols) {
+      if (!col[0].visible) continue;
+      // Low note first, so a chord reads bottom-up the way the staff does.
+      const sorted = [...col].sort((a, b) => a.step - b.step);
+      const parts = sorted.map((n) => ({
+        text: degreeLabel(n.inst.lane, f.keyFifths),
+        // The note's own hue, walked toward the paper's opposite until it is
+        // readable — a dimmed instrument tint on staff paper fails outright.
+        ink: readableInk(hueOf(f.palette, f.instrument, n.laneIndex).full, f.theme, f.palette.lane),
+      }));
+      const widths = parts.map((q) => ctx.measureText(q.text).width);
+      const total = widths.reduce((a, b) => a + b, 0) + DEGREE_GAP * (parts.length - 1);
+      let x = col[0].x - total / 2;
+      parts.forEach((q, i) => {
+        ctx.fillStyle = q.ink;
+        ctx.fillText(q.text, x, y);
+        x += widths[i] + DEGREE_GAP;
+      });
+    }
+    ctx.restore();
+  }
+
+  private stem(col: Placed[]): void {
     if (col[0].fig.figure === "whole") return; // a whole note has no stem
     const ctx = this.ctx;
     const top = Math.min(...col.map((n) => n.y));
     const bottom = Math.max(...col.map((n) => n.y));
-    const x = col[0].x + this.headHalfWidth(size) * 0.92;
+    // Off the head's own edge, not off a glyph offset: the stem rides the
+    // right side of the notehead and that is a fact about the head's size.
+    const x = col[0].x + SPACE * 0.55;
     ctx.fillStyle = col[0].ink;
     ctx.fillRect(x - STEM_W / 2, top - STEM_LEN, STEM_W, bottom - top + STEM_LEN);
   }
@@ -522,11 +587,19 @@ export class SheetStaff implements LaneRenderer {
   }
 
   /** Half the notehead's width, for centring the glyph on its beat. */
-  private headHalfWidth(size: number): number {
-    // The whole note is the widest head at 0.414em; the stemmed heads are
-    // about 0.299em wide including the stem's own column. Centring on the
-    // head rather than the glyph box is what puts the note on its beat.
-    return size * 0.13;
+  /**
+   * How far to shift a glyph left so its *notehead* lands on `n.x`.
+   *
+   * Per figure, not one value for all: a whole note's head is 0.414em wide and
+   * sits further into the glyph box than a stemmed head does. This used to be
+   * a single fudged 0.13em, which put every glyph-drawn note about 5px right
+   * of where the bare heads in a chord or a beamed group were being drawn —
+   * the two paths disagreed about the same beat. Handoff 11 §1.2 names the
+   * constant and warns against deriving it from ink bounds; a flag would drag
+   * the answer several pixels right.
+   */
+  private headHalfWidth(size: number, figure: Figure = "quarter"): number {
+    return size * noteheadDx(figure);
   }
 
   private highlight(f: LaneFrame, n: Placed): void {

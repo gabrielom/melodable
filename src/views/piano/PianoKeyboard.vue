@@ -10,6 +10,7 @@ import { keyGeometry, isWhiteKey, noteName, normalizeRange } from "@/engine/pitc
 import { PALETTE } from "@/engine/theme";
 import { useSettings } from "@/stores/settings";
 import type { RatingPop } from "@/composables/useTrainer";
+import { degreeOf } from "@/engine/notation";
 
 const settings = useSettings();
 /** Rating colours follow the active theme. */
@@ -27,6 +28,10 @@ const props = withDefaults(
     used?: number[];
     /** Stand the keyboard on its side, for the horizontal roll. */
     rotated?: boolean;
+    /** Name keys by degree as well as by letter (handoff 11 §1.1). */
+    degrees?: boolean;
+    /** The key those degrees are counted in, as fifths. */
+    keyFifths?: number;
   }>(),
   { lowNote: 48, highNote: 72 },
 );
@@ -62,6 +67,21 @@ function blackStyle(n: number) {
     : { left: `${g.x}%`, width: `${g.width}%` };
 }
 
+/**
+ * The degree written at the near edge of a white key.
+ *
+ * Every white key gets one, used by the lesson or not: the column is a *scale*
+ * when you are reading degrees, and a gap in it would be a hole in the scale
+ * rather than a key nobody plays. The note name is untouched and still marks
+ * only the keys the lesson asks for — it is the key you physically press, and
+ * that does not stop being true because you are counting degrees.
+ *
+ * Rotated only. Standing up, a white key is 14px wide with the note name
+ * already in it, and no frame draws a second label there.
+ */
+const degreeDigit = (n: number): string =>
+  String(degreeOf(n, props.keyFifths ?? 0).degree);
+
 const flashColor = (n: number): string | null => {
   const pop = props.pops?.find((p) => p.lane === n);
   return pop ? palette.value.rating[pop.rating] : null;
@@ -78,7 +98,7 @@ const isUsed = (n: number) => usedSet.value.has(n);
 </script>
 
 <template>
-  <div class="keyboard" :class="{ rotated }">
+  <div class="keyboard" :class="{ rotated, degrees }">
     <!-- white keys -->
     <button
       v-for="n in whiteNotes"
@@ -90,6 +110,7 @@ const isUsed = (n: number) => usedSet.value.has(n);
       @pointerup="emit('noteOff', n)"
       @pointerleave="emit('noteOff', n)"
     >
+      <span v-if="degrees && rotated" class="deg">{{ degreeDigit(n) }}</span>
       <span v-if="isUsed(n)" class="label">{{ noteName(n) }}</span>
     </button>
 
@@ -166,6 +187,22 @@ const isUsed = (n: number) => usedSet.value.has(n);
   padding-bottom: 7px;
   transition: background 0.06s, box-shadow 0.06s;
 }
+/* Both at once, at opposite ends of the tile: the degree at the outer edge,
+   the note name pushed to the edge facing the roll. The name stays because it
+   is still the key you physically press, and that does not stop being true
+   because you are counting degrees (handoff 11 §1.1). */
+.keyboard.rotated.degrees .white { justify-content: flex-end; padding: 0 6px 0 0; }
+.keyboard.rotated .deg {
+  position: absolute;
+  left: 6px;
+  font-family: var(--mono);
+  font-size: 8px;
+  color: #7b838f;
+  pointer-events: none;
+}
+.keyboard.rotated .white.used .deg { color: var(--key-mark); }
+.keyboard.rotated .white.on .deg { color: #2a1a02; }
+
 /* Target keys carry the same amber as a held key: an inset edge on the side
    facing the roll, plus the pitch name. */
 .white.used { box-shadow: inset 0 3px 0 var(--key-mark); }

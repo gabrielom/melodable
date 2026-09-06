@@ -31,6 +31,7 @@ import {
 } from "@/views/lane-geometry";
 import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
 import { countWhiteKeys, isWhiteKey, keyGeometry, pitchLetter, pitchClass } from "@/engine/pitch";
+import { degreeLabel } from "@/engine/notation";
 
 /**
  * No gutter: the rotated keyboard sits beside the roll and names the pitches,
@@ -110,6 +111,17 @@ const HEAD_CAP = 12;
  */
 const INK = { dark: "#08131a", light: "#f2f2f2" } as const;
 
+/**
+ * What a note is called: its letter, or its degree in the key.
+ *
+ * One function so the two orientations cannot drift apart, and so the shape of
+ * the string is the same either way — a character and an optional mark, which
+ * is exactly what `label` already knows how to set.
+ */
+function noteLabelOf(f: LaneFrame, pitch: number): string {
+  return f.labelMode === "degree" ? degreeLabel(pitch, f.keyFifths) : pitchLetter(pitch);
+}
+
 export class PianoRoll implements LaneRenderer {
   private ctx: CanvasRenderingContext2D;
   private dpr = 1;
@@ -118,7 +130,7 @@ export class PianoRoll implements LaneRenderer {
   /** Label widths, measured once — the two sizes are constants. */
   private metrics: { letter: number; sharp: number } | null = null;
   /** Accidentals from this frame's notes, drawn together in `endLabels`. */
-  private sharps: Array<{ x: number; y: number }> = [];
+  private sharps: Array<{ x: number; y: number; mark: string }> = [];
 
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext("2d")!;
@@ -249,7 +261,7 @@ export class PianoRoll implements LaneRenderer {
         const x = g.x + (g.width - d) / 2;
         this.note(f, x, y - d / 2, d, d, noteInk(f, inst, this.rankOf(f, inst.lane)), d / 2);
         // Skipped when the circle is too small to hold the text.
-        if (d >= LABEL_MIN_W) this.label(f, pitchLetter(inst.lane), x + d / 2, y);
+        if (d >= LABEL_MIN_W) this.label(f, noteLabelOf(f, inst.lane), x + d / 2, y);
       }
     }
     this.endLabels();
@@ -359,7 +371,7 @@ export class PianoRoll implements LaneRenderer {
       const cy = rowY(inst.lane) + rowH / 2;
       const d = NOTE_DIAMETER;
       this.note(f, x - d / 2, cy - d / 2, d, d, noteInk(f, inst, this.rankOf(f, inst.lane)), d / 2);
-      this.label(f, pitchLetter(inst.lane), x, cy);
+      this.label(f, noteLabelOf(f, inst.lane), x, cy);
     }
     this.endLabels();
 
@@ -499,7 +511,7 @@ export class PianoRoll implements LaneRenderer {
     const ctx = this.ctx;
     if (this.sharps.length) {
       ctx.font = `700 ${ACCIDENTAL_SIZE}px ${MONO}`;
-      for (const s of this.sharps) ctx.fillText("#", s.x, s.y);
+      for (const s of this.sharps) ctx.fillText(s.mark, s.x, s.y);
       this.sharps.length = 0;
     }
     ctx.textBaseline = "alphabetic";
@@ -528,7 +540,7 @@ export class PianoRoll implements LaneRenderer {
     const total = m.letter + ACCIDENTAL_GAP + m.sharp;
     const x = cx - total / 2;
     ctx.fillText(text[0], x, cy + 0.5);
-    this.sharps.push({ x: x + m.letter + ACCIDENTAL_GAP, y: cy - ACCIDENTAL_RISE });
+    this.sharps.push({ x: x + m.letter + ACCIDENTAL_GAP, y: cy - ACCIDENTAL_RISE, mark: text[1] });
   }
 
 

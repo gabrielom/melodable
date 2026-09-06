@@ -121,6 +121,49 @@ function mix(a: string, b: string, t: number): string {
   return `#${ch(ar, br)}${ch(ag, bg)}${ch(ab, bb)}`;
 }
 
+/**
+ * WCAG relative luminance of a hex colour, for the contrast ratio below.
+ */
+function luminance(hex: string): number {
+  const lin = (c: number) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  const [r, g, b] = channels(hex).map(lin) as [number, number, number];
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** WCAG contrast ratio between two hex colours, 1..21. */
+export function contrastRatio(a: string, b: string): number {
+  const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+}
+
+/** The floor a small label has to clear against its background. */
+export const MIN_CONTRAST = 4.5;
+
+/**
+ * A hue shifted just far enough to be readable on `bg` (handoff 11 §1.3).
+ *
+ * A degree digit inherits its note's hue so it reads as belonging to that
+ * note — but a dimmed instrument tint on staff paper fails contrast outright,
+ * measured at 2.27:1 light and 1.61:1 dark. So walk the hue toward black on a
+ * light ground or white on a dark one, and stop at the *first* step that
+ * clears 4.5:1. Derived, not picked: the smallest shift that works is the one
+ * that keeps the hue most recognisable.
+ *
+ * Returns the target itself if even that cannot clear the floor, which cannot
+ * happen for any palette in the app but must not loop for ever if it did.
+ */
+export function readableInk(hue: string, theme: Theme, bg: string): string {
+  const towards = theme === "light" ? "#000000" : "#ffffff";
+  for (let i = 0; i <= 20; i++) {
+    const ink = mix(hue, towards, i / 20);
+    if (contrastRatio(ink, bg) >= MIN_CONTRAST) return ink;
+  }
+  return towards;
+}
+
 /** A hue at both the strengths the design uses. */
 export interface Hue {
   /** A lane that is sounding, and the fill inside a hold's slot. */

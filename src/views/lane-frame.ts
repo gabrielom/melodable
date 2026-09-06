@@ -14,7 +14,7 @@ import type { Engraved } from "@/engine/notation";
 import type { Palette, Theme } from "@/engine/theme";
 import type { InstrumentType } from "@/engine/types";
 import type { WrongMark } from "@/views/lane-geometry";
-import type { LaneOrientation, PadLayout } from "@/stores/settings";
+import type { LaneOrientation, NoteLabel, PadLayout } from "@/stores/settings";
 
 export interface LaneFrame {
   /** Audio-clock now, seconds. */
@@ -55,6 +55,13 @@ export interface LaneFrame {
    * only; the falling views have no clef to put it after.
    */
   keyFifths: number;
+
+  /**
+   * Name each note by its letter, or by its degree in the key (handoff 11 §1).
+   * Only the *labelling* changes: colour, geometry, the grid and every timing
+   * rule are the same run either way.
+   */
+  labelMode: NoteLabel;
 
   /**
    * Strikes that hit nothing, still fading. Drawn at the playhead on the row

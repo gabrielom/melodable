@@ -173,6 +173,38 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   `spell(p, 0)` reproduces `staffStep`/`accidentalFor` exactly, and
   `tests/notation.test.ts` pins that plus a full round trip over every key and
   every pitch.
+- **Degree mode is a relabelling and nothing else** (handoff 11 §1). `NOTE |
+  DEG` swaps what a note is *called* — colour, geometry, the grid and every
+  timing rule are the same run either way. Piano only, like the key chip and
+  sheet: a degree is a statement about a scale and a drum pad is not in one.
+  `degreeOf` reads the letter out of `spell`, so the two labellings can never
+  disagree about which note they are naming. Its alteration is **not** the
+  notation accidental: it is measured against the scale's own version of that
+  degree, so an F♮ in E major is written with a natural sign and called `♭2`.
+  Roll puts the digit inside the notehead where the letter was, and a degree on
+  every white key of the rotated gutter with the note name pushed to the edge
+  facing the roll — the name stays because it is still the key you press.
+  Sheet has nowhere to put a label inside 17px of solid ink, so the digits go
+  on their own row under the staff.
+- **The key chip is derived by default and overridable.** `keySignatureFor`
+  already reads a key off the notes; `settings.keyOverride` is the escape
+  hatch, because a clip that uses only part of a scale honestly derives a
+  smaller signature and only the player knows what it is really in. Majors
+  only in the list: a signature names a major and its relative minor equally,
+  and handoff 11 leaves which one a lesson is in open (its question 2).
+- **A degree digit's ink is derived, never picked** (§1.3). A dimmed
+  instrument tint on staff paper fails contrast outright — 2.27:1 light,
+  1.61:1 dark — so `readableInk` walks the hue toward black on light paper or
+  white on dark and stops at the first step clearing 4.5:1. Smallest shift
+  that works, so the hue stays recognisable.
+- **Everything under a notehead is anchored on `NOTEHEAD_EM_DX`, never on ink
+  bounds** (§1.2). An eighth note's flag reaches right, so an ink-centred label
+  lands pixels off a note whose head is exactly where a quarter's is. The whole
+  note's `0.257em` is measured off the font and matches the handoff exactly;
+  the stemmed `0.2006em` is the handoff's, corroborated against the half note.
+  `SheetStaff.headHalfWidth` was a single fudged `0.13em` before this, which
+  put every glyph-drawn note about 5px right of the bare heads a chord or a
+  beamed group draws — the two paths disagreed about the same beat.
 - **Notation comes from Noto Music, vendored in `src/assets/fonts`** — never
   drawn by hand and never fetched from a CDN. Two numbers are measured off the
   font binary rather than estimated, and `tests/notation.test.ts` pins both: a

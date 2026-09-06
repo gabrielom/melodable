@@ -224,8 +224,17 @@ export function useTrainer(
    * the staff would be a worse trade than getting it right from the notes.
    * Pads have no pitch, so there is nothing to derive and nothing that reads it.
    */
-  const keyFifths = computed(() =>
+  const derivedKey = computed(() =>
     isPiano.value ? keySignatureFor(targets.value.map((t) => t.lane)) : 0,
+  );
+  /**
+   * The key everything reads from: the staff's signature, the degree labels
+   * and the chord ribbon. Hand-set when the player has said otherwise —
+   * degrees are meaningless without a key, and a clip that uses only part of
+   * a scale honestly derives a smaller one (handoff 11 §1.5).
+   */
+  const keyFifths = computed(() =>
+    isPiano.value && settings.keyOverride !== null ? settings.keyOverride : derivedKey.value,
   );
   const totalLoops = computed(() => lessonRepeats(lesson.value));
   /** The whole run in beats — what the overview strip spans. */
@@ -383,6 +392,7 @@ export function useTrainer(
       // cannot forget to do it: it is one question, asked once.
       wrongMarks: pos ? wrongMarks : NO_MARKS,
       keyFifths: keyFifths.value,
+      labelMode: isPiano.value ? settings.noteLabel : "note",
       instrument: lesson.value.instrument,
       hueOrder: isPiano.value ? lessonPitches.value : lanes.value,
       padLanes: lanes.value,
@@ -864,6 +874,7 @@ export function useTrainer(
     linkQuantum,
     sheetAvailable,
     sheetOn,
+    keyFifths,
     runBeats,
     play,
     stop,

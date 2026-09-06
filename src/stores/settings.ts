@@ -37,6 +37,15 @@ export type LaneMode = "roll" | "sheet";
 export type SheetInk = "colour" | "mono";
 
 /**
+ * How a note is named: by letter, or by what it *does* in the key.
+ *
+ * Piano only. A degree is a statement about a scale, and a drum pad is not in
+ * one — handoff 11 §3.3 keeps degrees, key and sheet off every pads frame for
+ * the same reason.
+ */
+export type NoteLabel = "note" | "degree";
+
+/**
  * The subset of settings we persist across launches (Tauri store, M3).
  * `instrument` is intentionally absent — from M5 the active view follows the
  * restored lesson's instrument, so persisting it separately would conflict.
@@ -55,6 +64,8 @@ interface SettingsSnapshot {
   laneOrientation: LaneOrientation;
   laneMode: LaneMode;
   sheetInk?: SheetInk;
+  noteLabel?: NoteLabel;
+  keyOverride?: number | null;
   pianoLow: number;
   pianoHigh: number;
   latencyMs: number;
@@ -101,6 +112,17 @@ export const useSettings = defineStore("settings", () => {
   /** Sheet's ink. Colour by default: the hues are how the app names a pitch
    *  everywhere else, so the staff arrives speaking the same language. */
   const sheetInk = ref<SheetInk>("colour");
+  /** Letters by default: degrees are the specialist reading, as sheet is. */
+  const noteLabel = ref<NoteLabel>("note");
+  /**
+   * A key chosen by hand, overriding the one derived from the lesson's notes.
+   *
+   * Null means "read it off the music", which is right nearly always — the
+   * override exists because a clip that uses only part of a scale honestly
+   * derives a smaller signature, and only the player knows what it is really
+   * in. Kept as fifths, the same currency the staff and the degrees both take.
+   */
+  const keyOverride = ref<number | null>(null);
 
   /** Fallback piano range (C3..C6) when a lesson has no notes to frame. */
   const pianoLow = ref(48);
@@ -144,6 +166,10 @@ export const useSettings = defineStore("settings", () => {
       if (saved.laneOrientation) laneOrientation.value = saved.laneOrientation;
       if (saved.laneMode === "roll" || saved.laneMode === "sheet") laneMode.value = saved.laneMode;
       if (saved.sheetInk === "colour" || saved.sheetInk === "mono") sheetInk.value = saved.sheetInk;
+      if (saved.noteLabel === "note" || saved.noteLabel === "degree") noteLabel.value = saved.noteLabel;
+      if (typeof saved.keyOverride === "number" || saved.keyOverride === null) {
+        keyOverride.value = saved.keyOverride;
+      }
       if (typeof saved.pianoLow === "number") pianoLow.value = saved.pianoLow;
       if (typeof saved.pianoHigh === "number") pianoHigh.value = saved.pianoHigh;
       if (typeof saved.latencyMs === "number") latencyMs.value = clampLatency(saved.latencyMs);
@@ -154,7 +180,7 @@ export const useSettings = defineStore("settings", () => {
   // Persist on change. Guarded so the async hydrate above doesn't get
   // clobbered by an initial write before it lands.
   watch(
-    [theme, volNotes, volGuide, volMetronome, soundOutput, metronome, monitorOpen, padLayout, laneOrientation, laneMode, sheetInk, pianoLow, pianoHigh, latencyMs],
+    [theme, volNotes, volGuide, volMetronome, soundOutput, metronome, monitorOpen, padLayout, laneOrientation, laneMode, sheetInk, noteLabel, keyOverride, pianoLow, pianoHigh, latencyMs],
     () => {
     if (!hydrated.value) return;
     void persistSet("settings", {
@@ -169,6 +195,8 @@ export const useSettings = defineStore("settings", () => {
       laneOrientation: laneOrientation.value,
       laneMode: laneMode.value,
       sheetInk: sheetInk.value,
+      noteLabel: noteLabel.value,
+      keyOverride: keyOverride.value,
       pianoLow: pianoLow.value,
       pianoHigh: pianoHigh.value,
       latencyMs: latencyMs.value,
@@ -189,6 +217,8 @@ export const useSettings = defineStore("settings", () => {
     laneOrientation,
     laneMode,
     sheetInk,
+    noteLabel,
+    keyOverride,
     pianoLow,
     pianoHigh,
     latencyMs,

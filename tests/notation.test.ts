@@ -4,11 +4,16 @@ import {
   FIGURE_BEAMS,
   FIGURE_BEATS,
   ACCIDENTAL_EM_CENTRE,
+  NOTEHEAD_EM_DX,
+  noteheadDx,
   MIN_NOTE_GAP_PX,
   NOTEHEAD_EM_CENTRE,
   NOTEHEAD_EM_HEIGHT,
   accidentalFor,
+  degreeOf,
+  keyName,
   keySignatureFor,
+  tonicLetter,
   signatureAlters,
   signatureMarks,
   spell,
@@ -37,6 +42,24 @@ describe("the font's measured constants", () => {
 
   it("seats the notehead centre just above the baseline", () => {
     expect(NOTEHEAD_EM_CENTRE).toBeCloseTo(0.134, 3);
+  });
+
+  it("puts a whole note's head further into its glyph box than a stemmed one", () => {
+    // Handoff 11 §1.2's constant, and the anchor everything under a note is
+    // placed from. The whole note's is measured off the font and agrees with
+    // the handoff exactly; the stemmed one is corroborated by the half note,
+    // whose head is the only stemmed contour separable from its stem.
+    expect(NOTEHEAD_EM_DX.whole).toBeCloseTo(0.257, 4);
+    expect(NOTEHEAD_EM_DX.stemmed).toBeCloseTo(0.2006, 4);
+    expect(NOTEHEAD_EM_DX.whole).toBeGreaterThan(NOTEHEAD_EM_DX.stemmed);
+  });
+
+  it("gives every stemmed figure the same anchor, flags and all", () => {
+    // The trap §1.2 names: an eighth's flag reaches right, so anything derived
+    // from ink bounds would place its label pixels off a quarter's.
+    const stemmed = ["half", "quarter", "eighth", "sixteenth", "thirtysecond"] as const;
+    for (const f of stemmed) expect(noteheadDx(f)).toBe(NOTEHEAD_EM_DX.stemmed);
+    expect(noteheadDx("whole")).toBe(NOTEHEAD_EM_DX.whole);
   });
 
   it("lines the sharp and the natural up with a notehead, and not the flat", () => {
@@ -508,5 +531,81 @@ describe("spell", () => {
       const tonic = ((fifths * 7) % 12 + 12) % 12;
       for (const p of major(tonic)) expect(spell(p, fifths).accidental).toBeNull();
     }
+  });
+});
+
+// ------------------------------------------------------------- degree mode
+
+describe("degreeOf", () => {
+  it("numbers a major scale 1 through 7 from its own tonic", () => {
+    for (let fifths = -5; fifths <= 5; fifths++) {
+      const tonic = ((fifths * 7) % 12 + 12) % 12;
+      const scale = [0, 2, 4, 5, 7, 9, 11].map((s) => 60 + tonic + s);
+      scale.forEach((p, i) => {
+        expect(degreeOf(p, fifths)).toEqual({ degree: i + 1, alter: 0 });
+      });
+    }
+  });
+
+  it("gives the same degree at every octave", () => {
+    for (const oct of [-24, -12, 0, 12, 24]) {
+      expect(degreeOf(64 + oct, 0).degree).toBe(3); // E is 3 in C
+    }
+  });
+
+  it("raises and lowers against the scale, not against the letter", () => {
+    // C major: C♯ is the tonic raised.
+    expect(degreeOf(61, 0)).toEqual({ degree: 1, alter: 1 });
+    expect(degreeOf(68, 0)).toEqual({ degree: 5, alter: 1 }); // G♯
+    // E major: the signature makes F♯ the second degree, so an F natural —
+    // which notation writes with a *natural* sign — is a flattened second.
+    expect(spell(77, 4).accidental).toBe("natural");
+    expect(degreeOf(77, 4)).toEqual({ degree: 2, alter: -1 });
+  });
+
+  it("never invents a degree outside 1..7 or an alteration beyond a semitone", () => {
+    for (let fifths = -7; fifths <= 7; fifths++) {
+      for (let p = 36; p <= 96; p++) {
+        const d = degreeOf(p, fifths);
+        expect(d.degree).toBeGreaterThanOrEqual(1);
+        expect(d.degree).toBeLessThanOrEqual(7);
+        expect(Math.abs(d.alter)).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  it("agrees with the staff about which line the note is on", () => {
+    // Both labellings read the same letter, so they can never disagree about
+    // a note's identity — only about how it is named.
+    for (let fifths = -7; fifths <= 7; fifths++) {
+      for (let p = 55; p <= 84; p++) {
+        const letter = ((spell(p, fifths).step + 30) % 7 + 7) % 7;
+        const expected = ((letter - tonicLetter(fifths)) % 7 + 7) % 7 + 1;
+        expect(degreeOf(p, fifths).degree).toBe(expected);
+      }
+    }
+  });
+});
+
+describe("tonicLetter and keyName", () => {
+  it("walks the circle four letters at a time, both ways", () => {
+    expect(tonicLetter(0)).toBe(0); // C
+    expect(tonicLetter(1)).toBe(4); // G
+    expect(tonicLetter(4)).toBe(2); // E — the key this was built for
+    expect(tonicLetter(-1)).toBe(3); // F
+    expect(tonicLetter(-2)).toBe(6); // B (flat)
+  });
+
+  it("names the signature the way the chip writes it", () => {
+    expect(keyName(0)).toBe("C maj");
+    expect(keyName(4)).toBe("E maj");
+    expect(keyName(-1)).toBe("F maj");
+    expect(keyName(-5)).toBe("Db maj");
+  });
+
+  it("has a name for every signature and clamps beyond them", () => {
+    for (let f = -7; f <= 7; f++) expect(keyName(f)).toMatch(/^[A-G][b#]? maj$/);
+    expect(keyName(99)).toBe(keyName(7));
+    expect(keyName(-99)).toBe(keyName(-7));
   });
 });

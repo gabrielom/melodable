@@ -26,6 +26,7 @@ import ImportDialog from "@/components/ImportDialog.vue";
 import CalibrationDialog from "@/components/CalibrationDialog.vue";
 import { useCalibration } from "@/composables/useCalibration";
 import { clampLatency } from "@/engine/calibration";
+import { keyName } from "@/engine/notation";
 import RunSummary from "@/components/RunSummary.vue";
 import type { LogRow } from "@/components/midi-log";
 import PianoKeyboard from "@/views/piano/PianoKeyboard.vue";
@@ -141,6 +142,7 @@ const {
   linkQuantum,
   sheetAvailable,
   sheetOn,
+  keyFifths,
   play,
   stop,
   setBpm,
@@ -530,6 +532,26 @@ function onKeyUp(e: KeyboardEvent) {
 }
 
 // ------------------------------------------------------------------- theme
+/**
+ * The key the trainer is reading in, and the list the chip offers.
+ *
+ * "Auto" is first and is the resting state: the key is read off the lesson's
+ * own notes, which is right nearly always. The override exists because a clip
+ * that uses only part of a scale honestly derives a smaller signature, and
+ * only the player knows what it is really in (handoff 11 §1.5).
+ *
+ * Majors only. A signature names a major and its relative minor equally, and
+ * which of the two a lesson is in is a teaching decision the frames do not
+ * make — handoff 11 leaves it open.
+ */
+const KEY_CHOICES = Array.from({ length: 15 }, (_, i) => i - 7);
+const keyLabel = computed(() => keyName(keyFifths.value));
+
+function pickKey(fifths: number | null) {
+  settings.keyOverride = fifths;
+  openMenu.value = null;
+}
+
 // The palette lives in CSS custom properties keyed off `data-theme` on <html>;
 // the canvas renderers get the same values as data via `engine/theme.ts`.
 watch(
@@ -568,12 +590,13 @@ const padLayouts: Array<{ id: PadLayout; label: string; hint: string }> = [
  * two open at once reads as a mistake. The bar lifts above the stage while
  * any of them is showing so the panel isn't clipped by the lane canvas.
  */
-type BarMenu = "pad" | "device" | "volume" | null;
+type BarMenu = "pad" | "device" | "volume" | "key" | null;
 const openMenu = ref<BarMenu>(null);
 const padMenuOpen = computed(() => openMenu.value === "pad");
 const volMenuOpen = computed(() => openMenu.value === "volume");
 const padMenuRoot = ref<HTMLElement | null>(null);
 const volMenuRoot = ref<HTMLElement | null>(null);
+const keyMenuRoot = ref<HTMLElement | null>(null);
 
 function toggleMenu(which: Exclude<BarMenu, null>) {
   openMenu.value = openMenu.value === which ? null : which;
@@ -594,6 +617,9 @@ function onPadMenuPointer(e: PointerEvent) {
   const t = e.target as Node;
   if (padMenuOpen.value && padMenuRoot.value && !padMenuRoot.value.contains(t)) openMenu.value = null;
   if (volMenuOpen.value && volMenuRoot.value && !volMenuRoot.value.contains(t)) openMenu.value = null;
+  if (openMenu.value === "key" && keyMenuRoot.value && !keyMenuRoot.value.contains(t)) {
+    openMenu.value = null;
+  }
 }
 
 /**
@@ -743,6 +769,68 @@ watch(
             @click="settings.metronome = !settings.metronome"
           >
             CLICK
+          </button>
+        </div>
+      </template>
+
+      <!-- Degrees are a statement about a scale, so both of these are piano
+           only and both are meaningless without the other: the key names what
+           1 is, and without it a digit says nothing (handoff 11 §1.5). -->
+      <template v-if="view === 'trainer' && sheetAvailable">
+        <span ref="keyMenuRoot" class="seg-wrap">
+          <button
+            class="field keychip"
+            :class="{ open: openMenu === 'key' }"
+            :data-tip="settings.keyOverride === null
+              ? 'Key, read from the lesson\u2019s own notes'
+              : 'Key, set by hand'"
+            aria-label="Key"
+            @click="toggleMenu('key')"
+          >
+            <i class="k">KEY</i>
+            <b>{{ keyLabel }}</b>
+          </button>
+          <div v-if="openMenu === 'key'" class="menu key-menu" role="menu" data-tauri-drag-region="false">
+            <div class="menu-head">KEY</div>
+            <button
+              class="menu-row"
+              :class="{ on: settings.keyOverride === null }"
+              role="menuitemradio"
+              :aria-checked="settings.keyOverride === null"
+              @click="pickKey(null)"
+            >
+              AUTO<i>{{ keyName(keyFifths) }}</i>
+            </button>
+            <button
+              v-for="f in KEY_CHOICES"
+              :key="f"
+              class="menu-row"
+              :class="{ on: settings.keyOverride === f }"
+              role="menuitemradio"
+              :aria-checked="settings.keyOverride === f"
+              @click="pickKey(f)"
+            >
+              {{ keyName(f) }}<i>{{ f === 0 ? "\u2014" : `${Math.abs(f)} ${f > 0 ? "\u266f" : "\u266d"}` }}</i>
+            </button>
+          </div>
+        </span>
+
+        <div class="seg" role="group" aria-label="Note naming">
+          <button
+            class="seg-i"
+            :class="{ on: settings.noteLabel === 'note' }"
+            data-tip="Name notes by letter"
+            @click="settings.noteLabel = 'note'"
+          >
+            NOTE
+          </button>
+          <button
+            class="seg-i"
+            :class="{ on: settings.noteLabel === 'degree' }"
+            data-tip="Name notes by their degree in the key"
+            @click="settings.noteLabel = 'degree'"
+          >
+            DEG
           </button>
         </div>
       </template>
@@ -1157,6 +1245,8 @@ watch(
           <canvas ref="laneCanvas" class="lane-canvas piano-canvas" />
           <PianoKeyboard
             :rotated="!sheetOn && settings.laneOrientation === 'horizontal'"
+            :degrees="settings.noteLabel === 'degree'"
+            :key-fifths="keyFifths"
             :active="activeNotes"
             :low-note="pianoRange[0]"
             :high-note="pianoRange[1]"
@@ -1365,6 +1455,19 @@ watch(
   background: var(--track);
   box-shadow: var(--outline);
 }
+/* The key chip: a `.field` like the tempo readout, because it is the same
+   kind of thing — a value you can change, not a switch. */
+.keychip { gap: 5px; border: none; cursor: pointer; }
+.keychip .k { font-family: var(--mono); font-size: 9.5px; letter-spacing: 1.2px; color: var(--txt3); }
+.keychip b { font-family: var(--mono); font-size: 9.5px; font-weight: 500; color: var(--txt); }
+.keychip:hover { background: var(--hover); }
+.keychip.open { background: var(--active); }
+.keychip.open .k { color: var(--active-txt); opacity: 0.7; }
+.keychip.open b { color: var(--active-txt); }
+.keychip:focus-visible { outline: 1px solid var(--head); outline-offset: 1px; }
+/* Fifteen signatures is a long list for a 34px bar, so it scrolls. */
+.key-menu { width: 132px; max-height: 268px; overflow-y: auto; }
+
 .tempo {
   gap: 5px;
   cursor: ns-resize;
