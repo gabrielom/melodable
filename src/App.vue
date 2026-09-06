@@ -1207,6 +1207,7 @@ watch(
       :previous-best="runResult.previousBest"
       :tally="runResult.tally"
       :holds="runResult.holds"
+      :wrong="runResult.wrong"
       :attempts="runResult.attempts"
       @again="onPlay"
       @lessons="goHome"

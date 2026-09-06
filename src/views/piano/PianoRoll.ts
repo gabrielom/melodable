@@ -26,6 +26,8 @@ import {
   paintVeil,
   pxPerBeat,
   ROW_INK,
+  WRONG_DOT_R,
+  paintWrong,
 } from "@/views/lane-geometry";
 import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
 import { countWhiteKeys, isWhiteKey, keyGeometry, pitchLetter, pitchClass } from "@/engine/pitch";
@@ -252,6 +254,13 @@ export class PianoRoll implements LaneRenderer {
     }
     this.endLabels();
 
+    for (const m of f.wrongMarks) {
+      if (m.lane < low || m.lane > high) continue;
+      const g = keyGeometry(m.lane, low, whiteWidth);
+      paintWrong(ctx, g.x + g.width / 2, hitY - (m.time - f.now) * pxPerSec,
+        WRONG_DOT_R, f.palette.rating.miss, f.palette.lane);
+    }
+
     if (f.playing) paintVeil(ctx, f.palette.lane, [0, H], [0, hitY], [0, hitY, W, H - hitY]);
 
     ctx.fillStyle = f.palette.head;
@@ -353,6 +362,12 @@ export class PianoRoll implements LaneRenderer {
       this.label(f, pitchLetter(inst.lane), x, cy);
     }
     this.endLabels();
+
+    for (const m of f.wrongMarks) {
+      if (m.lane < low || m.lane > high) continue;
+      paintWrong(ctx, hitX + (m.time - f.now) * pxPerSec, rowY(m.lane) + rowH / 2,
+        WRONG_DOT_R, f.palette.rating.miss, f.palette.lane);
+    }
     ctx.restore();
 
     if (f.playing) {

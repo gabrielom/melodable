@@ -63,6 +63,36 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
 - Lane identity is a **hue from the fourteen** (`hueOf`), indexed by the lane's position on screen — not by pad number or pitch, so a lane keeps its colour between lessons. Pads walk the list in order; piano starts on the cool end (blue, violet, bronze, teal) so a chord reads as separate voices. The **dimmed** value is derived, never authored: `mix(hue, field, 0.60)` in dark against `#0d0d0e`, `0.35` in light against `#cccccc`. That reproduces the design's own dimmed column for all fourteen in both themes, and `tests/theme.test.ts` pins it. A lane's strip, its lit mini-grid cell and its unplayed notes are all that same dim tint; full strength means the lane is sounding *now*. This supersedes the old 8-colour LED set, three of which doubled as rating colours.
 - `--led0..2` in `styles.css` are **not** lane identity — they are chrome accents (the device dot, the resume flag, the monitor's source dots) and are deliberately not mirrored in `theme.ts`.
 - Respect `prefers-reduced-motion`; keep controls keyboard-focusable.
+- **A strike that hits nothing is a wrong note, and it is charged.** One rule
+  covers both cases: a lane the lesson never asks for has no targets at all,
+  and a lane it does ask for struck far from any of them has none near enough.
+  `Scorer.hit` returns `hit | wrong | ignored`. A wrong note adds to the
+  accuracy denominator with no points and breaks the combo, and is counted
+  **outside `tally`** for the same reason holds are — the tally answers how the
+  *lesson's* notes went, and this was not one of them. **`WRONG_GRACE` is what
+  stops one mistake being billed twice:** a note struck 150ms late grades as
+  nothing and its target is swept as a miss a moment later, so calling the
+  strike wrong as well would take two zeros for one error. Inside the grace the
+  strike is `ignored` and silent. The check looks at targets *regardless of
+  `resolved`*, because by the time a late strike lands its target has usually
+  been swept already — that is the case the grace exists for. A consequence
+  worth knowing: in a lane whose notes are closer together than twice the
+  grace, no strike can ever be wrong, which is right — "completely out of time"
+  has to mean completely.
+- **The wrong-note mark is a small dot, and it scrolls with the music.** Not a
+  flash at the playhead: that would be gone before you could look at it and
+  would say only *that* something was wrong, never *where*. Left in the
+  timeline where it was struck, the played-out half of the lane becomes a
+  record — three dots crowding one beat says you are rushing that beat — and it
+  scrolls away like everything else, pruned off the renderer's own `behind`
+  window. Both it and a missed note are red, because both are results and the
+  rating language has one red; **size is what separates them**, and `paintWrong`
+  rings the dot in the bed colour so it still reads sitting on a missed note of
+  the same red. All five draw paths have it (pads and piano in both
+  orientations, sheet). A lane the view cannot show — an unused pad, a pitch
+  outside the roll's range — gets **no mark and still scores**; drawing it at a
+  clamped edge would name a note the player did not play. Sheet is never in
+  that position, notation having a place for every pitch.
 - **A note can have a length.** `NoteEvent.duration` is in beats; anything under `HOLD_MIN_BEATS` is an ornament and normalised to zero by `lessonTargets`. A held note is judged twice and independently: the onset rating is unchanged and alone decides the colour, and the sustain is measured from the note's *written* onset so a late strike is not charged twice. Overholding is not an error — the fraction clamps at 1, and a hold still open at the written end closes itself, which is also what stops a controller that never sends note-off from scoring every hold as dropped. Combo breaks on a dropped hold, survives a short one. Pads carry no duration on import (a drum has decayed before you could let go), though the renderers support pad holds if a lesson authors them.
 - **Everything lives in the one transport bar**, which is also the macOS titlebar (left padding clears the traffic lights). It is 34px tall with every control 20px, and stays a single row with nothing hidden. No second toolbar row, no in-stage header.
 - **The window floor is what keeps the bar intact**: `minWidth` in `tauri.conf.json` is 1052, measured as the narrowest width where every trainer control fits at natural size with the longest built-in name ("Syncopated Groove", full at 1042px). It has come down from 1216 in three steps as controls left the trainer bar for home — the instrument switch (handoff 05 §4.2), then the import button, then the Ableton Link toggle (handoff 08). The trainer bar is still the binding one; home needs about 650. **A plain browser understates this floor, and the trap has bitten twice:** the device chip reads "NO DEVICE" at 91px rather than its 116px cap (−25px), and the Link toggle does not render at all outside a Tauri build with the `link` feature — that one no longer affects the floor now Link is home-only, but it still affects any measurement of the *home* bar. `scratchpad/floor2.mjs` forces the chip; the template needs a temporary `v-if` widening for the toggle. The bar's 84px left inset is part of the budget too, so re-measure whenever any of it moves. Nothing drops out responsively any more — if you add a control, re-measure and raise the floor, don't start hiding things. The lesson title is the one elastic element (`flex: 0 1 auto; min-width: 0`) so an imported clip with a long name ellipsises instead of pushing controls off the edge.

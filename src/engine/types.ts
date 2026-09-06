@@ -108,6 +108,21 @@ export type Rating = "perfect" | "great" | "early" | "late" | "miss";
 export const TIMING_WINDOWS = { perfect: 0.032, great: 0.06, loose: 0.1 } as const;
 
 /**
+ * How near a target a strike has to land to count as an *attempt* at it.
+ *
+ * Wider than `loose`, and it exists to stop one sloppy strike being charged
+ * twice. A note struck 150ms late is outside every grading window, so it earns
+ * nothing — and the note it was aimed at will be swept as a miss a moment
+ * later, which is the charge. Calling the strike a wrong note as well would
+ * bill the same mistake to two different accounts.
+ *
+ * So beyond this, a strike is a wrong note; inside it, the strike is silent
+ * and the note's own miss speaks for it. 250ms is a long time in rhythm — two
+ * and a half loose windows — which is what "completely out of time" means.
+ */
+export const WRONG_GRACE = 0.25;
+
+/**
  * Score weight per rating. `early` and `late` carry what the old single loose
  * band did, so splitting it changes no accuracy maths.
  */

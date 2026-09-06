@@ -33,6 +33,7 @@ import { PianoRoll } from "@/views/piano/PianoRoll";
 import { SheetStaff } from "@/views/sheet/SheetStaff";
 import { useNotationFont } from "@/composables/useNotationFont";
 import { engraveOnsets, keySignatureFor } from "@/engine/notation";
+import type { WrongMark } from "@/views/lane-geometry";
 import { Overview } from "@/views/Overview";
 import { normalizeRange } from "@/engine/pitch";
 
@@ -92,6 +93,12 @@ export function useTrainer(
     /** Sustain, counted separately — a second judgement on the same notes. */
     holds: Readonly<Record<HoldResult, number>>;
     /**
+     * Strikes that hit nothing. Kept out of `tally` for the same reason holds
+     * are: the tally answers how the lesson's notes went, and none of these
+     * was one of them. It does count against `accuracy`.
+     */
+    wrong: number;
+    /**
      * Every attempt at this lesson, oldest first, this run included — what
      * the summary's history chart draws.
      */
@@ -102,6 +109,14 @@ export function useTrainer(
   const bestCombo = ref(0);
   const toast = ref<string | null>(null);
   const pops = ref<RatingPop[]>([]);
+  /**
+   * Strikes that hit nothing, for the lane to draw an ✕ at the playhead.
+   *
+   * A plain array rather than a ref: it is read once a frame by the render
+   * loop and never by a template, so making it reactive would re-run Vue for
+   * something canvas is already drawing (invariant 6).
+   */
+  const wrongMarks: WrongMark[] = [];
 
   const midiClock = new HostClock();
 
@@ -359,6 +374,7 @@ export function useTrainer(
       theme: settings.theme,
       orientation: settings.laneOrientation,
       mono: sheetOn.value && settings.sheetInk === "mono",
+      wrongMarks,
       keyFifths: keyFifths.value,
       instrument: lesson.value.instrument,
       hueOrder: isPiano.value ? lessonPitches.value : lanes.value,
@@ -400,6 +416,7 @@ export function useTrainer(
     runComplete.value = false;
     runResult.value = null;
     runRatings.clear();
+    wrongMarks.length = 0;
     scorer = new Scorer(targets.value);
     advanceTracker.reset();
     transport = new Transport({
@@ -435,6 +452,7 @@ export function useTrainer(
     runComplete.value = false;
     runResult.value = null;
     runRatings.clear();
+    wrongMarks.length = 0;
     transport.stop();
     playing.value = false;
     audio.cancelScheduled("metronome", "guide");
@@ -539,12 +557,19 @@ export function useTrainer(
    * Hardware callers pass the converted midir timestamp. Returns the rating,
    * or null for strays/count-in/stopped.
    */
-  function strike(lane: number, time?: number): Rating | null {
+  function strike(lane: number, time?: number): Rating | "wrong" | null {
     if (!playing.value) return null;
     const now = audio.now;
     if (transport.position(now).countIn) return null;
     const res = scorer.hit(lane, time ?? now);
-    if (!res) return null;
+    if (res.kind === "ignored") return null;
+    if (res.kind === "wrong") {
+      // Marked where it was struck, not where the note is — there is no note.
+      wrongMarks.push({ lane, time: time ?? now });
+      addPop(lane, "miss");
+      syncStats();
+      return "wrong";
+    }
     noteTargetIndex(res.instance.id, res.rating);
     addPop(lane, res.rating);
     syncStats();
@@ -632,6 +657,18 @@ export function useTrainer(
         lastLoop = pos.loopIndex;
       }
 
+      // Wrong-note dots scroll away with the music, so they are dropped once
+      // they are past the lane's trailing edge — the same rule the notes get,
+      // read off the renderer's own window so the two cannot disagree.
+      if (wrongMarks.length > 0) {
+        const behindSec =
+          (renderer?.visibleBeats().behind ?? transport.loopBeats) * transport.secPerBeat;
+        const cutoff = now - behindSec - 1;
+        let keep = 0;
+        for (const m of wrongMarks) if (m.time >= cutoff) wrongMarks[keep++] = m;
+        wrongMarks.length = keep;
+      }
+
       const missed = scorer.sweepMisses(now);
       if (missed.length > 0) {
         for (const m of missed) {
@@ -709,6 +746,7 @@ export function useTrainer(
       previousBest,
       tally: { ...scorer.tally },
       holds: { ...scorer.holdTally },
+      wrong: scorer.wrongCount,
       attempts: [...history.attempts(lesson.value.id)],
     };
 

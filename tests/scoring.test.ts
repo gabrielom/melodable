@@ -1,3 +1,4 @@
+import type { HitResult } from "@/engine/scoring";
 import { describe, it, expect } from "vitest";
 import {
   Scorer,
@@ -11,6 +12,14 @@ import {
 import { TIMING_WINDOWS } from "../src/engine/types";
 import { noteToPad } from "../src/engine/gm";
 import type { Lesson } from "../src/engine/types";
+
+/**
+ * A strike now answers with what it turned out to be, so these unwrap it. A
+ * `null` rating here means "hit nothing", which is what the old `null` return
+ * meant — except that it is now scored.
+ */
+const rate = (r: HitResult) => (r.kind === "hit" ? r.rating : null);
+const inst = (r: HitResult) => (r.kind === "hit" ? r.instance : null);
 
 describe("classify", () => {
   it("grades the tight windows by absolute offset, in either direction", () => {
@@ -89,32 +98,121 @@ describe("scorer", () => {
     s.spawnLoop(0, timeOf);
 
     const res = s.hit(12, 10.01);
-    expect(res?.rating).toBe("perfect");
-    expect(res?.instance.beat).toBe(0);
+    expect(rate(res)).toBe("perfect");
+    expect(inst(res)!.beat).toBe(0);
     expect(s.combo).toBe(1);
 
     // second hit near beat 1 grades against the remaining kick note
     const res2 = s.hit(12, 10.55);
-    expect(res2?.rating).toBe("great");
-    expect(res2?.instance.beat).toBe(1);
+    expect(rate(res2)).toBe("great");
+    expect(inst(res2)!.beat).toBe(1);
     expect(s.combo).toBe(2);
     expect(s.bestCombo).toBe(2);
   });
 
-  it("ignores strays: wrong lane or outside the good window", () => {
+  it("counts a strike that hits nothing as a wrong note", () => {
     const s = new Scorer(targets);
     s.spawnLoop(0, timeOf);
-    expect(s.hit(13, 10.0)).toBeNull(); // snare lane note is at 11
-    expect(s.hit(12, 10.25)).toBeNull(); // 0.25s from either kick note
+    // Two ways to hit nothing, and one rule covers both: a lane whose only
+    // note is a second away, and a lane of the lesson struck a second past
+    // its last note.
+    expect(s.hit(13, 10.0).kind).toBe("wrong");
+    expect(s.hit(12, 11.5).kind).toBe("wrong");
+    expect(s.wrongCount).toBe(2);
+    // Charged like a note asked for and not played: no points, but counted.
+    expect(s.accuracy).toBe(0);
     expect(s.combo).toBe(0);
-    expect(s.accuracy).toBe(1); // strays don't count in v1
+    // And it stays out of the tally, which answers a different question —
+    // how the *lesson's* notes went. None of them has been touched.
+    for (const r of ["perfect", "great", "early", "late", "miss"] as const) {
+      expect(s.tally[r]).toBe(0);
+    }
+  });
+
+  it("breaks a combo that was running", () => {
+    const s = new Scorer(targets);
+    s.spawnLoop(0, timeOf);
+    s.hit(12, 10.0);
+    s.hit(13, 11.0);
+    expect(s.combo).toBe(2);
+    s.hit(13, 14.0);
+    expect(s.combo).toBe(0);
+    expect(s.bestCombo).toBe(2);
+  });
+
+  it("dilutes accuracy in proportion, not to zero", () => {
+    const s = new Scorer(targets);
+    s.spawnLoop(0, timeOf);
+    s.hit(12, 10.0); // perfect
+    s.hit(13, 11.0); // perfect
+    expect(s.accuracy).toBe(1);
+    s.hit(13, 14.0); // wrong
+    // Two notes played perfectly and one strike that was not a note: three
+    // events, two points.
+    expect(s.accuracy).toBeCloseTo(2 / 3, 9);
+  });
+
+  it("does not charge a sloppy strike twice", () => {
+    // The trap: a note struck 150ms late grades as nothing, and the note it
+    // was aimed at is swept as a miss a moment later. Counting the strike as
+    // a wrong note as well would take two zeros for one mistake.
+    const s = new Scorer(targets);
+    s.spawnLoop(0, timeOf);
+    expect(s.hit(12, 10.15).kind).toBe("ignored");
+    expect(s.wrongCount).toBe(0);
+    expect(s.accuracy).toBe(1); // nothing charged yet
+    s.sweepMisses(10.4);
+    // Exactly one charge, and it is the note's own miss.
+    expect(s.tally.miss).toBeGreaterThanOrEqual(1);
+    expect(s.wrongCount).toBe(0);
+  });
+
+  it("keeps that grace after the note has already been swept", () => {
+    // The grace is about *aim*, not about the note still being available —
+    // and by the time a late strike lands, the note it was aimed at has
+    // usually been swept already. That is the case it exists for.
+    const s = new Scorer(targets);
+    s.spawnLoop(0, timeOf);
+    s.sweepMisses(10.4); // beat 0 is a miss now
+    expect(s.hit(12, 10.15).kind).toBe("ignored");
+    expect(s.wrongCount).toBe(0);
+  });
+
+  it("charges once the strike is beyond any note's reach", () => {
+    const s = new Scorer(targets);
+    s.spawnLoop(0, timeOf);
+    // Kick notes sit at 10.0 and 10.5. Exactly a grace away from the second
+    // is still an attempt at it; a hair further is not.
+    expect(s.hit(12, 10.75).kind).toBe("ignored");
+    expect(s.hit(12, 10.76).kind).toBe("wrong");
+    expect(s.wrongCount).toBe(1);
+  });
+
+  it("cannot call a strike wrong where the lane's notes are close together", () => {
+    // Kick notes half a second apart leave no instant between them further
+    // than the grace from both — so in a busy lane, being off the beat is a
+    // bad attempt at a note and never an invented one. That is the rule
+    // working: "completely out of time" has to mean completely.
+    const s = new Scorer(targets);
+    s.spawnLoop(0, timeOf);
+    for (const t of [10.2, 10.25, 10.3, 10.4]) {
+      expect(s.hit(12, t).kind).not.toBe("wrong");
+    }
+    expect(s.wrongCount).toBe(0);
+  });
+
+  it("has nothing to say about a run with no wrong notes", () => {
+    const s = new Scorer(targets);
+    s.spawnLoop(0, timeOf);
+    s.hit(12, 10.0);
+    expect(s.wrongCount).toBe(0);
   });
 
   it("does not double-resolve a note", () => {
     const s = new Scorer(targets);
     s.spawnLoop(0, timeOf);
-    expect(s.hit(13, 11.0)?.rating).toBe("perfect");
-    expect(s.hit(13, 11.02)).toBeNull(); // nothing left in the lane
+    expect(rate(s.hit(13, 11.0))).toBe("perfect");
+    expect(rate(s.hit(13, 11.02))).toBeNull(); // nothing left in the lane
   });
 
   it("sweeps overdue notes as misses and resets the combo", () => {
@@ -196,9 +294,9 @@ describe("chord grading (piano)", () => {
     const s = new Scorer(chord);
     s.spawnLoop(0, timeOf); // all three at t=5
 
-    expect(s.hit(60, 5.0)?.rating).toBe("perfect");
-    expect(s.hit(64, 5.05)?.rating).toBe("great"); // 50ms late → great window
-    expect(s.hit(67, 5.0)?.rating).toBe("perfect");
+    expect(rate(s.hit(60, 5.0))).toBe("perfect");
+    expect(rate(s.hit(64, 5.05))).toBe("great"); // 50ms late → great window
+    expect(rate(s.hit(67, 5.0))).toBe("perfect");
     expect(s.combo).toBe(3);
     expect(s.accuracy).toBeGreaterThan(0.9);
   });

@@ -13,6 +13,7 @@ import type { NoteInstance } from "@/engine/scoring";
 import type { Engraved } from "@/engine/notation";
 import type { Palette, Theme } from "@/engine/theme";
 import type { InstrumentType } from "@/engine/types";
+import type { WrongMark } from "@/views/lane-geometry";
 import type { LaneOrientation, PadLayout } from "@/stores/settings";
 
 export interface LaneFrame {
@@ -54,6 +55,14 @@ export interface LaneFrame {
    * only; the falling views have no clef to put it after.
    */
   keyFifths: number;
+
+  /**
+   * Strikes that hit nothing, still fading. Drawn at the playhead on the row
+   * of what was actually played — so a lane the lesson never uses has nowhere
+   * to put one, and the falling views simply do not draw it. Sheet always
+   * can: notation has a place for every pitch.
+   */
+  wrongMarks: readonly WrongMark[];
 
   /**
    * Which of the two views this is. The renderer knows already, but the shared

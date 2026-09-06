@@ -32,7 +32,14 @@ import {
   type Engraved,
   type SignatureMark,
 } from "@/engine/notation";
-import { gridBeatRange, noteInk, paintCountIn, pxPerBeat } from "@/views/lane-geometry";
+import {
+  WRONG_DOT_R,
+  gridBeatRange,
+  noteInk,
+  paintCountIn,
+  paintWrong,
+  pxPerBeat,
+} from "@/views/lane-geometry";
 import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
 import type { NoteInstance } from "@/engine/scoring";
 
@@ -186,6 +193,16 @@ export class SheetStaff implements LaneRenderer {
     this.grid(f, trackX, W, topLineY, xOfBeat);
     this.staffLines(ctx, trackX, W - trackX, topLineY, p.txt3);
     this.notes(f, xOfBeat, yOfStep);
+
+    // A wrong strike, on the staff line of the note actually played. Notation
+    // has a place for every pitch, so this one is never homeless the way a
+    // lane outside the roll's range is.
+    for (const m of f.wrongMarks) {
+      const beat = f.absBeat + (m.time - f.now) / f.secPerBeat;
+      paintWrong(ctx, xOfBeat(beat), yOfStep(spell(m.lane, f.keyFifths).step),
+        WRONG_DOT_R, p.rating.miss, p.lane);
+    }
+
     this.historyFade(f, trackX, hitX, H);
     this.clefGutter(f, marks, topLineY, bottomLineY);
 

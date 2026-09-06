@@ -44,6 +44,63 @@ export function noteInk(
   return f.mono ? f.palette.txt : hueOf(f.palette, f.instrument, laneIndex).dim;
 }
 
+// ------------------------------------------------------- wrong notes
+
+/** A strike that hit nothing, and when it landed. */
+export interface WrongMark {
+  lane: number;
+  /** Audio-clock time of the strike. */
+  time: number;
+}
+
+/**
+ * A wrong strike is a small dot, and it **scrolls with the music** rather than
+ * flashing at the playhead.
+ *
+ * Pinned to the playhead it would be a half-second flash and then nothing —
+ * gone before you could look at it, and telling you only that something was
+ * wrong, not where. Left in the timeline at the position it was struck, the
+ * played-out half of the lane becomes a record you can read after the fact:
+ * three dots crowding a beat says you are rushing that beat, and they stay
+ * there until they scroll away like everything else.
+ *
+ * Small, because it is not a note. A note is something the lesson asked for
+ * and has a lane and a length; this is a mark on the page where you played
+ * something that was not asked for.
+ */
+export const WRONG_DOT_R = 3.6;
+
+/**
+ * Paint a wrong strike: a small filled dot, never anything note-shaped.
+ *
+ * Size is what separates it from a missed target. Both are red — both are
+ * results, and the rating language has one red — but a miss is a note of the
+ * lesson you did not play, and this is a note you played that the lesson did
+ * not contain. Drawn at note size the two would be indistinguishable exactly
+ * when they overlap, which is when both are happening.
+ *
+ * `behind` rings the dot in the bed colour so it still reads sitting on top of
+ * a missed note, which is the same red — again, the case that matters most.
+ */
+export function paintWrong(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  r: number,
+  colour: string,
+  behind: string,
+): void {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = colour;
+  ctx.strokeStyle = behind;
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+  ctx.fill();
+  ctx.restore();
+}
+
 /**
  * Bars of music visible across the lane at once. Melodics shows about five;
  * two was too tight to read a phrase, and it made the overview's viewport

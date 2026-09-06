@@ -46,6 +46,8 @@ const props = defineProps<{
    * would make the run look twice as long as it was.
    */
   holds: Readonly<Record<HoldResult, number>>;
+  /** Strikes that hit nothing. Not in `tally` — none of them was a lesson note. */
+  wrong: number;
   /** Every attempt at this lesson, oldest first, this run last. */
   attempts: readonly number[];
 }>();
@@ -181,6 +183,11 @@ const chartLabel = computed(() => {
           <span class="stat"><i class="k">COMBO</i><b class="num">{{ bestCombo }}</b></span>
           <span v-if="heldPct !== null" class="stat">
             <i class="k">HELD</i><b class="num">{{ heldPct }}</b>
+          </span>
+          <!-- Only when there were some: a run with none should not be told
+               it scored zero at something. -->
+          <span v-if="wrong > 0" class="stat wrong">
+            <i class="k">WRONG</i><b class="num">{{ wrong }}</b>
           </span>
         </span>
       </div>
@@ -392,6 +399,9 @@ const chartLabel = computed(() => {
   color: var(--txt3);
 }
 .leg b { font-size: 9.5px; color: var(--txt2); }
+/* The one stat that is a count of mistakes, so it wears the rating that names
+   them. Every other stat here is neutral. */
+.stat.wrong .num { color: var(--rate-miss); }
 .swatch { width: 6px; height: 6px; border-radius: 1px; }
 
 /* Run history. The 620x158 viewBox scales uniformly to whatever width the

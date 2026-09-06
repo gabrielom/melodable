@@ -12,7 +12,7 @@
  */
 
 import type { HoldResult, Lesson, Rating } from "./types";
-import { HOLD_MIN_BEATS, HOLD_WINDOWS, RATING_SCORE, TIMING_WINDOWS } from "./types";
+import { HOLD_MIN_BEATS, HOLD_WINDOWS, RATING_SCORE, TIMING_WINDOWS, WRONG_GRACE } from "./types";
 
 /** A lesson note routed to a lane, still in musical time. */
 export interface TargetNote {
@@ -45,6 +45,21 @@ export interface NoteInstance {
   /** How much of the written length was covered, once the hold has closed. */
   hold: HoldResult | null;
 }
+
+/**
+ * What a strike turned out to be: a note of the lesson, graded; or nothing at
+ * all, which is its own kind of answer and not the absence of one.
+ */
+export type HitResult =
+  | { kind: "hit"; rating: Exclude<Rating, "miss">; instance: NoteInstance }
+  /** Nothing was there. Charged. */
+  | { kind: "wrong" }
+  /**
+   * Too far off to grade, but near enough a target to have been an attempt at
+   * it. Not charged — that target's own miss is the charge, and billing both
+   * would take two zeros for one mistake.
+   */
+  | { kind: "ignored" };
 
 /** True for a note long enough that letting go of it is part of playing it. */
 export function isHeldNote(n: { duration: number }): boolean {
@@ -147,6 +162,9 @@ export class Scorer {
   combo = 0;
   bestCombo = 0;
 
+  /** Strikes that landed on nothing. See `hit`. */
+  private wrong = 0;
+
   /** How many notes landed in each band, for the end-of-run breakdown. */
   private counts: Record<Rating, number> = {
     perfect: 0,
@@ -217,12 +235,27 @@ export class Scorer {
     }
   }
 
+  /** How many strikes hit nothing at all. */
+  get wrongCount(): number {
+    return this.wrong;
+  }
+
   /**
    * Grade a strike on `lane` at clock time `time` against the nearest
-   * unresolved instance in that lane. Returns null for a stray hit (nothing
-   * within the "good" window) — unpenalized in v1, per the plan.
+   * unresolved instance in that lane.
+   *
+   * A strike with no target inside the loose window is a **wrong note**: it
+   * covers both a lane the lesson never asks for, which has no instances at
+   * all, and a lane it does ask for struck nowhere near one of them. There is
+   * no third case, so one rule answers both.
+   *
+   * A wrong note is charged like a note you were asked for and did not play:
+   * it adds to the denominator with no points, and it breaks the combo. It is
+   * counted apart from `tally` on purpose — the same reason holds are. The
+   * tally answers "how did the lesson's notes go", and a strike that was not
+   * one of them would inflate that count with a note nobody wrote.
    */
-  hit(lane: number, time: number): { rating: Exclude<Rating, "miss">; instance: NoteInstance } | null {
+  hit(lane: number, time: number): HitResult {
     let best: NoteInstance | null = null;
     let bestDt = Infinity;
     for (const inst of this.all) {
@@ -233,7 +266,22 @@ export class Scorer {
         best = inst;
       }
     }
-    if (!best || bestDt > TIMING_WINDOWS.loose) return null;
+    if (!best || bestDt > TIMING_WINDOWS.loose) {
+      // Near a target of this lane — resolved or not — and so an attempt at
+      // it, however bad. `resolved` is deliberately not consulted: by the time
+      // a late strike lands, the note it was aimed at has usually already been
+      // swept as a miss, and that is exactly the case this must not charge.
+      for (const inst of this.all) {
+        if (inst.lane === lane && Math.abs(inst.time - time) <= WRONG_GRACE) {
+          return { kind: "ignored" };
+        }
+      }
+      this.wrong += 1;
+      this.total += 1;
+      this.loopTotal += 1;
+      this.combo = 0;
+      return { kind: "wrong" };
+    }
 
     const rating = classify(time - best.time)!;
     best.resolved = true;
@@ -255,7 +303,7 @@ export class Scorer {
       best.heldFrom = time;
       this.open.set(best.lane, best);
     }
-    return { rating, instance: best };
+    return { kind: "hit", rating, instance: best };
   }
 
   /**

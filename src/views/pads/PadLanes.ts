@@ -34,6 +34,8 @@ import {
   paintVeil,
   pxPerBeat,
   SEPARATOR_INK,
+  WRONG_DOT_R,
+  paintWrong,
 } from "@/views/lane-geometry";
 import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
 import { TIMING_WINDOWS } from "@/engine/types";
@@ -219,6 +221,13 @@ export class PadLanes implements LaneRenderer {
         const y = li * (laneH + LANE_GAP);
         this.note(f, x - NOTE_W / 2, y + (laneH - size) / 2, NOTE_W, size, noteInk(f, inst, li));
       }
+
+      for (const m of f.wrongMarks) {
+        const li = lanes.indexOf(m.lane);
+        if (li < 0) continue;
+        paintWrong(ctx, hitX + (m.time - f.now) * pxPerSec,
+          li * (laneH + LANE_GAP) + laneH / 2, WRONG_DOT_R, p.rating.miss, p.lane);
+      }
       ctx.restore();
     }
 
@@ -330,6 +339,13 @@ export class PadLanes implements LaneRenderer {
         const y = hitY - (inst.time - f.now) * pxPerSec;
         if (y < -NOTE_V || y > fieldH + NOTE_V) continue;
         this.note(f, xOfLane(li), y - NOTE_V / 2, noteW, NOTE_V, noteInk(f, inst, li), NOTE_V / 2);
+      }
+
+      for (const m of f.wrongMarks) {
+        const li = lanes.indexOf(m.lane);
+        if (li < 0) continue;
+        paintWrong(ctx, xOfLane(li) + noteW / 2, hitY - (m.time - f.now) * pxPerSec,
+          WRONG_DOT_R, p.rating.miss, p.lane);
       }
       ctx.restore();
     }
