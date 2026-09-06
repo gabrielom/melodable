@@ -546,6 +546,7 @@ function onKeyUp(e: KeyboardEvent) {
  */
 const KEY_CHOICES = Array.from({ length: 15 }, (_, i) => i - 7);
 const keyLabel = computed(() => keyName(keyFifths.value));
+const degreesOn = computed(() => settings.noteLabel === "degree");
 
 function pickKey(fifths: number | null) {
   settings.keyOverride = fifths;
@@ -773,67 +774,67 @@ watch(
         </div>
       </template>
 
-      <!-- Degrees are a statement about a scale, so both of these are piano
-           only and both are meaningless without the other: the key names what
-           1 is, and without it a digit says nothing (handoff 11 §1.5). -->
-      <template v-if="view === 'trainer' && sheetAvailable">
-        <span ref="keyMenuRoot" class="seg-wrap">
+      <!-- The chip *is* the switch (handoff 11 leaves this open; §1.5 gives
+           the KEY chip and §1.1 a separate NOTE | DEG pair, and the two were
+           doing one job). The key is only meaningful in degree mode, so
+           naming the mode by its key is the honest control: press it to read
+           in degrees, press it again to go back to letters. The caret is a
+           second target for the list, because *which* key is a different
+           question from *whether* to count in one — and the key still matters
+           with degrees off, since the staff's signature comes from it. -->
+      <span
+        v-if="view === 'trainer' && sheetAvailable"
+        ref="keyMenuRoot"
+        class="seg-wrap keychip-wrap"
+      >
+        <span class="field keychip">
           <button
-            class="field keychip"
-            :class="{ open: openMenu === 'key' }"
-            :data-tip="settings.keyOverride === null
-              ? 'Key, read from the lesson\u2019s own notes'
-              : 'Key, set by hand'"
-            aria-label="Key"
-            @click="toggleMenu('key')"
+            class="keychip-main"
+            :class="{ on: degreesOn }"
+            :aria-pressed="degreesOn"
+            :data-tip="degreesOn ? 'Name notes by letter' : 'Name notes by their degree in the key'"
+            aria-label="Degree mode"
+            @click="settings.noteLabel = degreesOn ? 'note' : 'degree'"
           >
             <i class="k">KEY</i>
             <b>{{ keyLabel }}</b>
           </button>
-          <div v-if="openMenu === 'key'" class="menu key-menu" role="menu" data-tauri-drag-region="false">
-            <div class="menu-head">KEY</div>
-            <button
-              class="menu-row"
-              :class="{ on: settings.keyOverride === null }"
-              role="menuitemradio"
-              :aria-checked="settings.keyOverride === null"
-              @click="pickKey(null)"
-            >
-              AUTO<i>{{ keyName(keyFifths) }}</i>
-            </button>
-            <button
-              v-for="f in KEY_CHOICES"
-              :key="f"
-              class="menu-row"
-              :class="{ on: settings.keyOverride === f }"
-              role="menuitemradio"
-              :aria-checked="settings.keyOverride === f"
-              @click="pickKey(f)"
-            >
-              {{ keyName(f) }}<i>{{ f === 0 ? "\u2014" : `${Math.abs(f)} ${f > 0 ? "\u266f" : "\u266d"}` }}</i>
-            </button>
-          </div>
-        </span>
-
-        <div class="seg" role="group" aria-label="Note naming">
           <button
-            class="seg-i"
-            :class="{ on: settings.noteLabel === 'note' }"
-            data-tip="Name notes by letter"
-            @click="settings.noteLabel = 'note'"
+            class="keychip-caret"
+            :aria-expanded="openMenu === 'key'"
+            :data-tip="settings.keyOverride === null
+              ? 'Key, read from the lesson\u2019s own notes'
+              : 'Key, set by hand'"
+            aria-label="Choose key"
+            @click="toggleMenu('key')"
           >
-            NOTE
+            <i class="caret">{{ openMenu === "key" ? "\u25b4" : "\u25be" }}</i>
+          </button>
+        </span>
+        <div v-if="openMenu === 'key'" class="menu key-menu" role="menu" data-tauri-drag-region="false">
+          <div class="menu-head">KEY</div>
+          <button
+            class="menu-row"
+            :class="{ on: settings.keyOverride === null }"
+            role="menuitemradio"
+            :aria-checked="settings.keyOverride === null"
+            @click="pickKey(null)"
+          >
+            AUTO<i>{{ keyName(keyFifths) }}</i>
           </button>
           <button
-            class="seg-i"
-            :class="{ on: settings.noteLabel === 'degree' }"
-            data-tip="Name notes by their degree in the key"
-            @click="settings.noteLabel = 'degree'"
+            v-for="f in KEY_CHOICES"
+            :key="f"
+            class="menu-row"
+            :class="{ on: settings.keyOverride === f }"
+            role="menuitemradio"
+            :aria-checked="settings.keyOverride === f"
+            @click="pickKey(f)"
           >
-            DEG
+            {{ keyName(f) }}<i>{{ f === 0 ? "\u2014" : `${Math.abs(f)} ${f > 0 ? "\u266f" : "\u266d"}` }}</i>
           </button>
         </div>
-      </template>
+      </span>
 
       <!-- One slot, two pairs. Sheet has no direction to choose — notation has
            no falling form — so rather than sit there dead the slot spends
@@ -1455,16 +1456,44 @@ watch(
   background: var(--track);
   box-shadow: var(--outline);
 }
-/* The key chip: a `.field` like the tempo readout, because it is the same
-   kind of thing — a value you can change, not a switch. */
-.keychip { gap: 5px; border: none; cursor: pointer; }
+/* The key chip is a split control: the label switches degree mode, the caret
+   opens the key list. Two targets in one `.field`, because *whether* to count
+   in a key and *which* key are different questions with one answer between
+   them.
+
+   Only the switch half takes the on-state. Inverting the whole chip made the
+   caret look like part of what had been turned on, and it is not — it is a
+   way in to the list either way. The field keeps its own neutral surface, and
+   the half that is a switch behaves like every other `.seg-i` in the bar. */
+.keychip { gap: 0; padding: 2px; overflow: hidden; }
+.keychip-main,
+.keychip-caret {
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  border-radius: var(--r-item);
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.keychip-main { gap: 5px; padding: 0 6px; }
+.keychip-caret { padding: 0 5px; }
 .keychip .k { font-family: var(--mono); font-size: 9.5px; letter-spacing: 1.2px; color: var(--txt3); }
 .keychip b { font-family: var(--mono); font-size: 9.5px; font-weight: 500; color: var(--txt); }
-.keychip:hover { background: var(--hover); }
-.keychip.open { background: var(--active); }
-.keychip.open .k { color: var(--active-txt); opacity: 0.7; }
-.keychip.open b { color: var(--active-txt); }
-.keychip:focus-visible { outline: 1px solid var(--head); outline-offset: 1px; }
+.keychip-main:hover,
+.keychip-caret:hover { background: var(--hover); }
+.keychip-main.on { background: var(--active); }
+.keychip-main.on:hover { background: var(--active); }
+.keychip-main.on .k { color: var(--active-txt); opacity: 0.65; }
+.keychip-main.on b { color: var(--active-txt); }
+.keychip-caret .caret { font-size: 6.5px; font-style: normal; color: var(--txt3); }
+.keychip-caret[aria-expanded="true"] { background: var(--active); }
+.keychip-caret[aria-expanded="true"] .caret { color: var(--active-txt); }
+.keychip-main:focus-visible,
+.keychip-caret:focus-visible { outline: 1px solid var(--head); outline-offset: -1px; }
+/* The dropdown hangs off the chip, so the wrapper must not clip it. */
+.keychip-wrap { position: relative; display: inline-flex; }
 /* Fifteen signatures is a long list for a 34px bar, so it scrolls. */
 .key-menu { width: 132px; max-height: 268px; overflow-y: auto; }
 
