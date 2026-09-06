@@ -36,24 +36,24 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   `settings.sheetInk` (`colour` | `mono`) sets `LaneFrame.mono`, and `noteInk`
   answers `palette.txt` instead of the lane's dim hue — the printed page, where
   a notehead's colour says nothing and its place on the staff says everything.
-  The **rating half is untouched**, decided with the user: a result is not
-  decoration, it is the only thing on screen that answers how the run went, so
-  a mono staff still turns red where you missed. `tests/note-ink.test.ts` pins
-  both halves in both themes. The falling views never set it — strip a lane
-  stack of its hues and nothing is left to tell one lane from another — and
-  that is why the toggle is sheet-only rather than a global preference.
-- **One bar slot, two pairs.** In roll the slot holds `↓ →`; in sheet it holds
-  the two noteheads, because notation has no falling form and the slot was
-  otherwise sitting there disabled. Both groups are a `.seg` of two 20px
-  `.seg-i.icon` buttons and both measure **46px**, so the swap moves nothing
-  else and the window floor is untouched — keep it that way if either pair
-  changes. The noteheads are drawn SVG ellipses for the reason the bar's other
-  icons are (a font glyph is at the mercy of the fallback stack); the coloured
-  one reads `hueOf(PALETTE[theme], "piano", 0).full` rather than restating a
-  literal, so it cannot drift from the staff. The plain one inks from
-  `currentColor` and is therefore excluded from the dark `.seg-i.icon.on`
-  accent rule via `:not(.ink)` — a selected "no colour" button rendering cyan
-  says the opposite of what it does.
+  The **rating half is untouched** — see the `COLOUR` bullet below for why.
+- **One bar slot, two controls.** In roll the slot holds `↓ →` (46px); in
+  sheet it holds a one-cell `COLOUR` toggle (55px), because notation has no
+  falling form and the slot was otherwise sitting there disabled. Handoff 11 §2
+  settled the shape: the staff's two colour systems are a *training* overlay
+  and a player reading music wants the page rather than the feedback, so this
+  is a thing that is on or off. It shipped first as a two-cell pair of drawn
+  noteheads, which was asking *which of two inks* rather than *whether to ink*
+  — that pair is gone, along with the `.ink` class that kept its plain notehead
+  out of the dark accent rule.
+- **`COLOUR` off strips the instrument hues and leaves the ratings**, which is
+  the one place this diverges from handoff 11 §2 — the handoff strips both.
+  Decided with the user, twice: a result is not decoration, it is the only
+  thing on screen that answers how the run went, so a mono staff still turns
+  red where you missed. `tests/note-ink.test.ts` pins both halves in both
+  themes. The falling views never set `mono` — strip a lane stack of its hues
+  and nothing is left to tell one lane from another — which is why the toggle
+  is sheet-only rather than a global preference.
 - **A lesson is a finite run, not an endless loop.** The pattern plays
   `lesson.repeats` times (built-ins are 16 bars, 39-55s) and then ends; the run
   is scored as a whole, and clearing one clean run advances the library.

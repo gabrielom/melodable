@@ -18,7 +18,6 @@ import { AudioEngine, type Bus } from "@/engine/audio";
 import { PADS, PAD_KEY_MAP, PIANO_KEY_MAP, noteToPad } from "@/engine/gm";
 import { parseMidiFile, midiToLesson, type ParsedMidi } from "@/engine/midi-file";
 import type { MidiMessage, InstrumentType } from "@/engine/types";
-import { PALETTE, hueOf } from "@/engine/theme";
 
 import DeviceMenu from "@/components/DeviceMenu.vue";
 import MidiMonitor from "@/components/MidiMonitor.vue";
@@ -531,17 +530,6 @@ function onKeyUp(e: KeyboardEvent) {
 }
 
 // ------------------------------------------------------------------- theme
-/**
- * The hue on the "coloured" notehead button.
- *
- * Read from the palette, not restated as a literal: it is the colour the
- * staff's lowest voice is actually wearing, so the button cannot drift out of
- * step with the page it describes. Full strength rather than the `dim` a
- * target wears — the icon is a symbol standing for the whole set, not a sample
- * of one note.
- */
-const firstHue = computed(() => hueOf(PALETTE[settings.theme], "piano", 0).full);
-
 // The palette lives in CSS custom properties keyed off `data-theme` on <html>;
 // the canvas renderers get the same values as data via `engine/theme.ts`.
 watch(
@@ -790,34 +778,21 @@ watch(
         </button>
       </div>
 
-      <!-- The notehead is drawn, not typed: it is the object being described,
-           and at 11px a font glyph is at the mercy of the fallback stack. The
-           coloured one takes the hue the staff's lowest voice actually wears,
-           read from the palette rather than restated here, so the button can
-           never disagree with the page. The plain one inks from
-           `currentColor`, so it inverts with the chip like every other icon. -->
-      <div v-if="view === 'trainer' && sheetOn" class="seg" role="group" aria-label="Note ink">
+      <!-- One cell, not a pair (handoff 11 §2). The two colour systems on the
+           staff — instrument hue before the playhead, timing colour after —
+           are a *training* overlay, and a player reading music wants the page
+           rather than the feedback. So this is a thing that is on or off, and
+           a two-cell pair was asking which of two inks rather than whether to
+           ink at all. Same segment chrome as every other, filled when on. -->
+      <div v-if="view === 'trainer' && sheetOn" class="seg" role="group" aria-label="Note colour">
         <button
-          class="seg-i icon ink"
+          class="seg-i"
           :class="{ on: settings.sheetInk === 'colour' }"
-          data-tip="Noteheads in the instrument colours"
-          aria-label="Coloured noteheads"
-          @click="settings.sheetInk = 'colour'"
+          :aria-pressed="settings.sheetInk === 'colour'"
+          data-tip="Colour the noteheads by pitch"
+          @click="settings.sheetInk = settings.sheetInk === 'colour' ? 'mono' : 'colour'"
         >
-          <svg class="nh" viewBox="0 0 14 14" aria-hidden="true">
-            <ellipse cx="7" cy="7" rx="4.6" ry="3.2" :fill="firstHue" transform="rotate(-20 7 7)" />
-          </svg>
-        </button>
-        <button
-          class="seg-i icon ink"
-          :class="{ on: settings.sheetInk === 'mono' }"
-          data-tip="Noteheads in plain ink"
-          aria-label="Plain noteheads"
-          @click="settings.sheetInk = 'mono'"
-        >
-          <svg class="nh" viewBox="0 0 14 14" aria-hidden="true">
-            <ellipse cx="7" cy="7" rx="4.6" ry="3.2" fill="currentColor" transform="rotate(-20 7 7)" />
-          </svg>
+          COLOUR
         </button>
       </div>
 
@@ -1490,8 +1465,6 @@ watch(
   cursor: pointer;
   white-space: nowrap;
 }
-/* The notehead icon fills the 20px button the way the glyphs do. */
-.nh { width: 13px; height: 13px; display: block; }
 .seg-i.icon {
   /* Regular, like `.ico`: these are Unicode symbols from a fallback face, and
      a medium weight there is synthesised rather than drawn. */
@@ -1507,11 +1480,8 @@ watch(
    surface is the same grey, so a lighter fill would read as nothing. */
 .seg-i.on { background: var(--active); color: var(--active-txt); }
 .seg-i.on:hover { background: var(--active); }
-/* Direction icons take the accent when active in dark, the inverted ink in light.
-   Not the ink pair: its plain notehead draws from `currentColor`, and the
-   accent is a colour — a selected "no colour" button rendering cyan would be
-   saying the opposite of what it does. It keeps the ordinary inverted ink. */
-:root[data-theme="dark"] .seg-i.icon.on:not(.ink) { color: var(--head); }
+/* Direction icons take the accent when active in dark, the inverted ink in light. */
+:root[data-theme="dark"] .seg-i.icon.on { color: var(--head); }
 .caret { font-size: 6.5px; font-style: normal; opacity: 0.7; }
 
 .wordmark {
