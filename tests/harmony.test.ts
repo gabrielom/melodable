@@ -138,6 +138,54 @@ describe("chordsForLoop", () => {
     expect(got.map((c) => c && chordName(c, 4))).toEqual(["E", "B", "C#m", "A"]);
   });
 
+  it("names Hooktheory's own reading of No One's second bar", () => {
+    // B D♯ F♯ with a G♯ the melody leans on. Hooktheory calls it V(add6) and
+    // prints B6 beside it; the G♯ is the note its keyboard lights up.
+    const notes = mel([[0, 71, 1], [1, 75, 1], [2, 78, 1], [3, 68, 1]]);
+    const got = chordsForLoop(notes, 4, 1, 4)[0]!;
+    expect(romanOf(got)).toBe("V(add6)");
+    expect(chordName(got, 4)).toBe("B6");
+  });
+
+  it("tells V from iii by which root the bar leans on", () => {
+    // Both keep three of those four notes, so the score ties. The root is
+    // what separates them — and with no bass line in a melody, "lowest note"
+    // says nothing, so it is the weight on the root that decides.
+    const onB = mel([[0, 71, 2], [1.5, 75, 0.5], [2, 78, 1], [3, 68, 1]]);
+    expect(chordsForLoop(onB, 4, 1, 4)[0]!.degree).toBe(5);
+    const onGsharp = mel([[0, 68, 2], [1.5, 75, 0.5], [2, 78, 1], [3, 71, 1]]);
+    expect(chordsForLoop(onGsharp, 4, 1, 4)[0]!.degree).toBe(3);
+  });
+
+  it("names an added second and fourth as well", () => {
+    // E major triad with a held F♯ — the second above the root.
+    const add2 = mel([[0, 64, 1], [1, 68, 1], [2, 71, 1], [3, 66, 1]]);
+    expect(romanOf(chordsForLoop(add2, 4, 1, 4)[0]!)).toBe("I(add2)");
+    // …and with a held A instead, the fourth.
+    const add4 = mel([[0, 64, 1], [1, 68, 1], [2, 71, 1], [3, 69, 1]]);
+    expect(romanOf(chordsForLoop(add4, 4, 1, 4)[0]!)).toBe("I(add4)");
+  });
+
+  it("names at most one added tone, the one the bar leans on hardest", () => {
+    // B D♯ F♯ with two candidates over it: a held G♯ (the sixth) and a
+    // glancing C♯ (the second). Only the one carrying real weight is named.
+    const notes = mel([
+      [0, 71, 1], [1, 75, 1], [2, 78, 1], [3, 68, 1], [3.75, 73, 0.25],
+    ]);
+    const got = chordsForLoop(notes, 4, 1, 4)[0]!;
+    expect(got.degree).toBe(5);
+    expect(got.added).toBe(6);
+    expect(romanOf(got)).toBe("V(add6)");
+  });
+
+  it("leaves a plain triad plain", () => {
+    const notes = mel([[0, 64, 1], [1, 68, 1], [2, 71, 1], [3, 64, 1]]);
+    const got = chordsForLoop(notes, 4, 1, 4)[0]!;
+    expect(got.added).toBeNull();
+    expect(got.seventh).toBe(false);
+    expect(romanOf(got)).toBe("I");
+  });
+
   it("names a seventh only when the bar really leans on it", () => {
     // C#m with a held B — the seventh — is vi7. The same triad with the B as
     // a passing semiquaver is just vi.

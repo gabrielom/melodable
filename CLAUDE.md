@@ -224,20 +224,31 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
 - **The chord ribbon is derived, and it is a map rather than a score.**
   `chordsForLoop` costs every diatonic triad by how much of a bar it accounts
   for — a note on a chord tone counts for it, one off it counts against — and
-  a tie goes to the triad rooted on the bar's lowest note, which is what a bass
-  line is for. Notes are weighted by **length × metrical position**, not
+  a tie goes to the triad whose **root the bar leans on hardest**, then to the
+  one rooted on the bar's lowest note, which is what a bass line is for, and
+  only then to the lower degree. Root weight comes first because a melody has
+  no bass line, so "lowest note" says nothing there: B D♯ F♯ G♯ keeps three of
+  its four notes under both `V` and `iii`, and only the weight on B tells them
+  apart. Notes are weighted by **length × metrical position**, not
   counted: an imported clip is usually a melody with no chord track, and a
   melody states its harmony in its long notes and on its strong beats while
   filling the gaps with passing tones that belong to no chord at all. Counting
   every note equally lets a run of semiquavers outvote the crotchet the bar is
   built on. It reads from `lesson.notes` rather than `targets` for the same
   reason — `lessonTargets` zeroes any length under the hold floor, which would
-  flatten the weighting it depends on. The **seventh is an addition to a chord
-  already named**, not a candidate of its own, and it earns the label only at a
-  fifth of the bar's weight (`SEVENTH_SHARE`); below that it is a passing note
-  and calling every triad a seventh would say less than calling none of them
-  one. Added tones beyond that — Hooktheory writes No One's second bar
-  `V(add6)` — are not modelled; that bar reads `V`. Same trade as `keySignatureFor`, and it fails the same honest
+  flatten the weighting it depends on. **Extra tones are additions to a chord
+  already named**, never candidates of their own, and each earns its label only
+  at a fifth of the bar's weight (`EXTRA_SHARE`); below that it is a passing
+  note, and calling every triad a seventh would say less than calling none of
+  them one. The seventh is one such addition; the **added second, fourth and
+  sixth** (`ADDED_STEPS`) are the others, which is how Hooktheory's own reading
+  of No One's second bar — `V(add6)`, printed `B6` — comes out of the melody
+  alone. **At most one added tone**, the one the bar leans on hardest: a bar
+  brushes several non-chord tones in passing and naming them all would say less
+  than naming none. A sixth is written into the absolute name as a **figure**
+  (`B6`) because that is how the symbol has always been spelled; the second and
+  fourth have no such shorthand and keep the word. Same trade as
+  `keySignatureFor`, and it fails the same honest
   way: an ambiguous bar is named confidently and may be named wrong. Shown only
   with degrees on, because the ribbon is the harmonic half of that reading;
   empty means **hide the strip**, never draw empty blocks (§1.5). It **never

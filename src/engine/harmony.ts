@@ -35,18 +35,34 @@ export interface Chord {
   root: number;
   /** The diatonic seventh is sounding too — `vi7` rather than `vi`. */
   seventh: boolean;
+  /**
+   * A diatonic tone added to the triad, as a scale step above the root:
+   * `2`, `4` or `6`. Hooktheory writes No One's second bar `V(add6)`, and
+   * that is the note the melody is actually leaning on.
+   *
+   * At most one. A bar brushes several non-chord tones in passing and naming
+   * them all would say less than naming none, so this is the strongest.
+   */
+  added: 2 | 4 | 6 | null;
 }
 
 const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII"] as const;
 
 /**
- * How much of a bar's weight the seventh must carry to be named.
+ * How much of a bar's weight an extra tone must carry to be named.
  *
  * A fifth. Below that it is a passing note that happens to land there, and
- * calling every triad a seventh chord would say less than calling none of
- * them one.
+ * calling every triad a seventh — or an added sixth — would say less than
+ * calling none of them one.
  */
-const SEVENTH_SHARE = 0.2;
+const EXTRA_SHARE = 0.2;
+
+/** Scale steps above the root that an added tone can sit on. */
+const ADDED_STEPS = [
+  { step: 1, name: 2 as const },
+  { step: 3, name: 4 as const },
+  { step: 5, name: 6 as const },
+];
 
 /**
  * The numeral, cased by quality: upper for major, lower for minor, and a ring
@@ -57,7 +73,8 @@ export function romanOf(c: Chord): string {
   const r = ROMAN[c.degree - 1];
   const base =
     c.quality === "major" ? r : c.quality === "minor" ? r.toLowerCase() : `${r.toLowerCase()}°`;
-  return c.seventh ? `${base}7` : base;
+  const seventh = c.seventh ? "7" : "";
+  return c.added ? `${base}${seventh}(add${c.added})` : `${base}${seventh}`;
 }
 
 /** The chord's absolute name — "C", "Am", "B°" — spelled in the key. */
@@ -66,26 +83,45 @@ export function chordName(c: Chord, fifths: number): string {
   const alter = signatureAlters(fifths)[letter];
   const mark = alter > 0 ? "#" : alter < 0 ? "b" : "";
   const tail = c.quality === "minor" ? "m" : c.quality === "diminished" ? "°" : "";
-  return `${LETTER_NAME[letter]}${mark}${tail}${c.seventh ? "7" : ""}`;
+  // A sixth on a plain triad is written as a figure, not as an "add" — `B6`
+  // is how the chord symbol has always been spelled, and it is what
+  // Hooktheory prints beside `V(add6)`. The second and fourth have no such
+  // shorthand, so they keep the word.
+  const extra = c.seventh
+    ? `7${c.added ? `add${c.added}` : ""}`
+    : c.added === 6
+      ? "6"
+      : c.added
+        ? `add${c.added}`
+        : "";
+  return `${LETTER_NAME[letter]}${mark}${tail}${extra}`;
+}
+
+/** The pitch class `step` scale steps above the root of `degree`, in the key. */
+function toneAt(degree: number, step: number, fifths: number): number {
+  const alters = signatureAlters(fifths);
+  const letter = (tonicLetter(fifths) + degree - 1 + step) % 7;
+  return (((LETTER_SEMITONE[letter] + alters[letter]) % 12) + 12) % 12;
 }
 
 /** Pitch classes of the chord on `degree`: root, third, fifth, then seventh. */
 function chordTones(degree: number, fifths: number): number[] {
-  const alters = signatureAlters(fifths);
-  const tonic = tonicLetter(fifths);
-  return [0, 2, 4, 6].map((step) => {
-    const letter = (tonic + degree - 1 + step) % 7;
-    return (((LETTER_SEMITONE[letter] + alters[letter]) % 12) + 12) % 12;
-  });
+  return [0, 2, 4, 6].map((step) => toneAt(degree, step, fifths));
 }
 
 /** The triad on `degree` of the key. */
-export function diatonicTriad(degree: number, fifths: number, seventh = false): Chord {
+export function diatonicTriad(
+  degree: number,
+  fifths: number,
+  seventh = false,
+  added: 2 | 4 | 6 | null = null,
+): Chord {
   return {
     degree,
     quality: QUALITY[degree - 1],
-    root: chordTones(degree, fifths)[0],
+    root: toneAt(degree, 0, fifths),
     seventh,
+    added,
   };
 }
 
@@ -139,31 +175,50 @@ export function chordsForLoop(
       pc: ((x.lane % 12) + 12) % 12,
       w: weightOf(x.beat, x.duration ?? 0, bpb),
     }));
+    const total = weighted.reduce((n, x) => n + x.w, 0);
+    /** How much of the bar a given pitch class accounts for. */
+    const weightOfPc = (pc: number) =>
+      weighted.reduce((n, x) => n + (x.pc === pc ? x.w : 0), 0);
 
     let bestDegree = 1;
-    let bestScore = -Infinity;
-    let bestIsBass = false;
+    let best = { score: -Infinity, root: -1, bass: false };
     for (let degree = 1; degree <= 7; degree++) {
       const tones = chordTones(degree, fifths).slice(0, 3);
       let score = 0;
       for (const x of weighted) score += tones.includes(x.pc) ? x.w : -x.w;
-      const isBass = tones[0] === bass;
-      // Strictly better, or equal and rooted on the bass when the incumbent
-      // is not. Ties beyond that keep the lower degree already held.
-      if (score > bestScore + 1e-9 || (Math.abs(score - bestScore) < 1e-9 && isBass && !bestIsBass)) {
-        bestScore = score;
-        bestIsBass = isBass;
+      const here = { score, root: weightOfPc(tones[0]), bass: tones[0] === bass };
+      // A chord is identified by its root, so a tie goes to the triad whose
+      // root the bar actually leans on — and only then to the one sitting on
+      // the lowest note, which says nothing in a melody with no bass line.
+      // This is what tells `V` from `iii` in a bar of B D♯ F♯ G♯: both keep
+      // three of the four notes, and only one of them is rooted on the note
+      // the bar is built from.
+      const better =
+        here.score > best.score + 1e-9 ||
+        (Math.abs(here.score - best.score) < 1e-9 &&
+          (here.root > best.root + 1e-9 ||
+            (Math.abs(here.root - best.root) < 1e-9 && here.bass && !best.bass)));
+      if (better) {
+        best = here;
         bestDegree = degree;
       }
     }
 
-    // The seventh is an addition to a chord already named, not a candidate of
-    // its own: it earns the label only when it carries real weight in the bar,
-    // so a passing brush against it does not turn every triad into a seventh.
-    const tones = chordTones(bestDegree, fifths);
-    const total = weighted.reduce((n, x) => n + x.w, 0);
-    const seventhWeight = weighted.reduce((n, x) => n + (x.pc === tones[3] ? x.w : 0), 0);
-    out.push(diatonicTriad(bestDegree, fifths, seventhWeight >= total * SEVENTH_SHARE));
+    // Extras are additions to a chord already named, not candidates of their
+    // own. Each earns its label only by carrying real weight in the bar, so a
+    // passing brush against one does not rename the chord.
+    const floor = total * EXTRA_SHARE;
+    const seventh = weightOfPc(toneAt(bestDegree, 6, fifths)) >= floor;
+    let added: 2 | 4 | 6 | null = null;
+    let addedWeight = floor;
+    for (const a of ADDED_STEPS) {
+      const w = weightOfPc(toneAt(bestDegree, a.step, fifths));
+      if (w >= addedWeight + 1e-9) {
+        addedWeight = w;
+        added = a.name;
+      }
+    }
+    out.push(diatonicTriad(bestDegree, fifths, seventh, added));
   }
   return out;
 }
