@@ -11,6 +11,7 @@ import { computed, onMounted, onUnmounted, ref, watch, type Ref } from "vue";
 import { useSettings } from "@/stores/settings";
 import { useLessons } from "@/stores/lessons";
 import { useHistory } from "@/stores/history";
+import { useChords } from "@/stores/chords";
 import type { HoldResult, LinkState, Rating } from "@/engine/types";
 import { HOLD_MIN_BEATS } from "@/engine/types";
 import { Transport, phaseDelta, START_DELAY, type StartGrid } from "@/engine/transport";
@@ -33,7 +34,7 @@ import { PianoRoll } from "@/views/piano/PianoRoll";
 import { SheetStaff } from "@/views/sheet/SheetStaff";
 import { useNotationFont } from "@/composables/useNotationFont";
 import { engraveOnsets, keySignatureFor } from "@/engine/notation";
-import { chordsForLoop, hasHarmony } from "@/engine/harmony";
+import { chordsForLoop, diatonicTriad, hasHarmony } from "@/engine/harmony";
 import type { WrongMark } from "@/views/lane-geometry";
 import { Overview } from "@/views/Overview";
 import { normalizeRange } from "@/engine/pitch";
@@ -69,6 +70,7 @@ export function useTrainer(
   const settings = useSettings();
   const lessons = useLessons();
   const history = useHistory();
+  const chords_ = useChords();
   /** The active lesson comes from the library store — one source of truth. */
   const lesson = computed(() => lessons.current);
 
@@ -261,8 +263,22 @@ export function useTrainer(
       lesson.value.bars,
       keyFifths.value,
     );
-    return hasHarmony(found) ? found : [];
+    // A bar named by hand replaces the derived one outright. Derivation from a
+    // melody has a floor it cannot get under — two chords can be the same
+    // pitch classes — and when it is wrong the player is the only one who
+    // knows. The extras go: `V(add6)` is a reading of the notes, and once the
+    // chord itself is disputed that reading is not evidence for anything.
+    const overrides = chordOverrides.value;
+    const named = found.map((c, bar) => {
+      const degree = overrides[bar];
+      if (degree === undefined) return c;
+      return diatonicTriad(degree, keyFifths.value);
+    });
+    return hasHarmony(named) ? named : [];
   });
+
+  /** Bars this lesson has had named by hand, for the ribbon to mark. */
+  const chordOverrides = computed(() => chords_.forLesson(lesson.value.id));
   const totalLoops = computed(() => lessonRepeats(lesson.value));
   /** The whole run in beats — what the overview strip spans. */
   const runBeats = computed(() => totalLoops.value * loopBeats.value);
@@ -412,6 +428,7 @@ export function useTrainer(
       theme: settings.theme,
       orientation: settings.laneOrientation,
       colourMode: sheetOn.value ? settings.colourMode : "all",
+      chordOverrides: chordOverrides.value,
       // A mark belongs to a run. Stopped, the lane is showing the lesson
       // parked at its first beat — there is nothing being played, so there is
       // nothing to have played wrongly. Gated on the same `pos` that decides
@@ -653,6 +670,22 @@ export function useTrainer(
   function padAtPoint(x: number, y: number): number | null {
     if (isPiano.value || settings.laneOrientation !== "horizontal") return null;
     return renderer instanceof PadLanes ? renderer.laneAt(x, y) : null;
+  }
+
+  /**
+   * The loop bar of the chord block under a point on the lane canvas, or null.
+   *
+   * Off the renderer's own record of where it painted the ribbon, for the
+   * reason `visibleBeats` is: the blocks scroll, so working the geometry out
+   * again a frame later would name the wrong bar.
+   */
+  function chordBarAtPoint(x: number, y: number): number | null {
+    return renderer?.ribbonBarAt(x, y) ?? null;
+  }
+
+  /** Name a bar's chord by hand, or pass null to hand it back to the notes. */
+  function setChordOverride(bar: number, degree: number | null): void {
+    chords_.setOverride(lesson.value.id, bar, degree);
   }
 
   /** Audio-clock time of a hardware hit, from its midir timestamp. */
@@ -911,6 +944,10 @@ export function useTrainer(
     strike,
     release,
     padAtPoint,
+    chords,
+    chordOverrides,
+    chordBarAtPoint,
+    setChordOverride,
     hardwareHitTime,
     rawHitTime,
   };

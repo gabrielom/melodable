@@ -26,9 +26,11 @@ import {
   paintVeil,
   pxPerBeat,
   RIBBON_H,
+  type RibbonHits,
   ROW_INK,
   WRONG_DOT_R,
   paintRibbon,
+  ribbonBarAt,
   paintWrong,
 } from "@/views/lane-geometry";
 import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
@@ -136,6 +138,14 @@ export class PianoRoll implements LaneRenderer {
 
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext("2d")!;
+  }
+
+
+  /** Where the ribbon's blocks landed in the last paint. */
+  private ribbon: RibbonHits | null = null;
+
+  ribbonBarAt(x: number, y: number): number | null {
+    return ribbonBarAt(this.ribbon, x, y);
   }
 
   visibleBeats(): VisibleWindow {
@@ -394,13 +404,14 @@ export class PianoRoll implements LaneRenderer {
     }
 
     if (ribbon > 0) {
-      paintRibbon(ctx, {
+      this.ribbon = paintRibbon(ctx, {
         chords: f.chords,
         beatsPerBar: f.beatsPerBar,
         absBeat: f.absBeat,
         fromBeat: f.absBeat - halfBeats,
         toBeat: f.absBeat + halfBeats,
         keyFifths: f.keyFifths,
+        overridden: f.chordOverrides,
         xOfBeat: (beat) => hitX + (beat - f.absBeat) * beatPx,
         palette: f.palette,
         theme: f.theme,

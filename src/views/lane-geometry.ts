@@ -153,6 +153,29 @@ export interface RibbonFrame {
   y: number;
   /** Label column inside the strip, or 0 when the view has none. */
   gutter: number;
+  /** Bars named by hand, marked so they read as chosen rather than derived. */
+  overridden?: Readonly<Record<number, number>>;
+}
+
+/**
+ * Where the ribbon's blocks ended up, so a click can find the bar under it.
+ *
+ * Recorded by the paint rather than recomputed afterwards, the way
+ * `visibleBeats` is: the blocks scroll, and geometry derived a second time
+ * from a clock that has moved on would name the wrong bar.
+ */
+export interface RibbonHits {
+  y0: number;
+  y1: number;
+  /** Screen span of each block, and the loop bar it belongs to. */
+  blocks: ReadonlyArray<{ bar: number; x0: number; x1: number }>;
+}
+
+/** The loop bar under a point, or null if the point is not on the ribbon. */
+export function ribbonBarAt(hits: RibbonHits | null, x: number, y: number): number | null {
+  if (!hits || y < hits.y0 || y > hits.y1) return null;
+  for (const b of hits.blocks) if (x >= b.x0 && x < b.x1) return b.bar;
+  return null;
 }
 
 /**
@@ -166,10 +189,12 @@ export interface RibbonFrame {
  * and the bar lines above them cannot disagree — the reason the playhead can
  * be carried straight through it.
  */
-export function paintRibbon(ctx: CanvasRenderingContext2D, f: RibbonFrame): void {
+export function paintRibbon(ctx: CanvasRenderingContext2D, f: RibbonFrame): RibbonHits | null {
   const bpb = Math.max(1, f.beatsPerBar);
   const loop = f.chords.length;
-  if (loop === 0) return;
+  if (loop === 0) return null;
+
+  const blocks: Array<{ bar: number; x0: number; x1: number }> = [];
 
   ctx.save();
   ctx.beginPath();
@@ -181,10 +206,17 @@ export function paintRibbon(ctx: CanvasRenderingContext2D, f: RibbonFrame): void
   const last = Math.ceil(f.toBeat / bpb);
   for (let bar = first; bar <= last; bar++) {
     if (bar < 0) continue;
-    const chord = f.chords[((bar % loop) + loop) % loop];
-    if (!chord) continue;
+    const loopBar = ((bar % loop) + loop) % loop;
+    const chord = f.chords[loopBar];
     const x0 = f.xOfBeat(bar * bpb);
     const x1 = f.xOfBeat((bar + 1) * bpb);
+    // Clickable whether or not it drew: an empty bar has no chord to show and
+    // is exactly the bar you might want to name yourself. Clamped to the strip
+    // the blocks are clipped to, so the label column is never a hit.
+    const left = Math.max(x0, f.x + f.gutter);
+    const right = Math.min(x1, f.x + f.w);
+    if (right > left) blocks.push({ bar: loopBar, x0: left, x1: right });
+    if (!chord) continue;
     const fill = f.palette.hues[FUNCTION_HUE[(chord.degree - 1) % 7]].full;
     ctx.fillStyle = fill;
     ctx.fillRect(x0, f.y, x1 - x0 - 1, RIBBON_H);
@@ -213,6 +245,16 @@ export function paintRibbon(ctx: CanvasRenderingContext2D, f: RibbonFrame): void
     } else if (bar < current) {
       ctx.fillRect(x0, f.y, x1 - x0 - 1, 3);
     }
+
+    // A bar named by hand carries a dot rather than a different colour: the
+    // block's fill is the chord's function and must go on saying that, so the
+    // mark that it was chosen has to be something else.
+    if (f.overridden?.[loopBar] !== undefined) {
+      ctx.fillStyle = ink;
+      ctx.beginPath();
+      ctx.arc(x0 + 7, f.y + RIBBON_H - 7, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   ctx.restore();
 
@@ -227,6 +269,8 @@ export function paintRibbon(ctx: CanvasRenderingContext2D, f: RibbonFrame): void
     ctx.fillText("CHORD", f.x + f.gutter - 10, f.y + RIBBON_H / 2);
     ctx.restore();
   }
+
+  return { y0: f.y, y1: f.y + RIBBON_H, blocks };
 }
 
 /**

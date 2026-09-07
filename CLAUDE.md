@@ -292,7 +292,21 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   bar `IV` instead of `vi`.
   `tests/harmony.test.ts` carries the clip itself as a fixture and pins the
   whole reading — `I`, `V(add6)`, `vi7`, `IV`, which is Hooktheory's, off the
-  melody alone. Shown only
+  melody alone.
+  **And it can still be wrong, so a bar can be named by hand.** Click its block
+  and pick from the key's seven triads, or `AUTO` to hand it back;
+  `stores/chords.ts` keeps that **per lesson**, because a chord is a fact about
+  the material, unlike `settings.keyOverride` which is a reading preference and
+  rightly global. An override replaces the derived chord outright, extras
+  included: `V(add6)` is a reading of the notes, and once the chord itself is
+  disputed that reading is not evidence for anything. A named bar is marked
+  with a **dot, not a different colour** — the block's fill is the chord's
+  function and has to go on saying that. The hit geometry is recorded by
+  `paintRibbon` and read back through `LaneRenderer.ribbonBarAt`, for the same
+  reason `visibleBeats` is recorded rather than recomputed: the blocks scroll,
+  so working it out again a frame later names the wrong bar. **Not designed** —
+  built in the dropdowns' existing language, like the calibration dialog, and
+  it wants drawing. Shown only
   with degrees on, because the ribbon is the harmonic half of that reading;
   empty means **hide the strip**, never draw empty blocks (§1.5). It **never
   takes a timing colour** — history is a 3px top rule and the current bar a 2px

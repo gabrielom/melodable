@@ -27,6 +27,7 @@ import CalibrationDialog from "@/components/CalibrationDialog.vue";
 import { useCalibration } from "@/composables/useCalibration";
 import { clampLatency } from "@/engine/calibration";
 import { keyName } from "@/engine/notation";
+import { chordName, diatonicTriad, romanOf } from "@/engine/harmony";
 import RunSummary from "@/components/RunSummary.vue";
 import type { LogRow } from "@/components/midi-log";
 import PianoKeyboard from "@/views/piano/PianoKeyboard.vue";
@@ -150,6 +151,10 @@ const {
   strike,
   release,
   padAtPoint,
+  chords,
+  chordOverrides,
+  chordBarAtPoint,
+  setChordOverride,
   hardwareHitTime,
   rawHitTime,
 } = useTrainer(audio, laneCanvas, overviewCanvas);
@@ -220,11 +225,59 @@ async function onPlay() {
 function onLanePointer(e: PointerEvent) {
   const el = e.currentTarget as HTMLCanvasElement;
   const r = el.getBoundingClientRect();
-  const pad = padAtPoint(e.clientX - r.left, e.clientY - r.top);
+  const x = e.clientX - r.left;
+  const y = e.clientY - r.top;
+  // The ribbon first: it sits under the field, so a click there is never also
+  // a click on a pad.
+  if (openChordMenu(e, x, y, r)) return;
+  const pad = padAtPoint(x, y);
   if (pad !== null) {
     e.preventDefault();
     void triggerPad(pad, 110, "click");
   }
+}
+
+/**
+ * Naming a bar's chord by hand.
+ *
+ * The ribbon is derived, and derivation from a melody has a floor it cannot
+ * get under: two chords can be the *same pitch classes* — B6 and G#m7, E6 and
+ * C#m7 — so which one a bar is depends on an accompaniment an imported clip
+ * does not carry. The derivation names its answer confidently and is sometimes
+ * wrong; this is where the player says so.
+ *
+ * The menu is placed where the block is rather than in the bar, because the
+ * block is what it is about and there is a whole stage of room under it.
+ */
+const chordMenu = ref<{ bar: number; x: number; y: number } | null>(null);
+
+function openChordMenu(e: PointerEvent, x: number, y: number, r: DOMRect): boolean {
+  const bar = chordBarAtPoint(x, y);
+  if (bar === null) return false;
+  e.preventDefault();
+  chordMenu.value = { bar, x: r.left + x, y: r.top + y };
+  return true;
+}
+
+/** The seven triads of the key, as the menu lists them. */
+const chordChoices = computed(() =>
+  [1, 2, 3, 4, 5, 6, 7].map((degree) => {
+    const c = diatonicTriad(degree, keyFifths.value);
+    return { degree, roman: romanOf(c), name: chordName(c, keyFifths.value) };
+  }),
+);
+
+/** What the ribbon currently says for the bar the menu is open on. */
+const chordMenuDerived = computed(() => {
+  const bar = chordMenu.value?.bar;
+  if (bar === undefined) return null;
+  const c = chords.value[bar];
+  return c ? `${romanOf(c)} · ${chordName(c, keyFifths.value)}` : null;
+});
+
+function pickChord(degree: number | null) {
+  if (chordMenu.value) setChordOverride(chordMenu.value.bar, degree);
+  chordMenu.value = null;
 }
 
 // ------------------------------------------------------------------- tempo
@@ -474,7 +527,11 @@ function spaceIsTransport(e: KeyboardEvent): boolean {
 }
 
 function onKeyDown(e: KeyboardEvent) {
-  // Escape closes whichever bar menu is open, then stops the run.
+  // Escape closes whichever menu is open, then stops the run.
+  if (e.key === "Escape" && chordMenu.value) {
+    chordMenu.value = null;
+    return;
+  }
   if (e.key === "Escape" && openMenu.value) {
     openMenu.value = null;
     return;
@@ -648,6 +705,7 @@ function toggleMenu(which: Exclude<BarMenu, null>) {
  */
 watch(view, () => {
   openMenu.value = null;
+  chordMenu.value = null;
 });
 
 function togglePadMenu() {
@@ -663,6 +721,12 @@ function pickPadLayout(id: PadLayout) {
 
 function onPadMenuPointer(e: PointerEvent) {
   const t = e.target as Node;
+  // The canvas handler has already set a new one by the time this runs, so
+  // only a click landing outside the panel closes it.
+  if (chordMenu.value && !(t instanceof Element && t.closest(".chord-menu"))
+      && !(t instanceof Element && t.closest("canvas.lane-canvas"))) {
+    chordMenu.value = null;
+  }
   if (padMenuOpen.value && padMenuRoot.value && !padMenuRoot.value.contains(t)) openMenu.value = null;
   if (volMenuOpen.value && volMenuRoot.value && !volMenuRoot.value.contains(t)) openMenu.value = null;
   if (openMenu.value === "key" && keyMenuRoot.value && !keyMenuRoot.value.contains(t)) {
@@ -1310,7 +1374,7 @@ watch(
         <!-- The keyboard rotates to the left edge when notes scroll sideways,
              so every semitone row still lines up with its own key. -->
         <div v-else class="piano-stage" :class="sheetOn ? 'horizontal sheet' : settings.laneOrientation">
-          <canvas ref="laneCanvas" class="lane-canvas piano-canvas" />
+          <canvas ref="laneCanvas" class="lane-canvas piano-canvas" @pointerdown="onLanePointer" />
           <PianoKeyboard
             :rotated="!sheetOn && settings.laneOrientation === 'horizontal'"
             :degrees="settings.noteLabel === 'degree'"
@@ -1324,6 +1388,38 @@ watch(
             @note-off="noteOff"
           />
           <div v-if="toast" class="toast">{{ toast }}</div>
+        </div>
+
+        <!-- Naming a bar by hand. Anchored on the block that was clicked
+             rather than dropped from the bar: the block is the subject, and
+             the stage has room under it that the 34px bar does not. -->
+        <div
+          v-if="chordMenu"
+          class="menu chord-menu"
+          role="menu"
+          :style="{ left: `${chordMenu.x}px`, top: `${chordMenu.y}px` }"
+        >
+          <div class="menu-head">BAR {{ chordMenu.bar + 1 }}</div>
+          <button
+            class="menu-row"
+            :class="{ on: chordOverrides[chordMenu.bar] === undefined }"
+            role="menuitemradio"
+            :aria-checked="chordOverrides[chordMenu.bar] === undefined"
+            @click="pickChord(null)"
+          >
+            AUTO<i>{{ chordMenuDerived ?? "—" }}</i>
+          </button>
+          <button
+            v-for="c in chordChoices"
+            :key="c.degree"
+            class="menu-row"
+            :class="{ on: chordOverrides[chordMenu.bar] === c.degree }"
+            role="menuitemradio"
+            :aria-checked="chordOverrides[chordMenu.bar] === c.degree"
+            @click="pickChord(c.degree)"
+          >
+            {{ c.roman }}<i>{{ c.name }}</i>
+          </button>
         </div>
       </section>
 
@@ -1824,6 +1920,26 @@ watch(
 .menu-row .tick { width: 10px; flex: none; font-size: 8px; font-style: normal; color: var(--head); }
 .menu-row b { font-weight: 500; }
 .menu-row em { font-style: normal; color: var(--txt3); margin-left: 6px; font-size: 11.5px; }
+/* A row's trailing value — the key a choice spells, the chord a bar gets.
+   Pushed right and set in mono so the column reads down the list. */
+.menu-row i {
+  margin-left: auto;
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--txt3);
+}
+.menu-row.on i { color: var(--active-txt); opacity: 0.7; }
+
+/* Anchored on the block it names, not dropped from the bar, so it is
+   positioned in viewport coordinates and translated clear of the cursor. */
+.chord-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 168px;
+  transform: translate(-50%, calc(-100% - 10px));
+}
 
 /* ================================ body ================================ */
 

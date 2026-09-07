@@ -39,9 +39,11 @@ import {
 } from "@/engine/notation";
 import {
   RIBBON_H,
+  type RibbonHits,
   WRONG_DOT_R,
   gridBeatRange,
   paintRibbon,
+  ribbonBarAt,
   noteInk,
   paintCountIn,
   paintWrong,
@@ -175,6 +177,14 @@ export class SheetStaff implements LaneRenderer {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
+
+  /** Where the ribbon's blocks landed in the last paint. */
+  private ribbon: RibbonHits | null = null;
+
+  ribbonBarAt(x: number, y: number): number | null {
+    return ribbonBarAt(this.ribbon, x, y);
+  }
+
   visibleBeats(): VisibleWindow {
     return this.window;
   }
@@ -235,13 +245,14 @@ export class SheetStaff implements LaneRenderer {
     this.clefGutter(f, marks, topLineY, bottomLineY);
 
     if (ribbon > 0) {
-      paintRibbon(ctx, {
+      this.ribbon = paintRibbon(ctx, {
         chords: f.chords,
         beatsPerBar: f.beatsPerBar,
         absBeat: f.absBeat,
         fromBeat: f.absBeat - this.window.behind,
         toBeat: f.absBeat + this.window.ahead,
         keyFifths: f.keyFifths,
+        overridden: f.chordOverrides,
         xOfBeat,
         palette: p,
         theme: f.theme,

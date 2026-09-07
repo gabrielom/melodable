@@ -110,6 +110,12 @@ export class PadLanes implements LaneRenderer {
     }
   }
 
+
+  /** Pads draw no chord ribbon: nothing to hit. */
+  ribbonBarAt(): number | null {
+    return null;
+  }
+
   visibleBeats(): VisibleWindow {
     return this.window;
   }

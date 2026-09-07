@@ -50,6 +50,8 @@ export interface LaneFrame {
    * tell one lane from another.
    */
   colourMode: ColourMode;
+  /** Bars whose chord was named by hand: loop bar index -> scale degree. */
+  chordOverrides: Readonly<Record<number, number>>;
 
   /**
    * The lesson's key signature, as its place on the circle of fifths. Sheet
@@ -139,4 +141,12 @@ export interface LaneRenderer {
    * never disagree about the geometry.
    */
   visibleBeats(): VisibleWindow;
+  /**
+   * The loop bar of the chord block under a point, or null.
+   *
+   * Recorded by the last paint, like `visibleBeats`: the ribbon scrolls, so
+   * geometry worked out a second time from a clock that has moved on would
+   * name the wrong bar. Null in a view drawing no ribbon.
+   */
+  ribbonBarAt(x: number, y: number): number | null;
 }
