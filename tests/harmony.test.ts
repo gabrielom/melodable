@@ -342,3 +342,43 @@ describe("the added-tone threshold", () => {
     expect(chordsForLoop(passing, 4, 1, 4)[0]!.seventh).toBe(false);
   });
 });
+
+/**
+ * Guards on the prior, which is the one part of the derivation that is not
+ * evidence from the notes in front of it.
+ *
+ * It was calibrated against a single ambiguous bar of a single song (see the
+ * calibration note in CLAUDE.md), so the risk it carries is that it quietly
+ * starts answering bars it was never meant to. These pin the boundary: it may
+ * break a tie, and it may not overrule a bar that states its own chord.
+ */
+describe("the prior may lean, and may not decide", () => {
+  const clean = (spec: Array<[number, number, number]>) => chordsForLoop(mel(spec), 4, 1, 0)[0]!;
+
+  it("leaves a bar that plainly states a rare chord alone", () => {
+    // C major. Nothing here is a close call, and the prior likes I, IV, V and
+    // vi — so if any of these flips, the prior has stopped being a lean.
+    expect(romanOf(clean([[0, 62, 1], [1, 65, 1], [2, 69, 1], [3, 62, 1]]))).toBe("ii");
+    expect(romanOf(clean([[0, 64, 1], [1, 67, 1], [2, 71, 1], [3, 64, 1]]))).toBe("iii");
+    expect(romanOf(clean([[0, 71, 1], [1, 74, 1], [2, 77, 1], [3, 71, 1]]))).toBe("vii°");
+  });
+
+  it("keeps a rare chord through a passing note from a common one", () => {
+    // A ii bar brushing E, and a iii bar brushing D. Both are the shape that
+    // would tip first if the prior were too strong.
+    expect(
+      romanOf(clean([[0, 62, 1], [1, 65, 1], [2, 69, 1], [3, 64, 0.5], [3.5, 62, 0.5]])),
+    ).toBe("ii");
+    expect(
+      romanOf(clean([[0, 64, 1], [1, 67, 1], [2, 71, 1], [3, 62, 0.5], [3.5, 64, 0.5]])),
+    ).toBe("iii");
+  });
+
+  it("is still needed: the bar it was calibrated on is a coin flip without it", () => {
+    // B6 and G#m7 are the same four pitch classes. The margin between them is
+    // a sixth of the bar either way, which is why nothing in the notes can
+    // settle it — and why the prior is a thumb on the scale rather than a
+    // measurement. This is the case it exists for, and the only one.
+    expect(chordsForLoop(NO_ONE_BAR2, 4, 1, 4)[0]!.degree).toBe(5);
+  });
+});

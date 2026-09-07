@@ -293,6 +293,51 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   `tests/harmony.test.ts` carries the clip itself as a fixture and pins the
   whole reading — `I`, `V(add6)`, `vi7`, `IV`, which is Hooktheory's, off the
   melody alone.
+- **Calibration note: the harmony constants were tuned against one song, and
+  `PRIOR_STRENGTH` against one bar of it.** n = 1. Treat every number in the
+  block above as provisional until more clips have been through it, and
+  re-measure rather than assume when they are.
+  **What the clip's loose timing did and did not cause is worth keeping
+  straight**, because it is easy to file all of this under "bad MIDI" and it
+  is not. The clip was played, not drawn — its beats sit at 1.99, 2.99, 3.51.
+  That caused exactly one thing: nothing at all, until `BEAT_TOLERANCE` was
+  added, at which point a pickup note 0.02 beats early started weighing triple
+  in the wrong bar and called bar 3 `IV`. **That failure was created by the
+  fix and repaired by the other half of it** (`barOf` using the same
+  tolerance), so it never existed in shipped code. Quantise the same clip
+  perfectly and bar 2 is *still* read as `iii`, by 15.4% of the bar against
+  18.9% as recorded — so **the wrong chord was never a timing problem**, and a
+  drawn clip would have had it too. It is the pitch content being genuinely
+  ambiguous, which no amount of timing accuracy touches.
+  So a perfectly drawn clip does not make `PRIOR_STRENGTH` unnecessary; it
+  makes `BEAT_TOLERANCE` inert, which is harmless — an exact onset is inside
+  any tolerance.
+  **The prior is the constant that can make other songs worse**, and it is the
+  one to suspect first. It is not evidence from the notes; it is a standing
+  bet that a bar is more likely `I`, `V`, `IV` or `vi` than `ii`, `iii` or
+  `vii°`, worth up to a third of the bar's weight. A song genuinely built on
+  the rare degrees gets that bet held against it in every close bar. The guard
+  is `tests/harmony.test.ts`'s "the prior may lean, and may not decide": clean
+  `ii`, `iii` and `vii°` bars, and the same with a passing note borrowed from a
+  common chord, must all survive. If a change to the prior breaks those, the
+  prior has stopped being a lean.
+  **When more clips arrive, sweep rather than nudge.** The measurement that
+  chose 0.35 was: take the clip, score every bar against the reading you want,
+  and record the **margin as a share of the bar's weight** — then vary
+  `PRIOR_STRENGTH` and find the range where every bar lands right. On this song
+  that range is 0.30-0.40 as recorded and 0.30-0.45 quantised, and 0.35 is the
+  centre of the overlap. Reproduce it by editing the constant and running the
+  suite; the clip is already in the tree as the `NO_ONE` fixture, so a second
+  song only needs adding beside it. Don't keep a standalone harness that
+  re-implements the scoring — one was written for this and it would drift from
+  `chordsForLoop` the moment either changed.
+  **If a future clip's window excludes 0.35, do not just move the number.** A
+  per-chord prior that cannot satisfy two songs at once is the wrong shape, and
+  the answer is to cost *progressions* rather than chords — what actually makes
+  `V` likely in No One's second bar is that it sits between `I` and `vi`, which
+  a per-chord frequency cannot express. That is a bigger change and it was not
+  built. Until then the honest escape hatch is the manual override, which is
+  why it exists.
   **And it can still be wrong, so a bar can be named by hand.** Click its block
   and pick from the key's seven triads, or `AUTO` to hand it back;
   `stores/chords.ts` keeps that **per lesson**, because a chord is a fact about
