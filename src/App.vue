@@ -637,6 +637,19 @@ function toggleMenu(which: Exclude<BarMenu, null>) {
   openMenu.value = openMenu.value === which ? null : which;
 }
 
+/**
+ * Changing screen closes whatever was open.
+ *
+ * Half the bar's menus belong to one screen only, so a menu can lose the
+ * control it hangs off while `openMenu` still names it — and the flag is read
+ * for more than the panel: the bar lifts above the stage and every tooltip is
+ * suppressed while it is set. Left standing, opening a lesson from the device
+ * menu would kill the trainer's tooltips and re-open the menu on the way back.
+ */
+watch(view, () => {
+  openMenu.value = null;
+});
+
 function togglePadMenu() {
   toggleMenu("pad");
   // Opening the layout menu implies you're working with the pads.
@@ -1069,7 +1082,17 @@ watch(
         <i v-if="linkOn" class="peerbadge num">{{ linkPeers }}</i>
       </button>
 
+      <!-- Home-only, with the instrument switch, Link and import: what is
+           plugged in is a decision made before a run, not during one. The
+           chip has always been a pre-run control by that argument — the Link
+           toggle beside it says so — and was simply the last one still drawn
+           in both bars. The connection itself is untouched: it lives in Tauri
+           state (invariant 5) and the port stays open across the switch. Its
+           LED moves with it, so the trainer no longer reports whether a
+           device is connected; a run you can hear is the same fact, and the
+           bar is the one place tight for width. -->
       <DeviceMenu
+        v-if="view === 'home'"
         :open="openMenu === 'device'"
         :ports="ports"
         :connected-index="connectedIndex"
