@@ -9,7 +9,11 @@ import {
 
 /** A bar's worth of notes at one beat each. */
 const bar = (barIndex: number, pitches: number[]) =>
-  pitches.map((lane, i) => ({ lane, beat: barIndex * 4 + i }));
+  pitches.map((lane, i) => ({ lane, beat: barIndex * 4 + i, duration: 1 }));
+
+/** `[beat, pitch, length]` triples, for the melody fixtures. */
+const mel = (spec: Array<[number, number, number]>) =>
+  spec.map(([beat, lane, duration]) => ({ lane, beat, duration }));
 
 describe("diatonicTriad", () => {
   it("gives C major the qualities every key has", () => {
@@ -104,6 +108,50 @@ describe("chordsForLoop", () => {
 
   it("always answers with a chord where a bar has notes", () => {
     expect(hasHarmony(chordsForLoop(bar(0, [61]), 4, 1, 0))).toBe(true);
+  });
+
+  it("reads a melody by weight, not by counting notes", () => {
+    // The bar is E major: a held B on the downbeat and a held E to close it,
+    // with a scale run of passing tones between. By note *count* the passing
+    // tones win and the bar is named wrong; by weight — length times metrical
+    // position — the notes the bar is built on decide it.
+    const notes = mel([
+      [0, 71, 2],
+      [2, 73, 0.25], [2.25, 74, 0.25], [2.5, 76, 0.25], [2.75, 78, 0.25],
+      [3, 64, 1],
+    ]);
+    expect(romanOf(chordsForLoop(notes, 4, 1, 4)[0]!)).toBe("I");
+  });
+
+  it("reads No One's loop off its melody alone", () => {
+    // I – V – vi – IV in E major, which is the progression under the clip.
+    // The lesson carries no chord track, only the tune, so this is the case
+    // the derivation actually has to survive.
+    const notes = mel([
+      [0, 71, 1], [1, 68, 0.5], [1.5, 69, 0.5], [2, 68, 1], [3, 64, 1],
+      [4, 71, 1], [5, 75, 0.5], [5.5, 73, 0.5], [6, 78, 1], [7, 71, 1],
+      [8, 73, 1], [9, 76, 0.5], [9.5, 75, 0.5], [10, 68, 1], [11, 73, 1],
+      [12, 69, 1], [13, 73, 0.5], [13.5, 71, 0.5], [14, 76, 1], [15, 69, 1],
+    ]);
+    const got = chordsForLoop(notes, 4, 4, 4);
+    expect(got.map((c) => c && romanOf(c))).toEqual(["I", "V", "vi", "IV"]);
+    expect(got.map((c) => c && chordName(c, 4))).toEqual(["E", "B", "C#m", "A"]);
+  });
+
+  it("names a seventh only when the bar really leans on it", () => {
+    // C#m with a held B — the seventh — is vi7. The same triad with the B as
+    // a passing semiquaver is just vi.
+    const leaning = mel([[0, 61, 1], [1, 64, 1], [2, 68, 1], [3, 71, 1]]);
+    expect(romanOf(chordsForLoop(leaning, 4, 1, 4)[0]!)).toBe("vi7");
+    const passing = mel([
+      [0, 61, 1], [1, 64, 1], [2, 68, 1], [3, 61, 0.75], [3.75, 71, 0.25],
+    ]);
+    expect(romanOf(chordsForLoop(passing, 4, 1, 4)[0]!)).toBe("vi");
+  });
+
+  it("writes the seventh into the absolute name too", () => {
+    const leaning = mel([[0, 61, 1], [1, 64, 1], [2, 68, 1], [3, 71, 1]]);
+    expect(chordName(chordsForLoop(leaning, 4, 1, 4)[0]!, 4)).toBe("C#m7");
   });
 
   it("reads the same music the same way in the key it is actually in", () => {

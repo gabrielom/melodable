@@ -247,8 +247,16 @@ export function useTrainer(
    */
   const chords = computed(() => {
     if (!isPiano.value || settings.noteLabel !== "degree") return [];
+    // The lesson's own notes, not `targets`: the harmony is weighted by how
+    // long a note is, and `lessonTargets` zeroes any length under the hold
+    // floor. Reading it from there would make every melody a wash of equal
+    // notes, which is exactly what the weighting exists to avoid.
     const found = chordsForLoop(
-      targets.value,
+      lesson.value.notes.map((n) => ({
+        lane: n.pitch,
+        beat: n.time,
+        duration: n.duration ?? 0,
+      })),
       lesson.value.beatsPerBar,
       lesson.value.bars,
       keyFifths.value,

@@ -33,9 +33,20 @@ export interface Chord {
   quality: ChordQuality;
   /** Root pitch class, for anything that needs to sound it. */
   root: number;
+  /** The diatonic seventh is sounding too — `vi7` rather than `vi`. */
+  seventh: boolean;
 }
 
 const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII"] as const;
+
+/**
+ * How much of a bar's weight the seventh must carry to be named.
+ *
+ * A fifth. Below that it is a passing note that happens to land there, and
+ * calling every triad a seventh chord would say less than calling none of
+ * them one.
+ */
+const SEVENTH_SHARE = 0.2;
 
 /**
  * The numeral, cased by quality: upper for major, lower for minor, and a ring
@@ -44,8 +55,9 @@ const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII"] as const;
  */
 export function romanOf(c: Chord): string {
   const r = ROMAN[c.degree - 1];
-  if (c.quality === "major") return r;
-  return c.quality === "minor" ? r.toLowerCase() : `${r.toLowerCase()}°`;
+  const base =
+    c.quality === "major" ? r : c.quality === "minor" ? r.toLowerCase() : `${r.toLowerCase()}°`;
+  return c.seventh ? `${base}7` : base;
 }
 
 /** The chord's absolute name — "C", "Am", "B°" — spelled in the key. */
@@ -54,26 +66,44 @@ export function chordName(c: Chord, fifths: number): string {
   const alter = signatureAlters(fifths)[letter];
   const mark = alter > 0 ? "#" : alter < 0 ? "b" : "";
   const tail = c.quality === "minor" ? "m" : c.quality === "diminished" ? "°" : "";
-  return `${LETTER_NAME[letter]}${mark}${tail}`;
+  return `${LETTER_NAME[letter]}${mark}${tail}${c.seventh ? "7" : ""}`;
 }
 
-/** The three pitch classes of the triad on `degree`, in the key. */
-function triadTones(degree: number, fifths: number): number[] {
+/** Pitch classes of the chord on `degree`: root, third, fifth, then seventh. */
+function chordTones(degree: number, fifths: number): number[] {
   const alters = signatureAlters(fifths);
   const tonic = tonicLetter(fifths);
-  return [0, 2, 4].map((step) => {
+  return [0, 2, 4, 6].map((step) => {
     const letter = (tonic + degree - 1 + step) % 7;
     return (((LETTER_SEMITONE[letter] + alters[letter]) % 12) + 12) % 12;
   });
 }
 
 /** The triad on `degree` of the key. */
-export function diatonicTriad(degree: number, fifths: number): Chord {
+export function diatonicTriad(degree: number, fifths: number, seventh = false): Chord {
   return {
     degree,
     quality: QUALITY[degree - 1],
-    root: triadTones(degree, fifths)[0],
+    root: chordTones(degree, fifths)[0],
+    seventh,
   };
+}
+
+/**
+ * How much a note counts toward naming its bar's chord.
+ *
+ * Length and metrical position, multiplied. A melody states its harmony on
+ * the strong beats and in the long notes, and fills the gaps with passing
+ * tones that belong to no chord at all — counting every note equally lets a
+ * run of semiquavers outvote the crotchet the bar is built on. This is the
+ * difference between reading a melody and counting one.
+ */
+function weightOf(beat: number, duration: number, beatsPerBar: number): number {
+  const inBar = ((beat % beatsPerBar) + beatsPerBar) % beatsPerBar;
+  const onBeat = Math.abs(inBar - Math.round(inBar)) < 1e-6;
+  const metre = inBar < 1e-6 ? 3 : onBeat ? 2 : 1;
+  // A zero-length note still happened; floor it rather than ignoring it.
+  return metre * Math.max(0.25, Math.min(4, duration));
 }
 
 /**
@@ -89,7 +119,7 @@ export function diatonicTriad(degree: number, fifths: number): Chord {
  * caller's signal to draw no ribbon rather than a row of empty blocks.
  */
 export function chordsForLoop(
-  notes: readonly { lane: number; beat: number }[],
+  notes: readonly { lane: number; beat: number; duration?: number }[],
   beatsPerBar: number,
   bars: number,
   fifths: number,
@@ -105,26 +135,35 @@ export function chordsForLoop(
       continue;
     }
     const bass = ((Math.min(...inBar.map((x) => x.lane)) % 12) + 12) % 12;
+    const weighted = inBar.map((x) => ({
+      pc: ((x.lane % 12) + 12) % 12,
+      w: weightOf(x.beat, x.duration ?? 0, bpb),
+    }));
 
-    let best: Chord | null = null;
+    let bestDegree = 1;
     let bestScore = -Infinity;
     let bestIsBass = false;
     for (let degree = 1; degree <= 7; degree++) {
-      const tones = triadTones(degree, fifths);
+      const tones = chordTones(degree, fifths).slice(0, 3);
       let score = 0;
-      for (const x of inBar) {
-        score += tones.includes(((x.lane % 12) + 12) % 12) ? 1 : -1;
-      }
+      for (const x of weighted) score += tones.includes(x.pc) ? x.w : -x.w;
       const isBass = tones[0] === bass;
       // Strictly better, or equal and rooted on the bass when the incumbent
       // is not. Ties beyond that keep the lower degree already held.
-      if (score > bestScore || (score === bestScore && isBass && !bestIsBass)) {
+      if (score > bestScore + 1e-9 || (Math.abs(score - bestScore) < 1e-9 && isBass && !bestIsBass)) {
         bestScore = score;
         bestIsBass = isBass;
-        best = diatonicTriad(degree, fifths);
+        bestDegree = degree;
       }
     }
-    out.push(best);
+
+    // The seventh is an addition to a chord already named, not a candidate of
+    // its own: it earns the label only when it carries real weight in the bar,
+    // so a passing brush against it does not turn every triad into a seventh.
+    const tones = chordTones(bestDegree, fifths);
+    const total = weighted.reduce((n, x) => n + x.w, 0);
+    const seventhWeight = weighted.reduce((n, x) => n + (x.pc === tones[3] ? x.w : 0), 0);
+    out.push(diatonicTriad(bestDegree, fifths, seventhWeight >= total * SEVENTH_SHARE));
   }
   return out;
 }
