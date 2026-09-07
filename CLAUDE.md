@@ -109,7 +109,7 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   that position, notation having a place for every pitch.
 - **A note can have a length.** `NoteEvent.duration` is in beats; anything under `HOLD_MIN_BEATS` is an ornament and normalised to zero by `lessonTargets`. A held note is judged twice and independently: the onset rating is unchanged and alone decides the colour, and the sustain is measured from the note's *written* onset so a late strike is not charged twice. Overholding is not an error — the fraction clamps at 1, and a hold still open at the written end closes itself, which is also what stops a controller that never sends note-off from scoring every hold as dropped. Combo breaks on a dropped hold, survives a short one. Pads carry no duration on import (a drum has decayed before you could let go), though the renderers support pad holds if a lesson authors them.
 - **Everything lives in the one transport bar**, which is also the macOS titlebar (left padding clears the traffic lights). It is 34px tall with every control 20px, and stays a single row with nothing hidden. No second toolbar row, no in-stage header.
-- **The window floor is what keeps the bar intact**: `minWidth` in `tauri.conf.json` is **1200**, measured as the narrowest width where every trainer control fits at natural size. The binding case is **piano in sheet** (1198px) — `KEY`, `NOTE | DEGREE`, the colour toggle and `ROLL | SHEET` at once; piano in roll needs 1176 and pads only 941, so the longest *pads* title stopped being the constraint at handoff 11. **A plain browser understates the floor** — the device chip reads "NO DEVICE" at 91px rather than its 116px cap, so force the widest label when measuring (`scratchpad/floor11.mjs` does). The bar's 84px left inset is part of the budget too; the frames use 72, and the extra 12 is ours (72 left the ✕ almost touching the zoom button). Below the floor **nothing is pushed out** — handoff 11 §3.2's shrink order takes over: the spacers collapse, then the device name truncates (min 46px, keeping the LED and the caret), then the lesson title (min 36px). Handoff 12 §4 names the next lever if it is ever needed: compress the colour cells from 20px to 14px (−18px) before truncating anything. The bar's own symptom is silent, so the check is `bar.scrollWidth <= bar.clientWidth`; jsdom has no layout, so that is a browser measurement and not a unit test.
+- **The window floor is what keeps the bar intact**: `minWidth` in `tauri.conf.json` is **1216**, measured as the narrowest width where every trainer control fits at natural size. The binding case is **piano in sheet** (1214px) — `KEY`, `NOTE | DEGREE`, the colour toggle and `ROLL | SHEET` at once; piano in roll needs 1192 and pads only 941, so the longest *pads* title stopped being the constraint at handoff 11. **A plain browser understates the floor** — the device chip reads "NO DEVICE" at 91px rather than its 116px cap, so force the widest label when measuring (`scratchpad/floor11.mjs` does). The bar's 84px left inset is part of the budget too; the frames use 72, and the extra 12 is ours (72 left the ✕ almost touching the zoom button). Below the floor **nothing is pushed out** — handoff 11 §3.2's shrink order takes over: the spacers collapse, then the device name truncates (min 46px, keeping the LED and the caret), then the lesson title (min 36px). It rose 16px when the `KEY` chip got the design's own `gap: 5px` / `0 7px` back (67.7 → 83.7px); that spacing is the chip, so the width is paid rather than shaved. Handoff 12 §4 names the next lever if it is ever needed: compress the colour cells from 20px to 14px (−18px) before truncating anything. The bar's own symptom is silent, so the check is `bar.scrollWidth <= bar.clientWidth`; jsdom has no layout, so that is a browser measurement and not a unit test.
 - The bar carries **`data-tauri-drag-region="deep"`**, not the bare attribute. Tauri's shim walks up from the clicked node and stops at the first interactive element, so controls opt out of dragging by themselves; the bare form only catches direct hits on the header, which at this density is gaps and nothing else. Anything non-interactive that hangs off the bar — the dropdowns — needs `="false"` so a click on its own chrome doesn't drag the window. `-webkit-app-region` is Electron-only and does nothing here.
 - Dragging also needs **`core:window:allow-start-dragging`** in `src-tauri/capabilities/default.json`. `core:default` does *not* include it, and the shim swallows the rejection, so the failure is silent and looks like a CSS problem: the window still moves on the click that focuses it (AppKit handles that one) and double-click-zoom still works (`internal-toggle-maximize` *is* in the default set). Don't drop that grant.
 - Keep `-webkit-user-select: none` alongside the unprefixed rule. WKWebView only honours the plain property from Safari 17, and a live text selection beats the drag on the same mousedown.
@@ -180,15 +180,17 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   `spell(p, 0)` reproduces `staffStep`/`accidentalFor` exactly, and
   `tests/notation.test.ts` pins that plus a full round trip over every key and
   every pitch.
-- **The `KEY` chip is the degree switch**, which handoff 11 does not settle —
-  §1.5 gives the chip and §1.1 a separate `NOTE | DEG` pair, and the two were
-  doing one job. Decided with the user: press the chip's label to read in
-  degrees and press it again for letters; the caret beside it opens the key
-  list. Naming the mode by its key is honest, since a degree means nothing
-  without one, and it took ~84px back off the bar — the floor came from 1180
-  to 1100. Only the *label* half inverts on: the caret is a way into the list
-  either way, and inverting the whole chip made it look like part of what had
-  been switched on. `NOTE | DEG` is gone.
+- **The `KEY` chip is the design's read-out with a way into the list added.**
+  Handoff 11 §1.5 draws a plain `.field`: `gap: 5px`, `0 7px` padding, `KEY` in
+  `--txt3` beside the key in `--txt`, 68.4px wide — measured off the frame. Ours
+  is that plus a caret, because the design's chip only reports the key and ours
+  also picks it. **Those two spacing numbers are the whole look**: for one
+  commit the chip was a split control (label switches degrees, caret opens the
+  list) and carried `gap: 0; padding: 2px` to suit; `NOTE | DEGREE` came back
+  and took the switch job with it, the markup reverted, and the CSS did not —
+  which is how it came to read `KEYC maj` inside a 2px inset. One button now,
+  so the whole chip inverts when the menu is open. `DEG` in the pair is spelled
+  `DEGREE` in full (handoff 12 §5).
 - **Degree mode is a relabelling and nothing else** (handoff 11 §1). The chip
   swaps what a note is *called* — colour, geometry, the grid and every
   timing rule are the same run either way. Piano only, like the key chip and
@@ -277,20 +279,28 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   webfont** — `ctx.font` falls back silently and the frame is already painted
   — so `useNotationFont` loads it and the sheet renderer is not built until it
   is in.
-- **Every single note is one glyph; only a chord is assembled.** Handoff 10
-  §1.4 said to build beamed groups from bare heads, stems and beams because
-  the font has no beam glyph — **that is superseded.** Handoff 12's sheet
-  frames draw two eighths inside one beat as two flagged glyphs, so there is
-  no beaming, nothing to assemble and nothing to detach. The assembly it
-  replaced had exactly that failure: `beamGroup` kept its own copy of the stem
-  offset and was missed when `headHalfWidth` changed, so every stem stood 2.3px
-  clear of its head. A **chord** still shares one stem, because stacking a
-  glyph per notehead stacks a stem per head and reads as a smear.
-- **A bare head is the glyph's head, measured** — `NOTEHEAD_EM_HALF_WIDTH`
-  (`0.1464em`, rasterised at the drawn size) for its radius *and* for where the
-  stem attaches, and `SPACE / 2` for its height. They were fudged multiples of
-  the staff space before, 3% wide and 5% short of the glyph beside them. One
-  number for the head and the stem is what keeps the two touching.
+- **Beamed groups are assembled; a lone note is one glyph.** Handoff 10 §1.4
+  and handoff 12's own notation set both say it: *"Beamed groups have no glyph
+  at all and must be assembled"* — bare heads, a 1.8px stem each, a 4.2px beam
+  per subdivision stacked at 6.4px, and a half-length stub for a broken group.
+  **The catalogued notation set is the reference for every figure**, decided
+  with the user, and it outranks the trainer staff drawn beside it: that staff
+  happens to hold no group short enough to need a beam, so its all-glyph
+  content is an accident of the music in it and says nothing about the rule.
+  Beaming was deleted once on exactly that misreading and the notation stopped
+  being correct — don't repeat it. A **chord** shares one stem too, because
+  stacking a glyph per notehead stacks a stem per head and reads as a smear.
+- **A bare head is the glyph's head, measured, and one function places the
+  stem** — `NOTEHEAD_EM_HALF_WIDTH` (`0.1464em`, rasterised at the drawn size)
+  for the head's radius *and* for where the stem attaches, `SPACE / 2` for its
+  height. They were fudged multiples of the staff space before, 3% wide and 5%
+  short of the glyph beside them. **`stemX` is that one function and both
+  callers go through it**: two copies of the offset is the actual bug here —
+  `beamGroup` kept its own `headHalfWidth(size) * 0.92`, which tracked the
+  *glyph seating* rather than the head, and when that seating became per-figure
+  every beamed stem stood 2.3px clear of the head it belonged to. That is what
+  "the stem doesn't connect" was, and it is a two-copies bug, never a reason to
+  stop beaming.
 - **What the font does not give you** (§1.4): the augmentation dot is a
   combining mark with no advance width, so it is drawn; and every stemmed glyph
   is stem-**up**, which the frames accept.

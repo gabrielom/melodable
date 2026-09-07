@@ -19,10 +19,12 @@ import {
   ACCIDENTAL,
   ACCIDENTAL_EM_CENTRE,
   CLEF_TREBLE,
+  FIGURE_BEAMS,
   GLYPH,
   NOTEHEAD_EM_CENTRE,
   NOTEHEAD_EM_HALF_WIDTH,
   NOTEHEAD_EM_HEIGHT,
+  beamGroups,
   figureFor,
   ledgerSteps,
   degreeLabel,
@@ -92,9 +94,18 @@ const LEDGER_W = 2.6;
 const DOT_R = 2.5;
 const DOT_GAP = 7;
 
-/** A chord shares one stem, which is the only stem this file draws itself. */
+/**
+ * Beamed groups are assembled, not glyphs — the font has no beam.
+ *
+ * The numbers are the catalogue's, scaled off its own 12.5px staff space to
+ * ours: a 1.8px stem, a 4.2px beam per subdivision stacked at 6.4px, and a
+ * half-length stub for a broken group.
+ */
 const STEM_W = 1.8;
 const STEM_LEN = 32;
+const BEAM_H = 4.2;
+const BEAM_GAP = 6.4;
+const BEAM_STUB = 11;
 
 /** Soft highlight behind the note being played right now. */
 const HIGHLIGHT_R = 13;
@@ -464,24 +475,32 @@ export class SheetStaff implements LaneRenderer {
       else columns.push([n]);
     }
 
+    // Beaming runs over columns, not notes: a chord of eighths beams once.
+    const groups = beamGroups(
+      columns.map((c) => ({
+        beat: c[0].inst.beat,
+        figure: c[0].fig.figure,
+        loop: c[0].inst.loopIndex,
+      })),
+      f.beatsPerBar,
+    );
+    const beamed = new Set<number>();
+    for (const g of groups) for (const m of g.members) beamed.add(m);
+
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
 
-    for (const col of columns) {
+    for (let i = 0; i < columns.length; i++) {
+      const col = columns[i];
       if (!col.some((n) => n.visible)) continue;
       for (const n of col) {
         this.highlight(f, n);
         this.ledgers(n);
         this.accidental(n, size);
       }
-      // Every single note is its own glyph, flag and all — which is exactly
-      // what the design's frames draw. Handoff 10 §1.4 described assembling
-      // beamed groups from bare heads, stems and beams because the font has
-      // no beam glyph; handoff 12's sheet frames show two eighths inside one
-      // beat drawn as two flagged glyphs instead, so there is nothing to
-      // assemble and nothing to get wrong. A flag that comes out of the font
-      // cannot detach from its own head.
-      if (col.length === 1) {
+      // A single unbeamed note keeps the font's own glyph, flag and all —
+      // the one case where the stemmed glyph is usable (§1.4.2).
+      if (col.length === 1 && !beamed.has(i)) {
         const n = col[0];
         ctx.fillStyle = n.ink;
         ctx.font = `${size}px ${MUSIC}`;
@@ -490,7 +509,7 @@ export class SheetStaff implements LaneRenderer {
           n.x - this.headHalfWidth(size, n.fig.figure),
           n.y + NOTEHEAD_EM_CENTRE * size,
         );
-      } else {
+      } else if (!beamed.has(i)) {
         // A chord: bare heads, one shared stem. Drawing each note's own glyph
         // would stack a stem per notehead, which is not how a chord is
         // engraved and reads as a smear at this size.
@@ -498,6 +517,14 @@ export class SheetStaff implements LaneRenderer {
         this.stem(col, size);
       }
       for (const n of col) if (n.fig.dotted) this.dot(n);
+    }
+
+    for (const g of groups) {
+      const cols = g.members.map((m) => columns[m]);
+      // Drawn whole if any part of it is on screen; the canvas clips the rest,
+      // which is what keeps a beam entering from the edge intact.
+      if (!cols.some((c) => c.some((n) => n.visible))) continue;
+      this.beamGroup(cols, g.beams, size);
     }
 
     if (f.labelMode === "degree") this.degreeRow(f, columns, bottomLineY);
@@ -586,10 +613,70 @@ export class SheetStaff implements LaneRenderer {
     const ctx = this.ctx;
     const top = Math.min(...col.map((n) => n.y));
     const bottom = Math.max(...col.map((n) => n.y));
-    // The head's own right edge, which is where the font puts the stem too.
-    const x = col[0].x + size * NOTEHEAD_EM_HALF_WIDTH;
     ctx.fillStyle = col[0].ink;
-    ctx.fillRect(x - STEM_W / 2, top - STEM_LEN, STEM_W, bottom - top + STEM_LEN);
+    ctx.fillRect(this.stemX(col, size) - STEM_W / 2, top - STEM_LEN, STEM_W, bottom - top + STEM_LEN);
+  }
+
+  /**
+   * Where a stem attaches to a drawn head — its right edge, and nothing else.
+   *
+   * The head's own half-width, the same measured number `head` draws with.
+   * Two copies of this offset is what came apart: `beamGroup` kept its own
+   * `headHalfWidth(size) * 0.92`, which tracked the *glyph* seating rather
+   * than the head, and when that seating became per-figure the stems in every
+   * beamed group stood 2.3px clear of the heads they belonged to. One
+   * function, read by both callers, is what keeps them touching.
+   */
+  private stemX(col: Placed[], size: number): number {
+    return col[0].x + size * NOTEHEAD_EM_HALF_WIDTH;
+  }
+
+  /**
+   * A beamed run: bare heads, one stem each, and a beam per subdivision
+   * (§1.4.2). The font's stemmed glyphs carry their own flags and can never be
+   * used inside a group, so this is assembled from parts — the notation set
+   * catalogued under handoff 12's frames is the reference for every figure,
+   * and it draws beams even though the trainer staff beside it happens to
+   * hold no group short enough to need one.
+   *
+   * Stems are all up. Noto Music has no stem-down variants, and the frames
+   * accept that — beginner notation often does (§1.4.3).
+   */
+  private beamGroup(columns: Placed[][], beams: number, size: number): void {
+    if (columns.length < 2) return;
+    const ctx = this.ctx;
+
+    // Every stem in a group ends on the same beam line: hang it a full stem
+    // above the highest head in the whole group.
+    const topY = Math.min(...columns.flat().map((n) => n.y));
+    const beamY = topY - STEM_LEN;
+
+    for (const col of columns) {
+      for (const n of col) this.head(n, size);
+      const bottom = Math.max(...col.map((n) => n.y));
+      ctx.fillStyle = col[0].ink;
+      ctx.fillRect(this.stemX(col, size) - STEM_W / 2, beamY, STEM_W, bottom - beamY);
+    }
+
+    const x0 = this.stemX(columns[0], size) - STEM_W / 2;
+    const x1 = this.stemX(columns[columns.length - 1], size) + STEM_W / 2;
+    ctx.fillStyle = columns[0][0].ink;
+    for (let b = 0; b < beams; b++) {
+      ctx.fillRect(x0, beamY + b * BEAM_GAP, x1 - x0, BEAM_H);
+    }
+
+    // A broken group — a dotted eighth against a sixteenth — gets a
+    // half-length stub on the stem carrying the extra beam (§1.4.2).
+    for (let i = 0; i < columns.length; i++) {
+      const extra = FIGURE_BEAMS[columns[i][0].fig.figure] - beams;
+      for (let b = 0; b < extra; b++) {
+        const y = beamY + (beams + b) * BEAM_GAP;
+        const sx = this.stemX(columns[i], size);
+        const back = i > 0;
+        ctx.fillStyle = columns[i][0].ink;
+        ctx.fillRect(back ? sx - BEAM_STUB : sx, y, BEAM_STUB, BEAM_H);
+      }
+    }
   }
 
   /** Absolute beat of an instance, which is what the x axis is ruled in. */

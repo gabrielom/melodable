@@ -1491,42 +1491,29 @@ watch(
   background: var(--track);
   box-shadow: var(--outline);
 }
-/* The key chip is a split control: the label switches degree mode, the caret
-   opens the key list. Two targets in one `.field`, because *whether* to count
-   in a key and *which* key are different questions with one answer between
-   them.
+/* The key chip is the design's read-out with a way into the list added.
+   Handoff 11 §1.5 draws it as a plain `.field`: `gap: 5px`, `0 7px` padding,
+   `KEY` in `--txt3` beside the key in `--txt`. Those two numbers are the whole
+   look, and losing them is what made it read as a different kind of control —
+   `KEY` and the key ran together into `KEYC maj` inside a 2px inset.
 
-   Only the switch half takes the on-state. Inverting the whole chip made the
-   caret look like part of what had been turned on, and it is not — it is a
-   way in to the list either way. The field keeps its own neutral surface, and
-   the half that is a switch behaves like every other `.seg-i` in the bar. */
-.keychip { gap: 0; padding: 2px; overflow: hidden; }
-.keychip-main,
-.keychip-caret {
-  height: 16px;
-  display: inline-flex;
-  align-items: center;
-  border: none;
-  border-radius: var(--r-item);
-  background: none;
-  color: inherit;
-  cursor: pointer;
-}
-.keychip-main { gap: 5px; padding: 0 6px; }
-.keychip-caret { padding: 0 5px; }
+   They were lost to a split control that no longer exists: for one commit the
+   label half switched degree mode and the caret half opened the list, which
+   wanted its own geometry. `NOTE | DEGREE` came back and took that job with
+   it; the markup reverted and this did not.
+
+   One button, so the whole chip inverts when the menu is open — there is no
+   longer a half that means something different from the other. */
+.keychip { gap: 5px; cursor: pointer; border: none; color: inherit; }
 .keychip .k { font-family: var(--mono); font-size: 9.5px; letter-spacing: 1.2px; color: var(--txt3); }
 .keychip b { font-family: var(--mono); font-size: 9.5px; font-weight: 500; color: var(--txt); }
-.keychip-main:hover,
-.keychip-caret:hover { background: var(--hover); }
-.keychip-main.on { background: var(--active); }
-.keychip-main.on:hover { background: var(--active); }
-.keychip-main.on .k { color: var(--active-txt); opacity: 0.65; }
-.keychip-main.on b { color: var(--active-txt); }
-.keychip-caret .caret { font-size: 6.5px; font-style: normal; color: var(--txt3); }
-.keychip-caret[aria-expanded="true"] { background: var(--active); }
-.keychip-caret[aria-expanded="true"] .caret { color: var(--active-txt); }
-.keychip-main:focus-visible,
-.keychip-caret:focus-visible { outline: 1px solid var(--head); outline-offset: -1px; }
+.keychip:hover { background: var(--hover); }
+.keychip.open { background: var(--active); }
+.keychip.open .k { color: var(--active-txt); opacity: 0.65; }
+.keychip.open b,
+.keychip.open .caret { color: var(--active-txt); }
+.keychip .caret { font-size: 6.5px; font-style: normal; color: var(--txt3); opacity: 1; }
+.keychip:focus-visible { outline: 1px solid var(--head); outline-offset: 1px; }
 /* The dropdown hangs off the chip, so the wrapper must not clip it. */
 .keychip-wrap { position: relative; display: inline-flex; }
 /* Fifteen signatures is a long list for a 34px bar, so it scrolls. */

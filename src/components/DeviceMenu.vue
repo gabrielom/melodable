@@ -117,14 +117,19 @@ onUnmounted(() => {
    pressure the device *name* is the first thing that may give, and a higher
    shrink factor is what puts it ahead of the title in that queue. Never below
    46px, which still shows the connection LED and the caret — the two parts
-   that are a control rather than a label. */
+   that are a control rather than a label.
+
+   No `overflow: hidden` here, ever. The menu hangs off this wrapper — it is
+   the positioning parent — so clipping the wrapper to its own 20px box
+   deletes the dropdown outright and the control reads as simply broken. The
+   trigger below clips its own label, which is the only thing that needed
+   clipping. */
 .wrap {
   position: relative;
   display: inline-flex;
   align-items: center;
   flex: 0 2 auto;
   min-width: 46px;
-  overflow: hidden;
 }
 
 /* Face chip: 20px like every other bar control, LED dot showing connection. */

@@ -31,6 +31,16 @@ export const FIGURE_BEATS: Record<Figure, number> = {
   thirtysecond: 0.125,
 };
 
+/** How many beams a figure carries — its flags, when it stands alone. */
+export const FIGURE_BEAMS: Record<Figure, number> = {
+  whole: 0,
+  half: 0,
+  quarter: 0,
+  eighth: 1,
+  sixteenth: 2,
+  thirtysecond: 3,
+};
+
 /**
  * Noto Music, measured from the glyph bounds of U+1D15D at unitsPerEm 1000 —
  * the whole note, which is a bare head with no stem to confuse the bounds.
@@ -483,6 +493,81 @@ export function ledgerSteps(step: number): number[] {
     for (let s = 10; s <= step; s += 2) out.push(s);
   }
   return out;
+}
+
+// ------------------------------------------------------------------ beams
+
+export interface BeamGroup {
+  /** Indices into the array handed in, in time order. */
+  members: number[];
+  /** Beams shared by the whole group — the least any member carries. */
+  beams: number;
+}
+
+/** What `beamGroups` needs to know about a note. */
+export interface BeamCandidate {
+  /**
+   * Beats from the start of the loop — the note's *written* position.
+   *
+   * Exact lesson data, never a position reconstructed from the clock. A beat
+   * recomputed each frame jitters in its last bits, and a note sitting on a
+   * beat line then falls either side of `Math.floor` from one frame to the
+   * next: the group breaks and reforms, and the note is seen to flick between
+   * a beam and a flag.
+   */
+  beat: number;
+  figure: Figure;
+  /** Which repeat of the pattern. A group never spans two. */
+  loop?: number;
+}
+
+/**
+ * Which runs of short notes are beamed together.
+ *
+ * Beamed within a beat, never across one: that is what makes a bar's pulse
+ * readable, and it is the rule beginner notation is engraved by. Anything a
+ * quarter or longer breaks a group, because it carries no beam to share.
+ *
+ * A lone eighth is left out — it keeps its own flag from the font, which is
+ * the one case where the single-note glyph is usable (handoff 10 §1.4.2).
+ */
+export function beamGroups(notes: readonly BeamCandidate[], beatsPerBar: number): BeamGroup[] {
+  const groups: BeamGroup[] = [];
+  let run: number[] = [];
+  let runBeat = -1;
+  let runLoop = -1;
+
+  const flush = () => {
+    if (run.length > 1) {
+      groups.push({
+        members: run,
+        beams: Math.min(...run.map((i) => FIGURE_BEAMS[notes[i].figure])),
+      });
+    }
+    run = [];
+  };
+
+  for (let i = 0; i < notes.length; i++) {
+    const n = notes[i];
+    const beams = FIGURE_BEAMS[n.figure];
+    if (beams === 0) {
+      flush();
+      continue;
+    }
+    // Which beat of the bar this note falls in; a new beat starts a new group,
+    // and so does a new repeat of the pattern.
+    const inBar = ((n.beat % beatsPerBar) + beatsPerBar) % beatsPerBar;
+    const beatIndex = Math.floor(inBar + 1e-9);
+    const loop = n.loop ?? 0;
+    if (run.length > 0 && (beatIndex !== runBeat || loop !== runLoop)) flush();
+    if (run.length === 0) {
+      runBeat = beatIndex;
+      runLoop = loop;
+    }
+    run.push(i);
+  }
+  flush();
+  return groups;
 }
 
 // ------------------------------------------------------------------- zoom

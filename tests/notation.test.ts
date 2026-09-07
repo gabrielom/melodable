@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   BOTTOM_LINE_PITCH,
+  FIGURE_BEAMS,
   FIGURE_BEATS,
   ACCIDENTAL_EM_CENTRE,
+  beamGroups,
+  type BeamCandidate,
   NOTEHEAD_EM_DX,
   NOTEHEAD_EM_HALF_WIDTH,
   noteheadDx,
@@ -543,5 +546,78 @@ describe("tonicLetter and keyName", () => {
     for (let f = -7; f <= 7; f++) expect(keyName(f)).toMatch(/^[A-G][b#]? maj$/);
     expect(keyName(99)).toBe(keyName(7));
     expect(keyName(-99)).toBe(keyName(-7));
+  });
+});
+
+describe("beamGroups", () => {
+  const notes = (spec: Array<[number, BeamCandidate["figure"]]>): BeamCandidate[] =>
+    spec.map(([beat, figure]) => ({ beat, figure }));
+
+  it("beams a pair of eighths inside one beat", () => {
+    const g = beamGroups(notes([[0, "eighth"], [0.5, "eighth"]]), 4);
+    expect(g).toEqual([{ members: [0, 1], beams: 1 }]);
+  });
+
+  it("never beams across a beat line", () => {
+    const g = beamGroups(notes([[0.5, "eighth"], [1, "eighth"]]), 4);
+    // Two lone eighths, each keeping its own flag.
+    expect(g).toEqual([]);
+  });
+
+  it("leaves a single eighth to its own flag", () => {
+    expect(beamGroups(notes([[0, "eighth"]]), 4)).toEqual([]);
+  });
+
+  it("breaks a group on a quarter, which has no beam to share", () => {
+    const g = beamGroups(
+      notes([[0, "eighth"], [0.5, "eighth"], [1, "quarter"], [2, "eighth"], [2.5, "eighth"]]),
+      4,
+    );
+    expect(g).toEqual([
+      { members: [0, 1], beams: 1 },
+      { members: [3, 4], beams: 1 },
+    ]);
+  });
+
+  it("beams four sixteenths with two beams", () => {
+    const g = beamGroups(
+      notes([[0, "sixteenth"], [0.25, "sixteenth"], [0.5, "sixteenth"], [0.75, "sixteenth"]]),
+      4,
+    );
+    expect(g).toEqual([{ members: [0, 1, 2, 3], beams: 2 }]);
+  });
+
+  it("shares only the beams the whole group carries", () => {
+    // A dotted eighth and a sixteenth share one beam; the second's extra beam
+    // is the broken stub handoff 10 §1.4.2 describes, drawn by the renderer.
+    const g = beamGroups(notes([[0, "eighth"], [0.75, "sixteenth"]]), 4);
+    expect(g).toEqual([{ members: [0, 1], beams: 1 }]);
+  });
+
+  it("never beams across a repeat, however the beats line up", () => {
+    // The last eighth of one pass and the first of the next share a beat
+    // index; without the loop they would be beamed into each other.
+    const spanning = [
+      { beat: 3.5, figure: "eighth" as const, loop: 0 },
+      { beat: 3.5, figure: "eighth" as const, loop: 1 },
+    ];
+    expect(beamGroups(spanning, 4)).toEqual([]);
+  });
+
+  it("still beams within one repeat when the loop is given", () => {
+    const g = beamGroups(
+      [
+        { beat: 0, figure: "eighth" as const, loop: 2 },
+        { beat: 0.5, figure: "eighth" as const, loop: 2 },
+      ],
+      4,
+    );
+    expect(g).toEqual([{ members: [0, 1], beams: 1 }]);
+  });
+
+  it("counts beams per figure the way the font's flags do", () => {
+    expect(FIGURE_BEAMS.quarter).toBe(0);
+    expect(FIGURE_BEAMS.eighth).toBe(1);
+    expect(FIGURE_BEAMS.sixteenth).toBe(2);
   });
 });
