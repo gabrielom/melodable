@@ -359,6 +359,20 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
 - **What the font does not give you** (§1.4): the augmentation dot is a
   combining mark with no advance width, so it is drawn; and every stemmed glyph
   is stem-**up**, which the frames accept.
+- **The degree row's drop is derived too, and its clearance is read off the
+  design's own number.** Handoff 11 §1.2 puts the row 35px below the bottom
+  staff line, which is right until the music goes under the staff: A3 puts its
+  notehead *centre* 34px down, a pixel off the row's centre, so the note and
+  the digit naming it are drawn on top of each other. `degreeRowDrop` keeps 35
+  unless the lesson's lowest note would collide, then moves the smallest amount
+  that clears — the same trade `sheetPxPerBeat` makes. **`DEGREE_CLEAR` is
+  3.5px because that is the gap 35 already leaves at C4**, one ledger down and
+  much the commonest note under the staff; deriving it that way means every
+  lesson the design drew stays exactly where it drew them, and the built-in
+  `First Chords` bottoms out on precisely C4 and does not move. Off the
+  *lesson's* lowest note (`hueOrder[0]`), never the lowest on screen: the row
+  has to hold still while the music scrolls, and one that jumped whenever a low
+  note came into view would be worse than one sitting on a notehead.
 - **Sheet's zoom is derived, not fixed.** §1.7 leaves it open: at 60px per beat
   a sixteenth falls 15px after its neighbour while a notehead is 19px wide.
   `sheetPxPerBeat` keeps the roll's five bars unless the lesson's closest pair

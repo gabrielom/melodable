@@ -28,6 +28,7 @@ import {
   figureFor,
   ledgerSteps,
   degreeLabel,
+  degreeRowDrop,
   noteheadDx,
   sheetPxPerBeat,
   signatureMarks,
@@ -127,9 +128,27 @@ const PLAYHEAD_FRAC = 1 / 3;
  * The degree row: 12px bold mono, its centre 35px below the bottom staff line.
  * Both read off the frames — the row's box sits 28px below the line and is
  * 14px tall.
+ *
+ * That is where it goes when the music leaves room for it, and the frames'
+ * music does. A note a few ledger lines down does not: A3 puts its notehead
+ * *centre* 34px below the bottom line, one pixel off the row's own centre, so
+ * the note and the digit naming it are drawn on top of each other. Below C4
+ * the row is pushed clear instead — the same trade `sheetPxPerBeat` makes for
+ * the zoom, which is the design's number unless the material collides with it
+ * and then the smallest move that clears.
  */
 const DEGREE_SIZE = 12;
 const DEGREE_DROP = 35;
+/**
+ * Between the lowest ink the lesson can draw and the top of the digit's box.
+ *
+ * Derived from the handoff's own drop rather than picked: 35 puts the row's
+ * box 29px below the line, and a C4 — one ledger down, much the commonest note
+ * under the staff — bottoms out at 25.5. So the design's number *is* 3.5px of
+ * clearance at C4, and using that leaves every lesson it drew exactly where it
+ * drew them. Only music that goes lower than the design's own moves the row.
+ */
+const DEGREE_CLEAR = 3.5;
 /** Between two digits of one chord. */
 const DEGREE_GAP = 4;
 
@@ -538,7 +557,7 @@ export class SheetStaff implements LaneRenderer {
       this.beamGroup(cols, g.beams, size);
     }
 
-    if (f.labelMode === "degree") this.degreeRow(f, columns, bottomLineY);
+    if (f.labelMode === "degree") this.degreeRow(f, columns, this.degreeRowY(f, bottomLineY));
   }
 
   /**
@@ -590,13 +609,34 @@ export class SheetStaff implements LaneRenderer {
    * centred on the column. The frames do not draw that case; a single note is
    * unaffected, and stacking them was not an option in a one-line row.
    */
-  private degreeRow(f: LaneFrame, cols: Placed[][], bottomLineY: number): void {
+  /**
+   * Where the degree row sits, given how far below the staff this lesson goes.
+   *
+   * Off the *lesson's* lowest note, not the lowest one on screen: the row must
+   * hold still while the music scrolls past it, and a row that jumped whenever
+   * a low note came into view would be worse than one sitting on a notehead.
+   */
+  private degreeRowY(f: LaneFrame, bottomLineY: number): number {
+    const lowest = f.hueOrder[0];
+    if (lowest === undefined) return bottomLineY + DEGREE_DROP;
+    return (
+      bottomLineY +
+      degreeRowDrop(
+        spell(lowest, f.keyFifths).step,
+        HALF_SPACE,
+        DEGREE_DROP,
+        DEGREE_CLEAR,
+        DEGREE_SIZE,
+      )
+    );
+  }
+
+  private degreeRow(f: LaneFrame, cols: Placed[][], y: number): void {
     const ctx = this.ctx;
     ctx.save();
     ctx.font = `700 ${DEGREE_SIZE}px ${MONO}`;
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    const y = bottomLineY + DEGREE_DROP;
     for (const col of cols) {
       if (!col[0].visible) continue;
       // Low note first, so a chord reads bottom-up the way the staff does.

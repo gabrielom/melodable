@@ -570,6 +570,34 @@ export function beamGroups(notes: readonly BeamCandidate[], beatsPerBar: number)
   return groups;
 }
 
+/**
+ * How far below the bottom staff line the degree row sits.
+ *
+ * Handoff 11 §1.2 puts it 35px down, and that is where it goes when the music
+ * leaves room. A note a few ledger lines below the staff does not: A3 puts its
+ * notehead *centre* 34px down, a pixel off the row's own centre, so the note
+ * and the digit naming it are drawn on top of each other.
+ *
+ * Read off the *lesson's* lowest step, never the lowest on screen: the row has
+ * to hold still while the music scrolls past it, and one that jumped whenever
+ * a low note came into view would be worse than one sitting on a notehead.
+ *
+ * Same trade `sheetPxPerBeat` makes — the design's number unless the material
+ * collides with it, then the smallest move that clears.
+ */
+export function degreeRowDrop(
+  lowestStep: number,
+  halfSpace: number,
+  drop: number,
+  clear: number,
+  size: number,
+): number {
+  // The bottom edge of the lowest notehead. Its ledger line sits at the head's
+  // own step or above it, so the head is what governs.
+  const ink = -lowestStep * halfSpace + halfSpace;
+  return Math.max(drop, ink + clear + size / 2);
+}
+
 // ------------------------------------------------------------------- zoom
 
 /**

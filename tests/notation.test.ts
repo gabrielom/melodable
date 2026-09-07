@@ -14,6 +14,7 @@ import {
   NOTEHEAD_EM_HEIGHT,
   accidentalFor,
   degreeOf,
+  degreeRowDrop,
   keyName,
   keySignatureFor,
   tonicLetter,
@@ -619,5 +620,45 @@ describe("beamGroups", () => {
     expect(FIGURE_BEAMS.quarter).toBe(0);
     expect(FIGURE_BEAMS.eighth).toBe(1);
     expect(FIGURE_BEAMS.sixteenth).toBe(2);
+  });
+});
+
+describe("degreeRowDrop", () => {
+  // The renderer's own numbers: half a 17px staff space, the handoff's 35px
+  // drop, its own 3.5px of clearance and a 12px digit.
+  const drop = (step: number) => degreeRowDrop(step, 8.5, 35, 3.5, 12);
+
+  it("leaves the row where the handoff puts it when the music stays clear", () => {
+    // Everything from C4 up, C4 included — its head bottoms out 25.5px down
+    // and the row's box starts at 29. That the two meet exactly is why the
+    // clearance is read off the handoff's drop instead of being chosen.
+    for (const step of [0, 2, 4, 8, -1, -2]) expect(drop(step)).toBe(35);
+  });
+
+  it("pushes the row clear of a note that would sit on its own digit", () => {
+    // A3 at step -4 puts its notehead *centre* 34px down, one pixel off the
+    // row's centre — the collision this exists for.
+    expect(drop(-4)).toBeGreaterThan(35);
+    expect(drop(-3)).toBeGreaterThan(35);
+  });
+
+  it("moves no further than it has to", () => {
+    // The head's bottom edge, the clearance, then half the digit.
+    expect(drop(-4)).toBeCloseTo(4 * 8.5 + 8.5 + 3.5 + 6, 6);
+  });
+
+  it("treats C4 as the boundary the design's own number sets", () => {
+    // One step lower and the row has to give; C4 itself never does.
+    expect(drop(-2)).toBe(35);
+    expect(drop(-3)).toBeGreaterThan(35);
+  });
+
+  it("keeps going down as the music does", () => {
+    const deeper = [-4, -6, -8, -10].map(drop);
+    for (let i = 1; i < deeper.length; i++) expect(deeper[i]).toBeGreaterThan(deeper[i - 1]);
+  });
+
+  it("is never above the handoff's own drop, however high the music sits", () => {
+    for (const step of [10, 14, 20]) expect(drop(step)).toBe(35);
   });
 });
