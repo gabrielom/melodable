@@ -77,7 +77,8 @@ interface SettingsSnapshot {
   volGuide: number;
   volMetronome: number;
   soundOutput: SoundOutput;
-  metronome: boolean;
+  /** Superseded by `volMetronome` being above zero; read so an old store migrates. */
+  metronome?: boolean;
   monitorOpen: boolean;
   padLayout: PadLayout;
   laneOrientation: LaneOrientation;
@@ -99,6 +100,37 @@ function systemTheme(): Theme {
   return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
 }
 
+/**
+ * The guide and click levels a stored snapshot should restore to.
+ *
+ * Pure, so the one thing here that can silently change what a returning player
+ * hears is testable. Two shapes arrive:
+ *
+ * - **After the faders became the switches**, the levels are the whole truth
+ *   and are taken as they are.
+ * - **Before**, each was gated by a flag *on top of* its level. The click had
+ *   a persisted flag, so a stored `false` means silence whatever the fader
+ *   says. The guide's flag was session state that began every run off, so no
+ *   run ever started with it audible however loud the fader was left — and
+ *   restoring that level would start playing the lesson at someone who had
+ *   never once heard it.
+ *
+ * The old shape is recognised by the flag still being there. That costs the
+ * guide level a returning player never actually used, which is the price of
+ * not surprising them with sound.
+ */
+export function busLevelsFrom(
+  saved: Partial<SettingsSnapshot>,
+  guideNow: number,
+  metronomeNow: number,
+): { guide: number; metronome: number } {
+  const level = (v: unknown, fallback: number) => (typeof v === "number" ? v : fallback);
+  const guide = level(saved.volGuide, guideNow);
+  const metronome = level(saved.volMetronome, metronomeNow);
+  if (typeof saved.metronome !== "boolean") return { guide, metronome };
+  return { guide: 0, metronome: saved.metronome ? metronome : 0 };
+}
+
 export const useSettings = defineStore("settings", () => {
   const instrument = ref<InstrumentType>("pads");
   /**
@@ -115,13 +147,21 @@ export const useSettings = defineStore("settings", () => {
    * compete: the click has to cut through while you are learning the pattern
    * and get out of the way once you are not, and the guide part belongs
    * under your own playing rather than level with it.
+   *
+   * **A fader at zero is also the switch.** The bar carried a `GUIDE | CLICK`
+   * pair that did nothing a fader could not: both were audio gates and nothing
+   * else, each with its own bus here, so the pair was a second way to say the
+   * same thing in the one row that is tight for width.
+   *
+   * The guide starts at zero, which is what the pair's own default said. Its
+   * toggle was session state that began every run off, so nobody has ever
+   * heard the guide without asking for it, and a fader defaulting to 0.6 would
+   * have started playing the lesson along with them.
    */
   const volNotes = ref(0.9);
-  const volGuide = ref(0.6);
+  const volGuide = ref(0);
   const volMetronome = ref(0.9);
   const soundOutput = ref<SoundOutput>("internal");
-  /** Metronome click, count-in included. Off when the DAW provides the click. */
-  const metronome = ref(true);
   /** MIDI log, shown as an overlay over the lane. Off by default — it is a
    *  diagnostic, and the design gives the lane the whole stage. */
   const monitorOpen = ref(false);
@@ -179,10 +219,10 @@ export const useSettings = defineStore("settings", () => {
         volMetronome.value = saved.volume;
       }
       if (typeof saved.volNotes === "number") volNotes.value = saved.volNotes;
-      if (typeof saved.volGuide === "number") volGuide.value = saved.volGuide;
-      if (typeof saved.volMetronome === "number") volMetronome.value = saved.volMetronome;
+      const levels = busLevelsFrom(saved, volGuide.value, volMetronome.value);
+      volGuide.value = levels.guide;
+      volMetronome.value = levels.metronome;
       if (saved.soundOutput) soundOutput.value = saved.soundOutput;
-      if (typeof saved.metronome === "boolean") metronome.value = saved.metronome;
       if (typeof saved.monitorOpen === "boolean") monitorOpen.value = saved.monitorOpen;
       if (saved.padLayout) padLayout.value = saved.padLayout;
       if (saved.laneOrientation) laneOrientation.value = saved.laneOrientation;
@@ -212,7 +252,7 @@ export const useSettings = defineStore("settings", () => {
   // Persist on change. Guarded so the async hydrate above doesn't get
   // clobbered by an initial write before it lands.
   watch(
-    [theme, volNotes, volGuide, volMetronome, soundOutput, metronome, monitorOpen, padLayout, laneOrientation, laneMode, colourMode, noteLabel, keyOverride, pianoLow, pianoHigh, latencyMs],
+    [theme, volNotes, volGuide, volMetronome, soundOutput, monitorOpen, padLayout, laneOrientation, laneMode, colourMode, noteLabel, keyOverride, pianoLow, pianoHigh, latencyMs],
     () => {
     if (!hydrated.value) return;
     void persistSet("settings", {
@@ -221,7 +261,6 @@ export const useSettings = defineStore("settings", () => {
       volGuide: volGuide.value,
       volMetronome: volMetronome.value,
       soundOutput: soundOutput.value,
-      metronome: metronome.value,
       monitorOpen: monitorOpen.value,
       padLayout: padLayout.value,
       laneOrientation: laneOrientation.value,
@@ -243,7 +282,6 @@ export const useSettings = defineStore("settings", () => {
     volGuide,
     volMetronome,
     soundOutput,
-    metronome,
     monitorOpen,
     padLayout,
     laneOrientation,

@@ -130,7 +130,6 @@ const {
   runResult,
   bpm,
   bpmLabel,
-  guide,
   accuracy,
   combo,
   bestCombo,
@@ -863,26 +862,6 @@ watch(
           <span class="unit">BPM</span>
         </div>
 
-        <div class="seg" role="group" aria-label="Practice options">
-          <button
-            class="seg-i"
-            :class="{ on: guide }"
-            :aria-pressed="guide"
-            data-tip="Play the target part quietly as a guide"
-            @click="guide = !guide"
-          >
-            GUIDE
-          </button>
-          <button
-            class="seg-i"
-            :class="{ on: settings.metronome }"
-            :aria-pressed="settings.metronome"
-            data-tip="Metronome click, count-in included"
-            @click="settings.metronome = !settings.metronome"
-          >
-            CLICK
-          </button>
-        </div>
       </template>
 
       <!-- Degrees are a statement about a scale, so both of these are piano

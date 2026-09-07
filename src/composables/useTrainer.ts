@@ -78,7 +78,16 @@ export function useTrainer(
   const bpm = ref(lesson.value.bpm);
   /** Link tempos are fractional; the bar shows one decimal, as designed. */
   const bpmLabel = computed(() => Math.round(bpm.value * 10) / 10);
-  const guide = ref(false);
+  /**
+   * Whether the guide part sounds — its fader being up, and nothing else.
+   *
+   * This was a toggle in the bar beside a `CLICK` one, and both were gates on
+   * scheduling audio and nothing more: neither touched the scorer, the frame
+   * or the run. A fader at zero says the same thing, so the pair went and the
+   * mixer took the job. Still gates the *scheduling* rather than letting notes
+   * play into a silent bus — same result, no work done for nothing.
+   */
+  const guide = computed(() => settings.volGuide > 0);
 
   /**
    * True once a run has played to the end, until the next one starts. The bar
@@ -716,7 +725,7 @@ export function useTrainer(
       // replay beats that were skipped while it was off.
       const win = transport.advanceScheduler(now, LOOKAHEAD);
       if (win) {
-        if (settings.metronome) {
+        if (settings.volMetronome > 0) {
           for (const c of transport.clicksIn(win.from, win.to)) {
             audio.click(transport.timeOfAbsBeat(c.absBeat), c.accent);
           }
@@ -921,7 +930,6 @@ export function useTrainer(
     runResult,
     bpm,
     bpmLabel,
-    guide,
     accuracy,
     combo,
     bestCombo,
