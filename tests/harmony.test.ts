@@ -211,3 +211,134 @@ describe("chordsForLoop", () => {
     expect(romanOf(chordsForLoop(notes, 4, 1, 0)[0]!)).not.toBe("I");
   });
 });
+
+/**
+ * The imported clip itself, note for note out of `midiToLesson`.
+ *
+ * This is the case the derivation was actually wrong about, so it is the case
+ * worth pinning: a melody with no chord track and no bass, played rather than
+ * drawn, whose beats sit at 1.99 and 3.98 rather than on the grid.
+ */
+const NO_ONE = mel([
+  [0, 68, 1], [1, 68, 0.5], [1.5, 64, 0.5], [2, 71, 0.5], [2.5, 68, 0.5104],
+  [3, 64, 0.5], [3.51, 59, 0.4896],
+  [4, 63, 0.5], [4.5, 66, 0.5], [5, 68, 0.5], [5.5, 66, 0.5], [5.99, 71, 0.5],
+  [6.49, 68, 0.5208], [6.99, 64, 0.5], [7.5, 63, 0.4792],
+  [8, 61, 0.5], [8.5, 64, 0.5], [9, 68, 0.5], [9.5, 64, 0.5], [9.99, 71, 0.5],
+  [10.5, 68, 0.5104], [11, 64, 0.5], [11.5, 61, 0.4792], [11.98, 57, 0.5],
+  [12.5, 61, 0.5], [13, 64, 0.5], [13.5, 61, 0.5], [14, 69, 0.5],
+  [14.56, 64, 0.5], [15, 61, 0.5104], [15.5, 57, 0.4792],
+]);
+
+/** That clip's second bar on its own, rebased to beat 0. */
+const NO_ONE_BAR2 = mel([
+  [0, 63, 0.5], [0.5, 66, 0.5], [1, 68, 0.5], [1.5, 66, 0.5], [1.99, 71, 0.5],
+  [2.49, 68, 0.5208], [2.99, 64, 0.5], [3.5, 63, 0.4792],
+]);
+
+describe("the imported No One clip", () => {
+  it("reads the progression Hooktheory prints, off the melody alone", () => {
+    const got = chordsForLoop(NO_ONE, 4, 4, 4);
+    expect(got.map((c) => c && romanOf(c))).toEqual(["I", "V(add6)", "vi7", "IV"]);
+    expect(got.map((c) => c && chordName(c, 4))).toEqual(["E", "B6", "C#m7", "A"]);
+  });
+
+  it("counts a note played just before a bar line in the bar it opens", () => {
+    // The A that opens the fourth bar lands 0.02 beats early. Filed under the
+    // third bar it is still weighted as a downbeat — the heaviest a note gets
+    // — and that one note was enough to call that bar IV instead of vi.
+    const early = chordsForLoop(NO_ONE, 4, 4, 4);
+    const shifted = chordsForLoop(
+      NO_ONE.map((n) => (Math.abs(n.beat - 11.98) < 1e-9 ? { ...n, beat: 12 } : n)),
+      4, 4, 4,
+    );
+    expect(early.map((c) => c && romanOf(c))).toEqual(shifted.map((c) => c && romanOf(c)));
+  });
+
+  it("weights a clip that was played the same as one that was drawn", () => {
+    // Every onset snapped to its grid position. An exact on-beat test threw
+    // the metrical weighting away on anything humanised, which is every clip
+    // that came out of a performance.
+    const quantised = NO_ONE.map((n) => ({ ...n, beat: Math.round(n.beat * 2) / 2 }));
+    expect(chordsForLoop(quantised, 4, 4, 4).map((c) => c && romanOf(c))).toEqual(
+      chordsForLoop(NO_ONE, 4, 4, 4).map((c) => c && romanOf(c)),
+    );
+  });
+});
+
+describe("what separates two chords of the same notes", () => {
+  it("prefers the chord songs actually use when the notes cannot decide", () => {
+    // B6 and G#m7 are the same four pitch classes, so no amount of counting
+    // notes can tell them apart. V is common and iii is rare, and that is the
+    // only evidence left.
+    expect(chordsForLoop(NO_ONE_BAR2, 4, 1, 4)[0]!.degree).toBe(5);
+  });
+
+  it("still lets a real iii win, so the prior is a lean and not a verdict", () => {
+    // The same two candidates, with the weight moved onto G#. If the prior
+    // were strong enough to settle this too it would have stopped being
+    // evidence and started being the answer.
+    const onGsharp = mel([[0, 68, 2], [1.5, 75, 0.5], [2, 78, 1], [3, 71, 1]]);
+    expect(chordsForLoop(onGsharp, 4, 1, 4)[0]!.degree).toBe(3);
+  });
+
+  it("never names a chord whose root the bar does not sound", () => {
+    // G# B D# F# in E major has no E in it, so it is not the tonic however
+    // much the prior likes the tonic.
+    const noE = mel([[0, 68, 2], [1.5, 75, 0.5], [2, 78, 1], [3, 71, 1]]);
+    const got = chordsForLoop(noE, 4, 1, 4)[0]!;
+    expect(got.degree).not.toBe(1);
+    expect(got.root).toBe(8); // G#, which the bar does sound
+  });
+
+  it("still answers a bar whose notes root no diatonic triad", () => {
+    // One chromatic note. The root rule would exclude everything, so it lifts.
+    const got = chordsForLoop(mel([[0, 61, 1]]), 4, 1, 0);
+    expect(got[0]).not.toBeNull();
+  });
+});
+
+describe("a bass line states the root", () => {
+  const melody = [[0, 71, 1], [1, 68, 2], [3, 78, 0.5], [3.5, 75, 0.5]] as Array<
+    [number, number, number]
+  >;
+
+  it("takes the root off the bass when the bar has two registers", () => {
+    // The same tune over a held B: an arrangement, not a melody. The upper
+    // voices lean on G#, but the hand underneath is playing B, and that is
+    // what the chord is rooted on.
+    const withBass = mel([[0, 47, 4], ...melody]);
+    expect(chordsForLoop(withBass, 4, 1, 4)[0]!.degree).toBe(5);
+  });
+
+  it("leaves a single-register bar alone, where the lowest note means nothing", () => {
+    // The same notes with no bass: a melody's lowest note is just its lowest
+    // note, and the derivation must not read a root into it.
+    expect(chordsForLoop(mel(melody), 4, 1, 4)[0]!.degree).not.toBe(5);
+  });
+
+  it("gives a passing bass note less of a vote than a held one", () => {
+    // Self-limiting: the bass votes with its own weight, so a root held all
+    // bar decides and one brushed through on the way past does not.
+    const held = mel([[0, 47, 4], ...melody]);
+    const passing = mel([[3.5, 47, 0.25], ...melody]);
+    expect(chordsForLoop(held, 4, 1, 4)[0]!.degree).toBe(5);
+    expect(chordsForLoop(passing, 4, 1, 4)[0]!.degree).not.toBe(5);
+  });
+});
+
+describe("the added-tone threshold", () => {
+  it("names an addition in a bar dense enough to be real music", () => {
+    // The clip's own second bar: eight notes, not the four the threshold was
+    // tuned against. Its G# carries 15.4% of the bar, so at the old fifth it
+    // was dropped and an imported clip never showed an addition at all.
+    expect(chordsForLoop(NO_ONE_BAR2, 4, 1, 4)[0]!.added).toBe(6);
+  });
+
+  it("still refuses a tone that only passes through", () => {
+    const passing = mel([
+      [0, 61, 1], [1, 64, 1], [2, 68, 1], [3, 61, 0.75], [3.75, 71, 0.25],
+    ]);
+    expect(chordsForLoop(passing, 4, 1, 4)[0]!.seventh).toBe(false);
+  });
+});

@@ -263,7 +263,36 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   (`B6`) because that is how the symbol has always been spelled; the second and
   fourth have no such shorthand and keep the word. Same trade as
   `keySignatureFor`, and it fails the same honest
-  way: an ambiguous bar is named confidently and may be named wrong. Shown only
+  way: an ambiguous bar is named confidently and may be named wrong.
+  **Three things beyond note content decide a bar, and each exists because
+  content alone provably cannot.** (1) *A bass line states the root.* A bar
+  spanning `BASS_SPAN` semitones has two registers, and notes within
+  `BASS_BAND` of the bottom vote a second time for the triad rooted on them —
+  self-limiting, since the vote is the bass note's own weight, so a held root
+  decides and a passing one does not. A single-register bar gets no such vote:
+  a melody's lowest note is just its lowest note, which is why the root-weight
+  tie-break exists at all. (2) *A prior on what songs contain.*
+  `FUNCTION_FREQUENCY` is the shape of Hooktheory's major-key corpus and
+  `PRIOR_STRENGTH` is how hard it leans, as a share of the bar. **Its window is
+  narrow and was measured, not chosen**: on the imported No One, bar 2 prefers
+  `iii` over `V` by 18.9% of the bar, so below 0.3 the prior never reaches it
+  and at 0.5 it swamps the notes and every bar collapses toward `I`. 0.35 is
+  the centre. This is the only thing that can separate candidates of identical
+  pitch content, and that case is common: **B6 and G♯m7 are the same four pitch
+  classes**, as are E6 and C♯m7. (3) *A chord's root must sound in its bar* —
+  the guard the prior needs, or a bar of G♯ B D♯ F♯ gets called `I` in E major
+  with no E anywhere in it. If nothing's root sounds the rule lifts, because a
+  bar with notes always gets an answer.
+  **Timing is read with `BEAT_TOLERANCE`, both for the metre and for which bar
+  a note is in.** A clip that was played rather than drawn never lands on the
+  grid — No One's beats sit at 1.99 and 3.98 — and an exact test threw the
+  metrical weighting away on all of it. The two must use the same tolerance:
+  split, a note 0.02 before a bar line was filed in the bar before *and*
+  weighted there as a downbeat, and that one pickup note called No One's third
+  bar `IV` instead of `vi`.
+  `tests/harmony.test.ts` carries the clip itself as a fixture and pins the
+  whole reading — `I`, `V(add6)`, `vi7`, `IV`, which is Hooktheory's, off the
+  melody alone. Shown only
   with degrees on, because the ribbon is the harmonic half of that reading;
   empty means **hide the strip**, never draw empty blocks (§1.5). It **never
   takes a timing colour** — history is a 3px top rule and the current bar a 2px
