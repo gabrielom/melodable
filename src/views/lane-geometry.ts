@@ -30,19 +30,23 @@ import type { LaneFrame } from "@/views/lane-frame";
  * tint whatever the scorer says. A count-in showing greens and ambers would be
  * showing results that do not exist.
  *
- * `mono` (sheet only) drops the *target* half of that to plain ink — the
- * printed page, where a notehead's colour says nothing and its position on the
- * staff says everything. It leaves the *result* half alone, because a rating
- * is not decoration: it is the only thing on screen that answers how the run
- * went, and a trainer that cannot say so is not a trainer.
+ * `colourMode` (sheet only) can silence either system independently
+ * (handoff 12). `targets` keeps the hues and stops judgement recolouring a
+ * played note — it takes its own tint at *full* strength instead, so it still
+ * reads as played without being marked. `mono` drops both to the staff ink,
+ * the printed page, where a notehead's colour says nothing and its position
+ * says everything. Neither changes what the scorer does.
  */
 export function noteInk(
-  f: Pick<LaneFrame, "palette" | "instrument" | "countIn" | "mono">,
+  f: Pick<LaneFrame, "palette" | "instrument" | "countIn" | "colourMode">,
   inst: Pick<NoteInstance, "resolved" | "rating">,
   laneIndex: number,
 ): string {
-  if (inst.resolved && inst.rating && !f.countIn) return f.palette.rating[inst.rating];
-  return f.mono ? f.palette.txt : hueOf(f.palette, f.instrument, laneIndex).dim;
+  if (f.colourMode === "mono") return f.palette.txt;
+  const hue = hueOf(f.palette, f.instrument, laneIndex);
+  const judged = inst.resolved && inst.rating && !f.countIn;
+  if (!judged) return hue.dim;
+  return f.colourMode === "targets" ? hue.full : f.palette.rating[inst.rating!];
 }
 
 // ------------------------------------------------------- wrong notes

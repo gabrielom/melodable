@@ -15,7 +15,7 @@ import type { Palette, Theme } from "@/engine/theme";
 import type { InstrumentType } from "@/engine/types";
 import type { WrongMark } from "@/views/lane-geometry";
 import type { Chord } from "@/engine/harmony";
-import type { LaneOrientation, NoteLabel, PadLayout } from "@/stores/settings";
+import type { ColourMode, LaneOrientation, NoteLabel, PadLayout } from "@/stores/settings";
 
 export interface LaneFrame {
   /** Audio-clock now, seconds. */
@@ -45,11 +45,11 @@ export interface LaneFrame {
   orientation: LaneOrientation;
 
   /**
-   * Engrave in plain ink instead of the instrument hues. Sheet only — the
-   * falling views set it false, since a lane stack with its hues removed has
-   * nothing left to tell one lane from another.
+   * How much colour the staff carries. Sheet only — the falling views always
+   * pass `all`, since a lane stack with its hues removed has nothing left to
+   * tell one lane from another.
    */
-  mono: boolean;
+  colourMode: ColourMode;
 
   /**
    * The lesson's key signature, as its place on the circle of fifths. Sheet

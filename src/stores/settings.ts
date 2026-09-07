@@ -27,14 +27,24 @@ export type LaneOrientation = "vertical" | "horizontal";
 export type LaneMode = "roll" | "sheet";
 
 /**
- * Whether notation is engraved in the instrument hues or in plain ink.
+ * How much colour the staff carries (handoff 12).
+ *
+ * Colour is not a binary here: the trainer paints two systems, the instrument
+ * hues before the playhead and the timing colours after it, and a player
+ * reading music may want to silence them independently.
+ *
+ * - `all` — both, which is the default and the trainer's normal behaviour.
+ * - `targets` — hues stay, judgement stops recolouring a played note; it keeps
+ *   its own tint at full strength instead. Scoring is untouched, so this is
+ *   the state for working a passage without being marked in your peripheral
+ *   vision.
+ * - `mono` — every note in the staff ink, so the page reads as plain notation.
  *
  * Sheet only. The roll has no such choice: a falling lane is a stack of
  * *lanes*, and stripping their hues would leave nothing to tell one from
- * another. A staff already separates its voices by height, so black notes on
- * it are the printed page rather than a loss of information.
+ * another.
  */
-export type SheetInk = "colour" | "mono";
+export type ColourMode = "all" | "targets" | "mono";
 
 /**
  * How a note is named: by letter, or by what it *does* in the key.
@@ -63,7 +73,9 @@ interface SettingsSnapshot {
   padLayout: PadLayout;
   laneOrientation: LaneOrientation;
   laneMode: LaneMode;
-  sheetInk?: SheetInk;
+  /** Superseded by `colourMode`; still read so an old store migrates. */
+  sheetInk?: "colour" | "mono";
+  colourMode?: ColourMode;
   noteLabel?: NoteLabel;
   keyOverride?: number | null;
   pianoLow: number;
@@ -109,9 +121,9 @@ export const useSettings = defineStore("settings", () => {
   const laneOrientation = ref<LaneOrientation>("horizontal");
   /** Roll or notation. The roll is the default — sheet is the specialist view. */
   const laneMode = ref<LaneMode>("roll");
-  /** Sheet's ink. Colour by default: the hues are how the app names a pitch
-   *  everywhere else, so the staff arrives speaking the same language. */
-  const sheetInk = ref<SheetInk>("colour");
+  /** Sheet's colour. Everything on by default: the hues are how the app names
+   *  a pitch everywhere else, so the staff arrives speaking that language. */
+  const colourMode = ref<ColourMode>("all");
   /** Letters by default: degrees are the specialist reading, as sheet is. */
   const noteLabel = ref<NoteLabel>("note");
   /**
@@ -165,7 +177,13 @@ export const useSettings = defineStore("settings", () => {
       if (saved.padLayout) padLayout.value = saved.padLayout;
       if (saved.laneOrientation) laneOrientation.value = saved.laneOrientation;
       if (saved.laneMode === "roll" || saved.laneMode === "sheet") laneMode.value = saved.laneMode;
-      if (saved.sheetInk === "colour" || saved.sheetInk === "mono") sheetInk.value = saved.sheetInk;
+      // The two-state toggle this replaced maps straight onto the ends of
+      // the new three, so an upgrade keeps whatever was chosen.
+      if (saved.sheetInk === "colour") colourMode.value = "all";
+      if (saved.sheetInk === "mono") colourMode.value = "mono";
+      if (saved.colourMode === "all" || saved.colourMode === "targets" || saved.colourMode === "mono") {
+        colourMode.value = saved.colourMode;
+      }
       if (saved.noteLabel === "note" || saved.noteLabel === "degree") noteLabel.value = saved.noteLabel;
       if (typeof saved.keyOverride === "number" || saved.keyOverride === null) {
         keyOverride.value = saved.keyOverride;
@@ -180,7 +198,7 @@ export const useSettings = defineStore("settings", () => {
   // Persist on change. Guarded so the async hydrate above doesn't get
   // clobbered by an initial write before it lands.
   watch(
-    [theme, volNotes, volGuide, volMetronome, soundOutput, metronome, monitorOpen, padLayout, laneOrientation, laneMode, sheetInk, noteLabel, keyOverride, pianoLow, pianoHigh, latencyMs],
+    [theme, volNotes, volGuide, volMetronome, soundOutput, metronome, monitorOpen, padLayout, laneOrientation, laneMode, colourMode, noteLabel, keyOverride, pianoLow, pianoHigh, latencyMs],
     () => {
     if (!hydrated.value) return;
     void persistSet("settings", {
@@ -194,7 +212,7 @@ export const useSettings = defineStore("settings", () => {
       padLayout: padLayout.value,
       laneOrientation: laneOrientation.value,
       laneMode: laneMode.value,
-      sheetInk: sheetInk.value,
+      colourMode: colourMode.value,
       noteLabel: noteLabel.value,
       keyOverride: keyOverride.value,
       pianoLow: pianoLow.value,
@@ -216,7 +234,7 @@ export const useSettings = defineStore("settings", () => {
     padLayout,
     laneOrientation,
     laneMode,
-    sheetInk,
+    colourMode,
     noteLabel,
     keyOverride,
     pianoLow,

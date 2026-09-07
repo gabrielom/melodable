@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { noteInk } from "@/views/lane-geometry";
 import { PALETTE, hueOf } from "@/engine/theme";
 import type { Theme } from "@/engine/theme";
+import type { ColourMode } from "@/stores/settings";
 
 /**
  * `noteInk` is the single place that decides what colour a note wears, and it
@@ -13,11 +14,11 @@ import type { Theme } from "@/engine/theme";
  * exactly where it was.
  */
 
-const frame = (theme: Theme, mono: boolean, countIn = false) => ({
+const frame = (theme: Theme, colourMode: ColourMode, countIn = false) => ({
   palette: PALETTE[theme],
   instrument: "piano" as const,
   countIn,
-  mono,
+  colourMode,
 });
 
 const unplayed = { resolved: false, rating: null } as const;
@@ -28,37 +29,55 @@ describe("noteInk", () => {
     describe(theme, () => {
       it("gives an unplayed note its lane's dimmed hue in colour", () => {
         for (const lane of [0, 1, 2, 7, 13]) {
-          expect(noteInk(frame(theme, false), unplayed, lane)).toBe(
+          expect(noteInk(frame(theme, "all"), unplayed, lane)).toBe(
             hueOf(PALETTE[theme], "piano", lane).dim,
           );
         }
       });
 
       it("gives every unplayed note the same plain ink in mono", () => {
-        const inks = [0, 1, 2, 7, 13].map((lane) => noteInk(frame(theme, true), unplayed, lane));
+        const inks = [0, 1, 2, 7, 13].map((lane) => noteInk(frame(theme, "mono"), unplayed, lane));
         expect(new Set(inks).size).toBe(1);
         expect(inks[0]).toBe(PALETTE[theme].txt);
       });
 
-      it("keeps the rating in mono — a result is not decoration", () => {
-        // The whole point of the view is to say how the run went. Mono takes
-        // the hue that names a pitch, not the colour that names a result.
-        expect(noteInk(frame(theme, true), graded, 3)).toBe(PALETTE[theme].rating.miss);
-        expect(noteInk(frame(theme, false), graded, 3)).toBe(PALETTE[theme].rating.miss);
-      });
-
-      it("judges nothing during the count-in, in either ink", () => {
-        expect(noteInk(frame(theme, true, true), graded, 3)).toBe(PALETTE[theme].txt);
-        expect(noteInk(frame(theme, false, true), graded, 3)).toBe(
-          hueOf(PALETTE[theme], "piano", 3).dim,
+      it("silences the two colour systems independently", () => {
+        const p = PALETTE[theme];
+        // All: judgement recolours a played note, which is the default.
+        expect(noteInk(frame(theme, "all"), graded, 3)).toBe(p.rating.miss);
+        // Targets only: the note keeps its own hue, at full strength so it
+        // still reads as played — it is just no longer being marked.
+        expect(noteInk(frame(theme, "targets"), graded, 3)).toBe(
+          hueOf(p, "piano", 3).full,
         );
+        expect(noteInk(frame(theme, "targets"), unplayed, 3)).toBe(hueOf(p, "piano", 3).dim);
+        // Mono: neither system, so the page is plain notation.
+        expect(noteInk(frame(theme, "mono"), graded, 3)).toBe(p.txt);
       });
 
-      it("never lets a target wear a rating colour, in either ink", () => {
+      it("never lets a rating colour survive into targets-only or mono", () => {
         const ratings = new Set(Object.values(PALETTE[theme].rating));
-        for (const mono of [true, false]) {
+        for (const mode of ["targets", "mono"] as const) {
           for (let lane = 0; lane < 14; lane++) {
-            expect(ratings.has(noteInk(frame(theme, mono), unplayed, lane))).toBe(false);
+            expect(ratings.has(noteInk(frame(theme, mode), graded, lane))).toBe(false);
+          }
+        }
+      });
+
+      it("judges nothing during the count-in, in any state", () => {
+        expect(noteInk(frame(theme, "mono", true), graded, 3)).toBe(PALETTE[theme].txt);
+        for (const mode of ["all", "targets"] as const) {
+          expect(noteInk(frame(theme, mode, true), graded, 3)).toBe(
+            hueOf(PALETTE[theme], "piano", 3).dim,
+          );
+        }
+      });
+
+      it("never lets a target wear a rating colour, in any state", () => {
+        const ratings = new Set(Object.values(PALETTE[theme].rating));
+        for (const mode of ["all", "targets", "mono"] as const) {
+          for (let lane = 0; lane < 14; lane++) {
+            expect(ratings.has(noteInk(frame(theme, mode), unplayed, lane))).toBe(false);
           }
         }
       });

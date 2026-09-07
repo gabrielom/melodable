@@ -546,7 +546,32 @@ function onKeyUp(e: KeyboardEvent) {
  */
 const KEY_CHOICES = Array.from({ length: 15 }, (_, i) => i - 7);
 const keyLabel = computed(() => keyName(keyFifths.value));
-const degreesOn = computed(() => settings.noteLabel === "degree");
+/**
+ * The three colour states, each icon a sample of the palette it produces
+ * (handoff 12 §2) — timing colours for "all", instrument hues for "targets",
+ * the off grey for "mono". Class names rather than literals so the values
+ * live with the rest of the chrome in `styles.css`.
+ */
+const COLOUR_MODES = [
+  {
+    id: "all" as const,
+    label: "All colours",
+    tip: "Pitch hues and timing colours",
+    bars: ["s-perfect", "s-great", "s-early"],
+  },
+  {
+    id: "targets" as const,
+    label: "Targets only",
+    tip: "Pitch hues; a played note is not recoloured by its timing",
+    bars: ["s-blue", "s-violet", "s-off"],
+  },
+  {
+    id: "mono" as const,
+    label: "Mono",
+    tip: "Plain notation, no colour",
+    bars: ["s-off", "s-off", "s-off"],
+  },
+];
 
 function pickKey(fifths: number | null) {
   settings.keyOverride = fifths;
@@ -774,67 +799,71 @@ watch(
         </div>
       </template>
 
-      <!-- The chip *is* the switch (handoff 11 leaves this open; §1.5 gives
-           the KEY chip and §1.1 a separate NOTE | DEG pair, and the two were
-           doing one job). The key is only meaningful in degree mode, so
-           naming the mode by its key is the honest control: press it to read
-           in degrees, press it again to go back to letters. The caret is a
-           second target for the list, because *which* key is a different
-           question from *whether* to count in one — and the key still matters
-           with degrees off, since the staff's signature comes from it. -->
-      <span
-        v-if="view === 'trainer' && sheetAvailable"
-        ref="keyMenuRoot"
-        class="seg-wrap keychip-wrap"
-      >
-        <span class="field keychip">
+      <!-- Degrees are a statement about a scale, so both of these are piano
+           only, and neither means anything without the other: the key names
+           what 1 is, and without it a digit says nothing (handoff 11 §1.5). -->
+      <template v-if="view === 'trainer' && sheetAvailable">
+        <span ref="keyMenuRoot" class="seg-wrap keychip-wrap">
           <button
-            class="keychip-main"
-            :class="{ on: degreesOn }"
-            :aria-pressed="degreesOn"
-            :data-tip="degreesOn ? 'Name notes by letter' : 'Name notes by their degree in the key'"
-            aria-label="Degree mode"
-            @click="settings.noteLabel = degreesOn ? 'note' : 'degree'"
-          >
-            <i class="k">KEY</i>
-            <b>{{ keyLabel }}</b>
-          </button>
-          <button
-            class="keychip-caret"
+            class="field keychip"
+            :class="{ open: openMenu === 'key' }"
             :aria-expanded="openMenu === 'key'"
             :data-tip="settings.keyOverride === null
               ? 'Key, read from the lesson\u2019s own notes'
               : 'Key, set by hand'"
-            aria-label="Choose key"
+            aria-label="Key"
             @click="toggleMenu('key')"
           >
+            <i class="k">KEY</i>
+            <b>{{ keyLabel }}</b>
             <i class="caret">{{ openMenu === "key" ? "\u25b4" : "\u25be" }}</i>
           </button>
+          <div v-if="openMenu === 'key'" class="menu key-menu" role="menu" data-tauri-drag-region="false">
+            <div class="menu-head">KEY</div>
+            <button
+              class="menu-row"
+              :class="{ on: settings.keyOverride === null }"
+              role="menuitemradio"
+              :aria-checked="settings.keyOverride === null"
+              @click="pickKey(null)"
+            >
+              AUTO<i>{{ keyName(keyFifths) }}</i>
+            </button>
+            <button
+              v-for="f in KEY_CHOICES"
+              :key="f"
+              class="menu-row"
+              :class="{ on: settings.keyOverride === f }"
+              role="menuitemradio"
+              :aria-checked="settings.keyOverride === f"
+              @click="pickKey(f)"
+            >
+              {{ keyName(f) }}<i>{{ f === 0 ? "\u2014" : `${Math.abs(f)} ${f > 0 ? "\u266f" : "\u266d"}` }}</i>
+            </button>
+          </div>
         </span>
-        <div v-if="openMenu === 'key'" class="menu key-menu" role="menu" data-tauri-drag-region="false">
-          <div class="menu-head">KEY</div>
+
+        <!-- `DEGREE` in full, not `DEG` (handoff 12 §5): it was the one
+             control in the bar whose meaning was not self-evident. -->
+        <div class="seg" role="group" aria-label="Note naming">
           <button
-            class="menu-row"
-            :class="{ on: settings.keyOverride === null }"
-            role="menuitemradio"
-            :aria-checked="settings.keyOverride === null"
-            @click="pickKey(null)"
+            class="seg-i"
+            :class="{ on: settings.noteLabel === 'note' }"
+            data-tip="Name notes by letter"
+            @click="settings.noteLabel = 'note'"
           >
-            AUTO<i>{{ keyName(keyFifths) }}</i>
+            NOTE
           </button>
           <button
-            v-for="f in KEY_CHOICES"
-            :key="f"
-            class="menu-row"
-            :class="{ on: settings.keyOverride === f }"
-            role="menuitemradio"
-            :aria-checked="settings.keyOverride === f"
-            @click="pickKey(f)"
+            class="seg-i"
+            :class="{ on: settings.noteLabel === 'degree' }"
+            data-tip="Name notes by their degree in the key"
+            @click="settings.noteLabel = 'degree'"
           >
-            {{ keyName(f) }}<i>{{ f === 0 ? "\u2014" : `${Math.abs(f)} ${f > 0 ? "\u266f" : "\u266d"}` }}</i>
+            DEGREE
           </button>
         </div>
-      </span>
+      </template>
 
       <!-- One slot, two pairs. Sheet has no direction to choose — notation has
            no falling form — so rather than sit there dead the slot spends
@@ -867,21 +896,27 @@ watch(
         </button>
       </div>
 
-      <!-- One cell, not a pair (handoff 11 §2). The two colour systems on the
-           staff — instrument hue before the playhead, timing colour after —
-           are a *training* overlay, and a player reading music wants the page
-           rather than the feedback. So this is a thing that is on or off, and
-           a two-cell pair was asking which of two inks rather than whether to
-           ink at all. Same segment chrome as every other, filled when on. -->
+      <!-- Colour is not a binary (handoff 12 §1). The staff paints two
+           systems — the instrument hues before the playhead, the timing
+           colours after — and a player reading music may want to silence
+           them independently. Three cells on the arrow pair's own geometry,
+           each a miniature of the palette its state produces, so the icon is
+           a sample rather than an abstraction. -->
       <div v-if="view === 'trainer' && sheetOn" class="seg" role="group" aria-label="Note colour">
         <button
-          class="seg-i"
-          :class="{ on: settings.sheetInk === 'colour' }"
-          :aria-pressed="settings.sheetInk === 'colour'"
-          data-tip="Colour the noteheads by pitch"
-          @click="settings.sheetInk = settings.sheetInk === 'colour' ? 'mono' : 'colour'"
+          v-for="m in COLOUR_MODES"
+          :key="m.id"
+          class="seg-i swatch"
+          :class="{ on: settings.colourMode === m.id }"
+          role="menuitemradio"
+          :aria-checked="settings.colourMode === m.id"
+          :aria-label="m.label"
+          :data-tip="m.tip"
+          @click="settings.colourMode = m.id"
         >
-          COLOUR
+          <span class="bars">
+            <i v-for="(c, ci) in m.bars" :key="ci" :class="c" />
+          </span>
         </button>
       </div>
 
@@ -1607,6 +1642,26 @@ watch(
   font-size: 9px;
   letter-spacing: 0;
 }
+/* The colour-mode cells: the arrow pair's geometry (20 x 16, 2px gap and
+   padding from `.seg`), holding three 2.5 x 9px bars 1.5px apart — a
+   miniature of the palette that state produces (handoff 12 §2). */
+.swatch { width: 20px; padding: 0; justify-content: center; }
+.bars { display: flex; align-items: center; gap: 1.5px; }
+.bars i { display: block; width: 2.5px; height: 9px; border-radius: 0.5px; }
+.s-perfect { background: var(--rate-perfect); }
+.s-great { background: var(--rate-great); }
+.s-early { background: var(--led1); }
+.s-blue { background: var(--swatch-blue); }
+.s-violet { background: var(--swatch-violet); }
+.s-off { background: var(--swatch-off); }
+/* Selected takes the segment's normal fill *plus* a ring in the home screen's
+   selected-card accent — the first use of that accent inside a trainer
+   control, linking "the thing you picked" across the two screens. A solid
+   accent fill was drawn first and swallowed the amber bar inside the "all
+   colours" icon: the icon's own content collides with it (§3). */
+.swatch.on { background: var(--active); box-shadow: inset 0 0 0 1.5px var(--led1); }
+.swatch.on:hover { background: var(--active); }
+
 .seg-i:hover { background: var(--hover); }
 /* Light inverts on-state to a dark chip rather than lightening it — every
    surface is the same grey, so a lighter fill would read as nothing. */

@@ -403,7 +403,7 @@ export function useTrainer(
       palette: palette.value,
       theme: settings.theme,
       orientation: settings.laneOrientation,
-      mono: sheetOn.value && settings.sheetInk === "mono",
+      colourMode: sheetOn.value ? settings.colourMode : "all",
       // A mark belongs to a run. Stopped, the lane is showing the lesson
       // parked at its first beat — there is nothing being played, so there is
       // nothing to have played wrongly. Gated on the same `pos` that decides

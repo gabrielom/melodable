@@ -32,28 +32,35 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
 - Two themes, `dark` and `light`, swapped by `data-theme` on `<html>` from `settings.theme`. Light is one flat grey, so on-states **invert** to a dark chip and every field needs the `--outline` hairline — a lighter fill reads as nothing.
 - **Two colour languages, and a note wears exactly one.** The **instrument hues** name a lane or a pitch — *what* to hit. The **rating** colours name a result — *how well*. They share no value, so a dimmed target can never be misread as a judgement. `noteInk` (`src/views/lane-geometry.ts`) is the single place that decides, and every renderer goes through it. The switch is `resolved`, not which side of the playhead a note is on: a note sitting on the playhead has no result yet. During the count-in nothing is judged, so everything shows its tint.
 - Rating colors live in the palette: `PALETTE[theme].rating[r]` (`src/engine/theme.ts`). Renderers read that, never a hardcoded rating colour.
-- **Mono ink is sheet's, and it takes only the first of those two languages.**
-  `settings.sheetInk` (`colour` | `mono`) sets `LaneFrame.mono`, and `noteInk`
-  answers `palette.txt` instead of the lane's dim hue — the printed page, where
-  a notehead's colour says nothing and its place on the staff says everything.
-  The **rating half is untouched** — see the `COLOUR` bullet below for why.
-- **One bar slot, two controls.** In roll the slot holds `↓ →` (46px); in
-  sheet it holds a one-cell `COLOUR` toggle (55px), because notation has no
-  falling form and the slot was otherwise sitting there disabled. Handoff 11 §2
-  settled the shape: the staff's two colour systems are a *training* overlay
-  and a player reading music wants the page rather than the feedback, so this
-  is a thing that is on or off. It shipped first as a two-cell pair of drawn
-  noteheads, which was asking *which of two inks* rather than *whether to ink*
-  — that pair is gone, along with the `.ink` class that kept its plain notehead
-  out of the dark accent rule.
-- **`COLOUR` off strips the instrument hues and leaves the ratings**, which is
-  the one place this diverges from handoff 11 §2 — the handoff strips both.
-  Decided with the user, twice: a result is not decoration, it is the only
-  thing on screen that answers how the run went, so a mono staff still turns
-  red where you missed. `tests/note-ink.test.ts` pins both halves in both
-  themes. The falling views never set `mono` — strip a lane stack of its hues
-  and nothing is left to tell one lane from another — which is why the toggle
-  is sheet-only rather than a global preference.
+- **Colour on the staff is three states, not two** (handoff 12).
+  `settings.colourMode` is `all | targets | mono` and sets `LaneFrame.colourMode`;
+  `noteInk` is still the single place that decides. `all` is the trainer's
+  normal behaviour. `targets` keeps the instrument hues and stops judgement
+  recolouring a played note — it takes its **own hue at full strength**
+  instead, so it still reads as played without being marked, which is the
+  state for working a passage without being scored at in your peripheral
+  vision. `mono` drops both to `palette.txt`. **Scoring is untouched in every
+  state**: the score row, the summary and the run history do not know this
+  setting exists. `tests/note-ink.test.ts` pins all three in both themes,
+  including that no rating colour survives into `targets` or `mono`.
+  This supersedes the two-state `sheetInk` and the divergence that went with
+  it — the middle state is what the user actually wanted when they twice asked
+  for mono to keep the ratings, and it gets there without a mono staff that is
+  not mono. The old key still migrates: `colour` → `all`, `mono` → `mono`.
+- **The colour toggle's icon is a sample, not an abstraction** (§2). Three
+  cells on the arrow pair's geometry, each holding three 2.5×9px bars drawn
+  from the palette that state keeps — timing colours for `all`, instrument
+  hues for `targets`, the off grey for `mono`. Selected takes the segment's
+  normal fill **plus a 1.5px ring in `--led1`**, the home screen's
+  selected-card accent, and the first use of that accent inside a trainer
+  control. **Not a solid accent fill** — drawn that way first, the amber
+  background swallowed the amber bar inside the `all` icon (§3). The bar
+  colours live in `styles.css` beside `--led*` rather than in `theme.ts`:
+  they are chrome that samples the palettes, and the grey is a different text
+  token in each theme.
+- **The falling views never leave `all`** — strip a lane stack of its hues and
+  nothing is left to tell one lane from another — which is why the toggle is
+  sheet-only.
 - **A lesson is a finite run, not an endless loop.** The pattern plays
   `lesson.repeats` times (built-ins are 16 bars, 39-55s) and then ends; the run
   is scored as a whole, and clearing one clean run advances the library.
@@ -102,7 +109,7 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   that position, notation having a place for every pitch.
 - **A note can have a length.** `NoteEvent.duration` is in beats; anything under `HOLD_MIN_BEATS` is an ornament and normalised to zero by `lessonTargets`. A held note is judged twice and independently: the onset rating is unchanged and alone decides the colour, and the sustain is measured from the note's *written* onset so a late strike is not charged twice. Overholding is not an error — the fraction clamps at 1, and a hold still open at the written end closes itself, which is also what stops a controller that never sends note-off from scoring every hold as dropped. Combo breaks on a dropped hold, survives a short one. Pads carry no duration on import (a drum has decayed before you could let go), though the renderers support pad holds if a lesson authors them.
 - **Everything lives in the one transport bar**, which is also the macOS titlebar (left padding clears the traffic lights). It is 34px tall with every control 20px, and stays a single row with nothing hidden. No second toolbar row, no in-stage header.
-- **The window floor is what keeps the bar intact**: `minWidth` in `tauri.conf.json` is **1100**, measured as the narrowest width where every trainer control fits at natural size. The binding case is **piano in sheet** (1099px) — `KEY`, `COLOUR` and `ROLL | SHEET` at once; piano in roll needs 1089 and pads only 941, so the longest *pads* title stopped being the constraint at handoff 11. **A plain browser understates the floor** — the device chip reads "NO DEVICE" at 91px rather than its 116px cap, so force the widest label when measuring (`scratchpad/floor11.mjs` does). The bar's 84px left inset is part of the budget too; the frames use 72, and the extra 12 is ours (72 left the ✕ almost touching the zoom button). Below the floor **nothing is pushed out** — handoff 11 §3.2's shrink order takes over: the spacers collapse, then the device name truncates (min 46px, keeping the LED and the caret), then the lesson title (min 36px). The bar's own symptom is silent, so the check is `bar.scrollWidth <= bar.clientWidth`; jsdom has no layout, so that is a browser measurement and not a unit test.
+- **The window floor is what keeps the bar intact**: `minWidth` in `tauri.conf.json` is **1200**, measured as the narrowest width where every trainer control fits at natural size. The binding case is **piano in sheet** (1198px) — `KEY`, `NOTE | DEGREE`, the colour toggle and `ROLL | SHEET` at once; piano in roll needs 1176 and pads only 941, so the longest *pads* title stopped being the constraint at handoff 11. **A plain browser understates the floor** — the device chip reads "NO DEVICE" at 91px rather than its 116px cap, so force the widest label when measuring (`scratchpad/floor11.mjs` does). The bar's 84px left inset is part of the budget too; the frames use 72, and the extra 12 is ours (72 left the ✕ almost touching the zoom button). Below the floor **nothing is pushed out** — handoff 11 §3.2's shrink order takes over: the spacers collapse, then the device name truncates (min 46px, keeping the LED and the caret), then the lesson title (min 36px). Handoff 12 §4 names the next lever if it is ever needed: compress the colour cells from 20px to 14px (−18px) before truncating anything. The bar's own symptom is silent, so the check is `bar.scrollWidth <= bar.clientWidth`; jsdom has no layout, so that is a browser measurement and not a unit test.
 - The bar carries **`data-tauri-drag-region="deep"`**, not the bare attribute. Tauri's shim walks up from the clicked node and stops at the first interactive element, so controls opt out of dragging by themselves; the bare form only catches direct hits on the header, which at this density is gaps and nothing else. Anything non-interactive that hangs off the bar — the dropdowns — needs `="false"` so a click on its own chrome doesn't drag the window. `-webkit-app-region` is Electron-only and does nothing here.
 - Dragging also needs **`core:window:allow-start-dragging`** in `src-tauri/capabilities/default.json`. `core:default` does *not* include it, and the shim swallows the rejection, so the failure is silent and looks like a CSS problem: the window still moves on the click that focuses it (AppKit handles that one) and double-click-zoom still works (`internal-toggle-maximize` *is* in the default set). Don't drop that grant.
 - Keep `-webkit-user-select: none` alongside the unprefixed rule. WKWebView only honours the plain property from Safari 17, and a live text selection beats the drag on the same mousedown.
