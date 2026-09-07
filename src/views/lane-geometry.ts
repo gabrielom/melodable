@@ -30,12 +30,13 @@ import type { LaneFrame } from "@/views/lane-frame";
  * tint whatever the scorer says. A count-in showing greens and ambers would be
  * showing results that do not exist.
  *
- * `colourMode` (sheet only) can silence either system independently
- * (handoff 12). `targets` keeps the hues and stops judgement recolouring a
- * played note — it takes its own tint at *full* strength instead, so it still
- * reads as played without being marked. `mono` drops both to the staff ink,
- * the printed page, where a notehead's colour says nothing and its position
- * says everything. Neither changes what the scorer does.
+ * `colourMode` (sheet only) takes the two systems away one at a time, in that
+ * order (handoff 12, middle state reversed on the user's word). `results`
+ * drops the hues and keeps the judgement: plain ink ahead of the playhead,
+ * timing colours behind it, which is the state to sight-read in — what is
+ * coming reads as notation and nothing else. `mono` drops both, the printed
+ * page, where a notehead's colour says nothing and its position says
+ * everything. Neither changes what the scorer does.
  */
 export function noteInk(
   f: Pick<LaneFrame, "palette" | "instrument" | "countIn" | "colourMode">,
@@ -43,10 +44,13 @@ export function noteInk(
   laneIndex: number,
 ): string {
   if (f.colourMode === "mono") return f.palette.txt;
-  const hue = hueOf(f.palette, f.instrument, laneIndex);
   const judged = inst.resolved && inst.rating && !f.countIn;
-  if (!judged) return hue.dim;
-  return f.colourMode === "targets" ? hue.full : f.palette.rating[inst.rating!];
+  // Unjudged: the target half. `results` has silenced it, so a note still to
+  // be played is plain ink and carries no pitch tint at all.
+  if (!judged) {
+    return f.colourMode === "results" ? f.palette.txt : hueOf(f.palette, f.instrument, laneIndex).dim;
+  }
+  return f.palette.rating[inst.rating!];
 }
 
 // ------------------------------------------------------- wrong notes

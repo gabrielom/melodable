@@ -32,25 +32,37 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
 - Two themes, `dark` and `light`, swapped by `data-theme` on `<html>` from `settings.theme`. Light is one flat grey, so on-states **invert** to a dark chip and every field needs the `--outline` hairline — a lighter fill reads as nothing.
 - **Two colour languages, and a note wears exactly one.** The **instrument hues** name a lane or a pitch — *what* to hit. The **rating** colours name a result — *how well*. They share no value, so a dimmed target can never be misread as a judgement. `noteInk` (`src/views/lane-geometry.ts`) is the single place that decides, and every renderer goes through it. The switch is `resolved`, not which side of the playhead a note is on: a note sitting on the playhead has no result yet. During the count-in nothing is judged, so everything shows its tint.
 - Rating colors live in the palette: `PALETTE[theme].rating[r]` (`src/engine/theme.ts`). Renderers read that, never a hardcoded rating colour.
-- **Colour on the staff is three states, not two** (handoff 12).
-  `settings.colourMode` is `all | targets | mono` and sets `LaneFrame.colourMode`;
-  `noteInk` is still the single place that decides. `all` is the trainer's
-  normal behaviour. `targets` keeps the instrument hues and stops judgement
-  recolouring a played note — it takes its **own hue at full strength**
-  instead, so it still reads as played without being marked, which is the
-  state for working a passage without being scored at in your peripheral
-  vision. `mono` drops both to `palette.txt`. **Scoring is untouched in every
-  state**: the score row, the summary and the run history do not know this
-  setting exists. `tests/note-ink.test.ts` pins all three in both themes,
-  including that no rating colour survives into `targets` or `mono`.
-  This supersedes the two-state `sheetInk` and the divergence that went with
-  it — the middle state is what the user actually wanted when they twice asked
-  for mono to keep the ratings, and it gets there without a mono staff that is
-  not mono. The old key still migrates: `colour` → `all`, `mono` → `mono`.
+- **Colour on the staff is three states, and they take the two systems away
+  one at a time** (handoff 12, middle state reversed). `settings.colourMode` is
+  `all | results | mono` and sets `LaneFrame.colourMode`; `noteInk` is still
+  the single place that decides. `all` is the trainer's normal behaviour, both
+  systems on. `results` drops the **hues** and keeps the **judgement**: plain
+  `palette.txt` ahead of the playhead, timing colours behind it — what is
+  coming reads as notation and nothing else, and how it went still reads at a
+  glance, which is the state to sight-read in. `mono` drops both.
+  **Scoring is untouched in every state**: the score row, the summary and the
+  run history do not know this setting exists. `tests/note-ink.test.ts` pins
+  all three in both themes, including that an unplayed note in `results`
+  carries *no* lane tint in any strength.
+  **The middle state is deliberately the opposite of what §1 describes.** The
+  handoff calls it "targets only" — hues kept, judgement dropped — and it was
+  built that way; the user has now said three times that what they want
+  silenced on a staff is the pitch tint, not the mark. Their sentence is the
+  spec: *"all the notes to the right of the playhead should have no colour,
+  after the playhead they should all have timing colours."* Don't "restore"
+  the handoff's reading without asking. `all` was checked at the same time and
+  is **unchanged** — dimmed hues ahead, timing colours behind.
+  Old keys migrate: `sheetInk: colour` → `all`, `sheetInk: mono` → `mono`, and
+  `colourMode: targets` → `results` (same slot on the toggle).
 - **The colour toggle's icon is a sample, not an abstraction** (§2). Three
   cells on the arrow pair's geometry, each holding three 2.5×9px bars drawn
-  from the palette that state keeps — timing colours for `all`, instrument
-  hues for `targets`, the off grey for `mono`. Selected takes the segment's
+  from the palette that state keeps: timing colours for `all`, the off grey
+  for `mono`, and for `results` **one timing colour then two greys** — read
+  the bars as three notes in time and the playhead sits a third along
+  (`PLAYHEAD_FRAC`), so one bar in three is literally the coloured part of the
+  staff. The handoff's own middle icon (two hues and a grey) went with the
+  middle state's old reading, and `--swatch-blue`/`--swatch-violet` went with
+  it: that state has no hue left to sample. Selected takes the segment's
   normal fill **plus a 1.5px ring in `--led1`**, the home screen's
   selected-card accent, and the first use of that accent inside a trainer
   control. **Not a solid accent fill** — drawn that way first, the amber

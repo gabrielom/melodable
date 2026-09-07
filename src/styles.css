@@ -137,11 +137,11 @@
   --mini-off: #2e2e30;
   /* Held key and lesson-target key share one amber (handoff 02 §22). */
   --key-mark: #f0a129;
-  /* Bars inside the colour-mode icon. Chrome, like `--led*`: they sample the
-     palettes rather than being palette entries, and the grey is a different
-     text token in each theme, so it gets its own name. */
-  --swatch-blue: #3d9fe6;
-  --swatch-violet: #9d5ce8;
+  /* The off bar inside the colour-mode icon. Chrome, like `--led*`: it samples
+     the palette rather than being a palette entry, and it is a different text
+     token in each theme, so it gets its own name. The blue and violet that
+     stood beside it went with the middle state's old reading — that state
+     silences the hues now, so it has no hue to sample. */
   --swatch-off: #98989c;
   /* Overview strip's viewport rectangle — neutral, never the accent. */
   --view-fill: #1b1b1d;
@@ -195,8 +195,6 @@
   --led2: #2b6fae;
   --mini-off: #b6b6b6;
   --key-mark: #a5710d;
-  --swatch-blue: #2b6fae;
-  --swatch-violet: #6b45a8;
   --swatch-off: #74757a;
   --view-fill: #d4d4d4;
   --view-edge: #8f8f8f;

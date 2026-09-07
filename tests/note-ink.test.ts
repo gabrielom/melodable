@@ -9,9 +9,10 @@ import type { ColourMode } from "@/stores/settings";
  * arbitrates between two languages that must never be confused: the instrument
  * hues say *what* to hit, the rating colours say *how well* it went.
  *
- * Sheet's mono ink is a third state, and it belongs to the first language
- * only. These pin that it takes the target half and leaves the result half
- * exactly where it was.
+ * The staff can silence them one at a time, in that order: `results` drops the
+ * hues and keeps the judgement, `mono` drops both. These pin all three in both
+ * themes — including that `results` leaves nothing of the first language on an
+ * unplayed note, which is the whole point of it.
  */
 
 const frame = (theme: Theme, colourMode: ColourMode, countIn = false) => ({
@@ -41,41 +42,54 @@ describe("noteInk", () => {
         expect(inks[0]).toBe(PALETTE[theme].txt);
       });
 
-      it("silences the two colour systems independently", () => {
+      it("takes the two systems away one at a time, in order", () => {
         const p = PALETTE[theme];
-        // All: judgement recolours a played note, which is the default.
+        // All: both. A target wears its hue, a played note its judgement.
+        expect(noteInk(frame(theme, "all"), unplayed, 3)).toBe(hueOf(p, "piano", 3).dim);
         expect(noteInk(frame(theme, "all"), graded, 3)).toBe(p.rating.miss);
-        // Targets only: the note keeps its own hue, at full strength so it
-        // still reads as played — it is just no longer being marked.
-        expect(noteInk(frame(theme, "targets"), graded, 3)).toBe(
-          hueOf(p, "piano", 3).full,
-        );
-        expect(noteInk(frame(theme, "targets"), unplayed, 3)).toBe(hueOf(p, "piano", 3).dim);
-        // Mono: neither system, so the page is plain notation.
+        // Results: the hues go, the judgement stays. Plain ink ahead of the
+        // playhead, timing colours behind it — the state to sight-read in.
+        expect(noteInk(frame(theme, "results"), unplayed, 3)).toBe(p.txt);
+        expect(noteInk(frame(theme, "results"), graded, 3)).toBe(p.rating.miss);
+        // Mono: neither, so the page is plain notation throughout.
+        expect(noteInk(frame(theme, "mono"), unplayed, 3)).toBe(p.txt);
         expect(noteInk(frame(theme, "mono"), graded, 3)).toBe(p.txt);
       });
 
-      it("never lets a rating colour survive into targets-only or mono", () => {
+      it("leaves no pitch hue at all on an unplayed note in results", () => {
+        // The reversal's whole point: what is coming reads as notation and
+        // nothing else, so a target must not carry its lane's tint in any
+        // strength — dim or full.
+        const p = PALETTE[theme];
+        for (let lane = 0; lane < 14; lane++) {
+          const hue = hueOf(p, "piano", lane);
+          const ink = noteInk(frame(theme, "results"), unplayed, lane);
+          expect(ink).toBe(p.txt);
+          expect(ink).not.toBe(hue.dim);
+          expect(ink).not.toBe(hue.full);
+        }
+      });
+
+      it("never lets a rating colour survive into mono", () => {
         const ratings = new Set(Object.values(PALETTE[theme].rating));
-        for (const mode of ["targets", "mono"] as const) {
-          for (let lane = 0; lane < 14; lane++) {
-            expect(ratings.has(noteInk(frame(theme, mode), graded, lane))).toBe(false);
-          }
+        for (let lane = 0; lane < 14; lane++) {
+          expect(ratings.has(noteInk(frame(theme, "mono"), graded, lane))).toBe(false);
         }
       });
 
       it("judges nothing during the count-in, in any state", () => {
-        expect(noteInk(frame(theme, "mono", true), graded, 3)).toBe(PALETTE[theme].txt);
-        for (const mode of ["all", "targets"] as const) {
-          expect(noteInk(frame(theme, mode, true), graded, 3)).toBe(
-            hueOf(PALETTE[theme], "piano", 3).dim,
-          );
+        const p = PALETTE[theme];
+        // Nothing has been played yet, so every state shows its target ink —
+        // which is the hue in `all` and the plain ink in the other two.
+        expect(noteInk(frame(theme, "all", true), graded, 3)).toBe(hueOf(p, "piano", 3).dim);
+        for (const mode of ["results", "mono"] as const) {
+          expect(noteInk(frame(theme, mode, true), graded, 3)).toBe(p.txt);
         }
       });
 
       it("never lets a target wear a rating colour, in any state", () => {
         const ratings = new Set(Object.values(PALETTE[theme].rating));
-        for (const mode of ["all", "targets", "mono"] as const) {
+        for (const mode of ["all", "results", "mono"] as const) {
           for (let lane = 0; lane < 14; lane++) {
             expect(ratings.has(noteInk(frame(theme, mode), unplayed, lane))).toBe(false);
           }

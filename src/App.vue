@@ -547,10 +547,19 @@ function onKeyUp(e: KeyboardEvent) {
 const KEY_CHOICES = Array.from({ length: 15 }, (_, i) => i - 7);
 const keyLabel = computed(() => keyName(keyFifths.value));
 /**
- * The three colour states, each icon a sample of the palette it produces
- * (handoff 12 §2) — timing colours for "all", instrument hues for "targets",
- * the off grey for "mono". Class names rather than literals so the values
- * live with the rest of the chrome in `styles.css`.
+ * The three states, and the icon each one samples (handoff 12 §2).
+ *
+ * Read the three bars as three notes on the staff, left to right as the eye
+ * sees them: the playhead sits a third along (`PLAYHEAD_FRAC`), so the left
+ * bar is a note already played and the right two are still coming. That makes
+ * `results` literally one bar in three — the coloured third is the part of the
+ * staff behind the playhead.
+ *
+ * `all` keeps the handoff's own icon. Only the middle state's meaning changed,
+ * so only its sample does.
+ *
+ * Class names rather than literals, so the values live with the rest of the
+ * chrome in `styles.css`.
  */
 const COLOUR_MODES = [
   {
@@ -560,10 +569,10 @@ const COLOUR_MODES = [
     bars: ["s-perfect", "s-great", "s-early"],
   },
   {
-    id: "targets" as const,
-    label: "Targets only",
-    tip: "Pitch hues; a played note is not recoloured by its timing",
-    bars: ["s-blue", "s-violet", "s-off"],
+    id: "results" as const,
+    label: "Results only",
+    tip: "Plain notes ahead of the playhead; timing colours once played",
+    bars: ["s-perfect", "s-off", "s-off"],
   },
   {
     id: "mono" as const,
@@ -1638,8 +1647,6 @@ watch(
 .s-perfect { background: var(--rate-perfect); }
 .s-great { background: var(--rate-great); }
 .s-early { background: var(--led1); }
-.s-blue { background: var(--swatch-blue); }
-.s-violet { background: var(--swatch-violet); }
 .s-off { background: var(--swatch-off); }
 /* Selected takes the segment's normal fill *plus* a ring in the home screen's
    selected-card accent — the first use of that accent inside a trainer

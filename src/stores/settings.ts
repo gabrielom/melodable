@@ -31,20 +31,29 @@ export type LaneMode = "roll" | "sheet";
  *
  * Colour is not a binary here: the trainer paints two systems, the instrument
  * hues before the playhead and the timing colours after it, and a player
- * reading music may want to silence them independently.
+ * reading music may want to silence them independently. These are the two
+ * systems taken away one at a time, in that order.
  *
  * - `all` — both, which is the default and the trainer's normal behaviour.
- * - `targets` — hues stay, judgement stops recolouring a played note; it keeps
- *   its own tint at full strength instead. Scoring is untouched, so this is
- *   the state for working a passage without being marked in your peripheral
- *   vision.
- * - `mono` — every note in the staff ink, so the page reads as plain notation.
+ * - `results` — the hues go and the judgement stays: **plain staff ink ahead
+ *   of the playhead, timing colours behind it.** What is coming reads as
+ *   notation and nothing else, and how it went still reads at a glance. This
+ *   is the state to sight-read in.
+ * - `mono` — both go, so the page reads as plain notation throughout.
+ *
+ * `results` is the state handoff 12 §1 calls "targets only" and describes the
+ * other way round — hues kept, judgement dropped. It was built that way and is
+ * **deliberately reversed**, on the user's word, given three times: what they
+ * want silenced on a staff is the pitch tint, not the mark. Their sentence is
+ * the spec — "all the notes to the right of the playhead should have no
+ * colour, after the playhead they should all have timing colours". Don't
+ * "restore" the handoff's reading without asking.
  *
  * Sheet only. The roll has no such choice: a falling lane is a stack of
  * *lanes*, and stripping their hues would leave nothing to tell one from
  * another.
  */
-export type ColourMode = "all" | "targets" | "mono";
+export type ColourMode = "all" | "results" | "mono";
 
 /**
  * How a note is named: by letter, or by what it *does* in the key.
@@ -75,7 +84,8 @@ interface SettingsSnapshot {
   laneMode: LaneMode;
   /** Superseded by `colourMode`; still read so an old store migrates. */
   sheetInk?: "colour" | "mono";
-  colourMode?: ColourMode;
+  /** `targets` is the middle state's old name, migrated on read. */
+  colourMode?: ColourMode | "targets";
   noteLabel?: NoteLabel;
   keyOverride?: number | null;
   pianoLow: number;
@@ -181,7 +191,11 @@ export const useSettings = defineStore("settings", () => {
       // the new three, so an upgrade keeps whatever was chosen.
       if (saved.sheetInk === "colour") colourMode.value = "all";
       if (saved.sheetInk === "mono") colourMode.value = "mono";
-      if (saved.colourMode === "all" || saved.colourMode === "targets" || saved.colourMode === "mono") {
+      // `targets` was the middle state before it was reversed. It is the same
+      // slot on the toggle, so a store written under the old name lands on
+      // the middle state rather than silently falling back to the default.
+      if (saved.colourMode === "targets") colourMode.value = "results";
+      if (saved.colourMode === "all" || saved.colourMode === "results" || saved.colourMode === "mono") {
         colourMode.value = saved.colourMode;
       }
       if (saved.noteLabel === "note" || saved.noteLabel === "degree") noteLabel.value = saved.noteLabel;
