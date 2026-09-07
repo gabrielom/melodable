@@ -247,13 +247,23 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   webfont** — `ctx.font` falls back silently and the frame is already painted
   — so `useNotationFont` loads it and the sheet renderer is not built until it
   is in.
-- **What the font does not give you, and what to do instead** (§1.4): the
-  augmentation dot is a combining mark with no advance width, so it is drawn;
-  there is no beam glyph, and the stemmed glyphs carry their own flags, so a
-  beamed group is assembled from bare heads, stems and beams; and every
-  stemmed glyph is stem-**up**, which the frames accept. A **chord shares one
-  stem** — drawing each note's own glyph stacks a stem per head and reads as a
-  smear, which matters because the only piano built-in is called First Chords.
+- **Every single note is one glyph; only a chord is assembled.** Handoff 10
+  §1.4 said to build beamed groups from bare heads, stems and beams because
+  the font has no beam glyph — **that is superseded.** Handoff 12's sheet
+  frames draw two eighths inside one beat as two flagged glyphs, so there is
+  no beaming, nothing to assemble and nothing to detach. The assembly it
+  replaced had exactly that failure: `beamGroup` kept its own copy of the stem
+  offset and was missed when `headHalfWidth` changed, so every stem stood 2.3px
+  clear of its head. A **chord** still shares one stem, because stacking a
+  glyph per notehead stacks a stem per head and reads as a smear.
+- **A bare head is the glyph's head, measured** — `NOTEHEAD_EM_HALF_WIDTH`
+  (`0.1464em`, rasterised at the drawn size) for its radius *and* for where the
+  stem attaches, and `SPACE / 2` for its height. They were fudged multiples of
+  the staff space before, 3% wide and 5% short of the glyph beside them. One
+  number for the head and the stem is what keeps the two touching.
+- **What the font does not give you** (§1.4): the augmentation dot is a
+  combining mark with no advance width, so it is drawn; and every stemmed glyph
+  is stem-**up**, which the frames accept.
 - **Sheet's zoom is derived, not fixed.** §1.7 leaves it open: at 60px per beat
   a sixteenth falls 15px after its neighbour while a notehead is 19px wide.
   `sheetPxPerBeat` keeps the roll's five bars unless the lesson's closest pair

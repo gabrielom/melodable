@@ -5,8 +5,7 @@
  * the note's *shape* — a half note is visibly a half note — and that is the
  * whole reason the mode exists. This module turns a lesson's notes into the
  * pieces an engraver needs: which figure to draw, where on the staff it sits,
- * whether it carries an accidental or ledger lines, and which runs of short
- * notes are beamed together.
+ * and whether it carries an accidental or ledger lines.
  *
  * Pure, per invariant 2. Nothing here knows about canvas, fonts or pixels —
  * positions come out in *diatonic steps*, and the renderer decides what a step
@@ -30,16 +29,6 @@ export const FIGURE_BEATS: Record<Figure, number> = {
   eighth: 0.5,
   sixteenth: 0.25,
   thirtysecond: 0.125,
-};
-
-/** How many beams (or flags) a figure carries. Zero for quarter and longer. */
-export const FIGURE_BEAMS: Record<Figure, number> = {
-  whole: 0,
-  half: 0,
-  quarter: 0,
-  eighth: 1,
-  sixteenth: 2,
-  thirtysecond: 3,
 };
 
 /**
@@ -68,6 +57,19 @@ export const NOTEHEAD_EM_CENTRE = 0.134;
  * contour — which measures `0.1975`, within 0.003em.
  */
 export const NOTEHEAD_EM_DX = { stemmed: 0.2006, whole: 0.257 } as const;
+
+/**
+ * Half a notehead's width, in em — and therefore where its stem attaches.
+ *
+ * Rasterised from the font at the drawn size: a stemmed head spans `0.0519`
+ * to `0.3446em` about a centre of `0.1983`, and the stem sits at that right
+ * edge. So the same number places a bare head in a chord *and* the stem beside
+ * it, which is what keeps the two touching.
+ *
+ * The bare heads have to match the glyph's, because a chord's heads and a
+ * single note's glyph appear side by side on the same staff.
+ */
+export const NOTEHEAD_EM_HALF_WIDTH = 0.1464;
 
 /** That offset for a given figure. */
 export function noteheadDx(figure: Figure): number {
@@ -481,81 +483,6 @@ export function ledgerSteps(step: number): number[] {
     for (let s = 10; s <= step; s += 2) out.push(s);
   }
   return out;
-}
-
-// ------------------------------------------------------------------ beams
-
-export interface BeamGroup {
-  /** Indices into the array handed in, in time order. */
-  members: number[];
-  /** Beams shared by the whole group — the least any member carries. */
-  beams: number;
-}
-
-/** What `beamGroups` needs to know about a note. */
-export interface BeamCandidate {
-  /**
-   * Beats from the start of the loop — the note's *written* position.
-   *
-   * Exact lesson data, never a position reconstructed from the clock. A beat
-   * recomputed each frame jitters in its last bits, and a note sitting on a
-   * beat line then falls either side of `Math.floor` from one frame to the
-   * next: the group breaks and reforms, and the note is seen to flick between
-   * a beam and a flag.
-   */
-  beat: number;
-  figure: Figure;
-  /** Which repeat of the pattern. A group never spans two. */
-  loop?: number;
-}
-
-/**
- * Which runs of short notes are beamed together.
- *
- * Beamed within a beat, never across one: that is what makes a bar's pulse
- * readable, and it is the rule beginner notation is engraved by. Anything a
- * quarter or longer breaks a group, because it carries no beam to share.
- *
- * A lone eighth is left out — it keeps its own flag from the font, which is
- * the one case where the single-note glyph is usable (handoff 10 §1.4.2).
- */
-export function beamGroups(notes: readonly BeamCandidate[], beatsPerBar: number): BeamGroup[] {
-  const groups: BeamGroup[] = [];
-  let run: number[] = [];
-  let runBeat = -1;
-  let runLoop = -1;
-
-  const flush = () => {
-    if (run.length > 1) {
-      groups.push({
-        members: run,
-        beams: Math.min(...run.map((i) => FIGURE_BEAMS[notes[i].figure])),
-      });
-    }
-    run = [];
-  };
-
-  for (let i = 0; i < notes.length; i++) {
-    const n = notes[i];
-    const beams = FIGURE_BEAMS[n.figure];
-    if (beams === 0) {
-      flush();
-      continue;
-    }
-    // Which beat of the bar this note falls in; a new beat starts a new group,
-    // and so does a new repeat of the pattern.
-    const inBar = ((n.beat % beatsPerBar) + beatsPerBar) % beatsPerBar;
-    const beatIndex = Math.floor(inBar + 1e-9);
-    const loop = n.loop ?? 0;
-    if (run.length > 0 && (beatIndex !== runBeat || loop !== runLoop)) flush();
-    if (run.length === 0) {
-      runBeat = beatIndex;
-      runLoop = loop;
-    }
-    run.push(i);
-  }
-  flush();
-  return groups;
 }
 
 // ------------------------------------------------------------------- zoom
