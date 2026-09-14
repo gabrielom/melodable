@@ -38,6 +38,13 @@ export interface OverviewFrame {
    * Drawn as the viewport rectangle. Null when stopped.
    */
   view: VisibleWindow | null;
+  /**
+   * The looping region in run beats, or null when loop mode is off. Drawn
+   * *over* the dots — it is a thing you grab, not a backdrop — and edged in
+   * the home screen's selected-card accent, which is the app's one "this is
+   * the bit you picked" colour.
+   */
+  loop: { from: number; to: number } | null;
   palette: Palette;
   theme: Theme;
 }
@@ -74,6 +81,18 @@ export function rowTop(row: number, rows: number, height: number): number {
   if (rows <= 1) return inset + span / 2;
   return inset + (Math.min(row, rows - 1) / (rows - 1)) * span;
 }
+/**
+ * How near an edge counts as grabbing it rather than the region's body.
+ *
+ * Generous against a 1.5px rule, because this is a 33px strip and the whole
+ * run is squeezed into it: a bar can be a few pixels wide, so an edge aimed at
+ * by eye is easily missed by the pointer. Kept under half the smallest region
+ * a drag can produce so the two handles can never both claim the same pixel.
+ */
+export const LOOP_GRIP = 7;
+/** The region's own rule, drawn over the dots. */
+const LOOP_EDGE_W = 1.5;
+
 /** Downbeat tick ink — the same values the lane's separators use. */
 const TICK_INK = { dark: "#ffffff1f", light: "#00000026" } as const;
 
@@ -98,9 +117,48 @@ export function viewportSpan(
   return to > from ? [from, to] : null;
 }
 
+/** What a pointer would take hold of on the loop region. */
+export type LoopGrab = "from" | "to" | "body" | null;
+
+/**
+ * What a pointer at `x` grabs on a region drawn between `x0` and `x1`.
+ *
+ * The **nearer** edge wins rather than the left one always: squeezed into a
+ * 33px strip a whole run can put a bar in a few pixels, so a short region has
+ * both grips over the same ground, and preferring the left would leave its
+ * right edge unreachable — you could shrink a region and never grow it again.
+ * A tie goes left, so the answer never depends on a rounding.
+ */
+export function loopGrabAt(x: number, x0: number, x1: number, grip: number): LoopGrab {
+  const dFrom = Math.abs(x - x0);
+  const dTo = Math.abs(x - x1);
+  if (Math.min(dFrom, dTo) <= grip) return dTo < dFrom ? "to" : "from";
+  return x > x0 && x < x1 ? "body" : null;
+}
+
 export class Overview {
   private ctx: CanvasRenderingContext2D;
   private dpr = 1;
+  /**
+   * The run's length and the region's pixels, as the last draw had them.
+   *
+   * Recorded rather than recomputed, the same way the lane records its visible
+   * window: a pointer arrives between frames and has to be answered against
+   * the picture the player is actually looking at.
+   */
+  private geom: { run: number; width: number; loop: [number, number] | null } | null = null;
+
+  /** Run beat under a pointer x, or null before the first draw. */
+  beatAt(x: number): number | null {
+    if (!this.geom || this.geom.width <= 0) return null;
+    return (Math.max(0, Math.min(this.geom.width, x)) / this.geom.width) * this.geom.run;
+  }
+
+  /** What a pointer x would grab of the region last drawn. */
+  grabAt(x: number): LoopGrab {
+    const loop = this.geom?.loop;
+    return loop ? loopGrabAt(x, loop[0], loop[1], LOOP_GRIP) : null;
+  }
 
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext("2d")!;
@@ -150,6 +208,11 @@ export class Overview {
       ctx.fillRect(Math.round(xOf(b * bpb)), 0, 1, H);
     }
 
+    const loopPx: [number, number] | null = f.loop
+      ? [Math.round(xOf(f.loop.from)) + 0.5, Math.round(xOf(f.loop.to)) - 0.5]
+      : null;
+    this.geom = { run, width: W, loop: loopPx };
+
     // Viewport rectangle, under the dots: neutral, so it can't be mistaken
     // for the playhead or for a rating.
     if (f.runBeat !== null && f.view) {
@@ -167,7 +230,32 @@ export class Overview {
       }
     }
 
+    // The region's tint goes under the dots, its edges over them. **The dots
+    // are never veiled** — this is a minimap and all of it has to read — so
+    // the stretch outside the loop is left exactly as it is rather than dimmed
+    // to make the loop stand out. The accent does that on its own.
+    if (loopPx && loopPx[1] > loopPx[0]) {
+      ctx.save();
+      ctx.globalAlpha = 0.14;
+      ctx.fillStyle = p.accent;
+      ctx.fillRect(loopPx[0], 0.5, loopPx[1] - loopPx[0], H - 1);
+      ctx.restore();
+    }
+
     this.dots(f, W, H, loop, repeats, xOf);
+
+    if (loopPx) {
+      // Edged in the home screen's selected-card accent: the app already has
+      // one colour for "this is the bit you picked", and this is that.
+      ctx.fillStyle = p.accent;
+      ctx.fillRect(loopPx[0] - LOOP_EDGE_W / 2, 0, LOOP_EDGE_W, H);
+      ctx.fillRect(loopPx[1] - LOOP_EDGE_W / 2, 0, LOOP_EDGE_W, H);
+      // A rule along the top and bottom closes the box, so the two edges read
+      // as one region rather than as a pair of unrelated markers.
+      const w = Math.max(0, loopPx[1] - loopPx[0]);
+      ctx.fillRect(loopPx[0], 0, w, 1);
+      ctx.fillRect(loopPx[0], H - 1, w, 1);
+    }
 
     if (f.runBeat !== null) {
       ctx.fillStyle = p.head;

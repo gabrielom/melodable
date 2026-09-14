@@ -41,8 +41,16 @@ import { SheetStaff } from "@/views/sheet/SheetStaff";
 import { useNotationFont } from "@/composables/useNotationFont";
 import { engraveOnsets, keySignatureFor } from "@/engine/notation";
 import { chordsForLoop, diatonicTriad, hasHarmony } from "@/engine/harmony";
+import {
+  clampRegion,
+  regionAt,
+  regionBeats,
+  regionTargets,
+  runBeatOf,
+  type LoopRegion,
+} from "@/engine/loop-region";
 import type { WrongMark } from "@/views/lane-geometry";
-import { Overview } from "@/views/Overview";
+import { Overview, type LoopGrab } from "@/views/Overview";
 import { normalizeRange } from "@/engine/pitch";
 
 export interface RatingPop {
@@ -50,6 +58,14 @@ export interface RatingPop {
   lane: number;
   rating: Rating;
 }
+
+/**
+ * How long a loop region is when the button is first pressed.
+ *
+ * Eight bars — long enough to be a passage rather than a lick, short enough to
+ * go round often. Only a starting length; the strip is where it is set.
+ */
+const LOOP_BARS = 8;
 
 /** How far ahead (seconds) clicks and guide notes are scheduled. */
 const LOOKAHEAD = 1.0;
@@ -234,7 +250,7 @@ export function useTrainer(
    * the figure off `duration` drew every quaver as a crotchet.
    */
   const noteValues = computed(() =>
-    engraveOnsets(targets.value, loopBeats.value, HOLD_MIN_BEATS),
+    engraveOnsets(patternTargets.value, patternBeats.value, HOLD_MIN_BEATS),
   );
   /**
    * The key the lesson is written in, derived from its own pitches — imported
@@ -268,14 +284,24 @@ export function useTrainer(
     // long a note is, and `lessonTargets` zeroes any length under the hold
     // floor. Reading it from there would make every melody a wash of equal
     // notes, which is exactly what the weighting exists to avoid.
+    const notes = lesson.value.notes.map((n) => ({
+      lane: n.pitch,
+      beat: n.time,
+      duration: n.duration ?? 0,
+    }));
+    // Looping, the ribbon describes the *region*, because that is the pattern
+    // under the playhead. Reading the lesson's chords against a region that
+    // starts anywhere but a pattern boundary would put every block a bar or
+    // two out — the ribbon's own blocks are indexed from the playing pattern's
+    // beat 0, not the lesson's.
+    const r = region.value;
     const found = chordsForLoop(
-      lesson.value.notes.map((n) => ({
-        lane: n.pitch,
-        beat: n.time,
-        duration: n.duration ?? 0,
-      })),
+      r
+        ? regionTargets(notes, loopBeats.value, totalLoops.value, r, lesson.value.beatsPerBar)
+            .targets
+        : notes,
       lesson.value.beatsPerBar,
-      lesson.value.bars,
+      patternBars.value,
       keyFifths.value,
     );
     // A bar named by hand replaces the derived one outright. Derivation from a
@@ -285,18 +311,97 @@ export function useTrainer(
     // chord itself is disputed that reading is not evidence for anything.
     const overrides = chordOverrides.value;
     const named = found.map((c, bar) => {
-      const degree = overrides[bar];
+      const degree = overrides[patternBarToLesson(bar)];
       if (degree === undefined) return c;
       return diatonicTriad(degree, keyFifths.value);
     });
     return hasHarmony(named) ? named : [];
   });
 
-  /** Bars this lesson has had named by hand, for the ribbon to mark. */
-  const chordOverrides = computed(() => chords_.forLesson(lesson.value.id));
+  /**
+   * A bar of the playing pattern, as a bar of the *lesson's* pattern.
+   *
+   * An override is a fact about the material, so it is stored against the
+   * lesson's own bar and has to survive being looked at through a region that
+   * starts anywhere. With loop mode off the two are the same bar.
+   */
+  function patternBarToLesson(bar: number): number {
+    const r = region.value;
+    if (!r) return bar;
+    const bars = Math.max(1, lesson.value.bars);
+    return (r.fromBar + bar) % bars;
+  }
+
+  /** Bars this lesson has had named by hand, keyed by the lesson's own bar. */
+  const lessonOverrides = computed(() => chords_.forLesson(lesson.value.id));
+
+  /**
+   * The same, re-keyed to the bars the ribbon is actually drawing, so a named
+   * bar wears its dot wherever the region happens to start.
+   */
+  const chordOverrides = computed(() => {
+    const src = lessonOverrides.value;
+    if (!region.value) return src;
+    const out: Record<number, number> = {};
+    for (let bar = 0; bar < patternBars.value; bar++) {
+      const degree = src[patternBarToLesson(bar)];
+      if (degree !== undefined) out[bar] = degree;
+    }
+    return out;
+  });
   const totalLoops = computed(() => lessonRepeats(lesson.value));
   /** The whole run in beats — what the overview strip spans. */
   const runBeats = computed(() => totalLoops.value * loopBeats.value);
+  /** The run in bars — what the strip spans and what a region is placed in. */
+  const runBars = computed(() => lesson.value.bars * totalLoops.value);
+
+  /**
+   * Looping a stretch of the run, to drill it.
+   *
+   * **Practice, not a run.** The region repeats until you stop: there is no
+   * end, so no summary, nothing written to history and no clearing a lesson by
+   * looping its easy eight bars. Accuracy and combo still move so you can see
+   * how the pass went; they simply never get totted up into a result.
+   *
+   * Not persisted, and it needs no default position: pressing the button plants
+   * the region at the playhead, so where it goes is decided fresh every time.
+   */
+  const loopOn = ref(false);
+  const loopRegion = ref<LoopRegion>({ fromBar: 0, bars: LOOP_BARS });
+
+  /** The region in force, kept inside the run, or null with loop mode off. */
+  const region = computed(() =>
+    loopOn.value ? clampRegion(loopRegion.value, runBars.value) : null,
+  );
+
+  /**
+   * The region flattened into a pattern of its own, and the map back to the
+   * run's own notes — which is what puts a rating on the right dot of a strip
+   * that is still drawing the whole run.
+   */
+  const regionPattern = computed(() => {
+    const r = region.value;
+    return r
+      ? regionTargets(
+          targets.value,
+          loopBeats.value,
+          totalLoops.value,
+          r,
+          lesson.value.beatsPerBar,
+        )
+      : null;
+  });
+
+  /**
+   * What the transport actually plays: the lesson's pattern, or the region
+   * standing in for one. Everything that describes *the music under the
+   * playhead* reads these — the engraved figures, the chord ribbon, the
+   * scorer. Everything that describes *the whole run* keeps reading the
+   * lesson's own, because the strip still draws all of it.
+   */
+  const patternTargets = computed(() => regionPattern.value?.targets ?? targets.value);
+  const patternBars = computed(() => region.value?.bars ?? lesson.value.bars);
+  const patternBeats = computed(() => patternBars.value * lesson.value.beatsPerBar);
 
   let transport = new Transport({
     bpm: bpm.value,
@@ -491,17 +596,38 @@ export function useTrainer(
       padLanes: lanes.value,
       lowNote: pianoRange.value[0],
       highNote: pianoRange.value[1],
-      loopBeats: transport.loopBeats,
-      totalLoops: transport.totalLoops,
+      // The lesson's own run, never the transport's. Looping, the transport is
+      // playing the region as its pattern and would describe a run eight bars
+      // long that repeats for ever — and the strip's whole job here is to show
+      // where in the *real* run that region sits.
+      loopBeats: loopBeats.value,
+      totalLoops: totalLoops.value,
       beatsPerBar: transport.beatsPerBar,
       runBeat,
       ratings: runRatings,
       // The renderer reports the window it just drew, so the overview's
       // viewport rectangle always matches what is actually on screen.
       view: runBeat === null ? null : (renderer?.visibleBeats() ?? null),
+      loop: region.value
+        ? {
+            from: regionBeats(region.value, lesson.value.beatsPerBar).from,
+            to: regionBeats(region.value, lesson.value.beatsPerBar).to,
+          }
+        : null,
       palette: palette.value,
       theme: settings.theme,
     });
+  }
+
+  /**
+   * The playhead's beat in the *run*, for the strip.
+   *
+   * Looping, the transport counts passes of the region from its own beat 0, so
+   * it has to be put back where it belongs before the strip can mark it.
+   */
+  function runBeatFor(absBeat: number): number {
+    const r = region.value;
+    return r ? runBeatOf(absBeat, r, lesson.value.beatsPerBar) : absBeat;
   }
 
   // ----------------------------------------------------------------- control
@@ -514,13 +640,17 @@ export function useTrainer(
     runResult.value = null;
     runRatings.clear();
     wrongMarks.length = 0;
-    scorer = new Scorer(targets.value);
+    scorer = new Scorer(patternTargets.value);
     advanceTracker.reset();
     transport = new Transport({
       bpm: bpm.value,
-      bars: lesson.value.bars,
+      bars: patternBars.value,
       beatsPerBar: lesson.value.beatsPerBar,
-      totalLoops: totalLoops.value,
+      // A region never ends, so the run never finishes: no summary, nothing
+      // recorded, no lesson cleared by drilling its easy eight bars. That one
+      // value is the whole of "practice, not a run" — `finishRun` is reached
+      // from `pos.finished` and nowhere else.
+      totalLoops: region.value ? Infinity : totalLoops.value,
     });
     const startedAt = audio.now;
     transport.start(startedAt, START_DELAY, startGrid(startedAt));
@@ -558,6 +688,81 @@ export function useTrainer(
   }
 
   /**
+   * The bar of the run under a point on the mini strip, or null before it has
+   * drawn. Off the strip's own recorded geometry, like every other hit test
+   * here — a pointer arrives between frames and has to be answered against the
+   * picture actually on screen.
+   */
+  function stripBarAtPoint(x: number): number | null {
+    const beat = overview?.beatAt(x) ?? null;
+    return beat === null ? null : Math.floor(beat / lesson.value.beatsPerBar);
+  }
+
+  /** What a point on the strip would take hold of, region-wise. */
+  function stripGrabAt(x: number): LoopGrab {
+    return region.value ? (overview?.grabAt(x) ?? null) : null;
+  }
+
+  /**
+   * Where the playhead is in the run right now, wherever it is standing.
+   *
+   * Running, held or parked — the three states the lane can be in, answered as
+   * one beat so the loop button does not have to care which.
+   */
+  function playheadRunBeat(): number {
+    if (playing.value && transport.isPlaying) {
+      const pos = transport.position(audio.now);
+      return pos.countIn ? runBeatFor(0) : runBeatFor(pos.absBeat);
+    }
+    if (held) return runBeatFor(held.pos.absBeat);
+    return region.value ? runBeatFor(0) : 0;
+  }
+
+  /**
+   * Turn looping on or off. On, the region is planted where the playhead is.
+   *
+   * **Restarts the run** when it is playing, count-in and all, rather than
+   * slipping into the loop on the next pass. The region is played as a pattern
+   * of its own by an ordinary transport and scorer — which is what keeps the
+   * timing engine out of this entirely — and swapping the pattern under a
+   * running transport is exactly the surgery that buys. The count-in is also a
+   * fair warning that the music is about to jump somewhere else.
+   */
+  function setLoop(on: boolean): void {
+    if (on === loopOn.value) return;
+    if (on) {
+      loopRegion.value = regionAt(
+        playheadRunBeat(),
+        lesson.value.beatsPerBar,
+        LOOP_BARS,
+        runBars.value,
+      );
+    }
+    loopOn.value = on;
+    restartIfPlaying();
+  }
+
+  /** Move or resize the region. Same restart rule as the toggle. */
+  function setLoopRegion(next: LoopRegion, commit: boolean): void {
+    loopRegion.value = clampRegion(next, runBars.value);
+    if (commit) restartIfPlaying();
+  }
+
+  /**
+   * Re-enter the run under whatever the loop is now.
+   *
+   * Only while playing: stopped, the next Start picks the change up anyway,
+   * and a region dragged about on a held lane should leave the held frame
+   * alone until it is asked to move.
+   */
+  function restartIfPlaying(): void {
+    if (!playing.value) return;
+    stop();
+    held = null;
+    play();
+  }
+
+  /**
    * Drop a held frame and show the lesson parked and ready.
    *
    * Leaving the trainer ends the hold: coming back to a lesson should show
@@ -575,6 +780,9 @@ export function useTrainer(
    */
   function resetForLesson(): void {
     held = null;
+    // A region is placed in *this* run's bars, so it means nothing in another
+    // lesson's. Loop mode goes with it rather than pointing somewhere new.
+    loopOn.value = false;
     runComplete.value = false;
     runResult.value = null;
     runRatings.clear();
@@ -748,7 +956,7 @@ export function useTrainer(
 
   /** Name a bar's chord by hand, or pass null to hand it back to the notes. */
   function setChordOverride(bar: number, degree: number | null): void {
-    chords_.setOverride(lesson.value.id, bar, degree);
+    chords_.setOverride(lesson.value.id, patternBarToLesson(bar), degree);
   }
 
   /** Audio-clock time of a hardware hit, from its midir timestamp. */
@@ -835,7 +1043,7 @@ export function useTrainer(
       if (scorer.sweepHolds(now).length > 0) syncStats();
 
       drawFrame(now, pos);
-      drawOverview(pos.countIn ? null : pos.absBeat);
+      drawOverview(pos.countIn ? null : runBeatFor(pos.absBeat));
 
       // The run is over: grade whatever is left and come to rest.
       if (pos.finished) finishRun();
@@ -846,13 +1054,13 @@ export function useTrainer(
       drawFrame(held.now, held.pos);
       // Never a count-in — `stop` refuses to hold one — so the strip always
       // has a beat to mark.
-      drawOverview(held.pos.absBeat);
+      drawOverview(runBeatFor(held.pos.absBeat));
     } else {
       // Parked one count-in before the run: the strip's rectangle is clamped
       // to the run, so it still covers exactly the slice of it the lane is
       // previewing — which now starts at beat 0 rather than behind it.
       drawFrame(now, null);
-      drawOverview(idleAbsBeat());
+      drawOverview(region.value ? runBeatFor(0) : idleAbsBeat());
     }
 
     raf = requestAnimationFrame(frame);
@@ -931,8 +1139,24 @@ export function useTrainer(
   // -------------------------------------------------------------- feedback
 
   /** Instance ids are `loopIndex:targetIndex`, which the overview keys on. */
+  /**
+   * Record a rating against the note of the *run* it belongs to.
+   *
+   * An instance's id is `pass:index` into whatever pattern is playing. Looping,
+   * that index is into the region's own list, so it is put back through
+   * `sources` to reach the dot the strip is drawing. The pass is dropped on the
+   * way: the strip shows one dot per note of the run, and the latest time
+   * round is what it should be saying about it.
+   */
   function noteTargetIndex(id: string, rating: Rating): void {
-    runRatings.set(id, rating);
+    const map = regionPattern.value;
+    if (!map) {
+      runRatings.set(id, rating);
+      return;
+    }
+    const index = Number(id.slice(id.indexOf(":") + 1));
+    const src = map.sources[index];
+    if (src) runRatings.set(`${src.loopIndex}:${src.index}`, rating);
   }
 
   function syncStats(): void {
@@ -1015,6 +1239,13 @@ export function useTrainer(
     release,
     padAtPoint,
     park,
+    loopOn,
+    region,
+    runBars,
+    setLoop,
+    setLoopRegion,
+    stripBarAtPoint,
+    stripGrabAt,
     chords,
     chordOverrides,
     chordBarAtPoint,

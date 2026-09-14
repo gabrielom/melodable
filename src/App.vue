@@ -155,6 +155,13 @@ const {
   release,
   padAtPoint,
   park,
+  loopOn,
+  region,
+  runBars,
+  setLoop,
+  setLoopRegion,
+  stripBarAtPoint,
+  stripGrabAt,
   chords,
   chordOverrides,
   chordBarAtPoint,
@@ -239,6 +246,90 @@ function onLanePointer(e: PointerEvent) {
     e.preventDefault();
     void triggerPad(pad, 110, "click");
   }
+}
+
+/**
+ * Moving and resizing the loop region on the mini strip.
+ *
+ * The strip is a canvas, so there is nothing to hit-test against but the
+ * geometry the renderer last drew — which is what it records for exactly this.
+ * A grab is one of three things: an edge, which resizes; the body, which
+ * moves; or the ground outside, which does nothing. **Whole bars throughout**:
+ * a region is snapped to the bar as it is dragged rather than on release, so
+ * what you see under the pointer is what you will get.
+ *
+ * Nothing is committed until the pointer is let go. While playing, committing
+ * re-enters the run, and doing that on every pixel of a drag would be
+ * unusable.
+ */
+type StripDrag = {
+  grab: "from" | "to" | "body";
+  /** Bar the pointer went down on, for the body's own offset. */
+  atBar: number;
+  start: { fromBar: number; bars: number };
+};
+const stripDrag = ref<StripDrag | null>(null);
+const loopCursor = ref<"edge" | "body" | null>(null);
+
+/** A pointer event's x within the strip. */
+const stripX = (e: PointerEvent) =>
+  e.clientX - (e.currentTarget as HTMLCanvasElement).getBoundingClientRect().left;
+
+function onStripDown(e: PointerEvent) {
+  if (!loopOn.value || !region.value) return;
+  const el = e.currentTarget as HTMLCanvasElement;
+  const grab = stripGrabAt(stripX(e));
+  const bar = stripBarAtPoint(stripX(e));
+  if (!grab || bar === null) return;
+  e.preventDefault();
+  el.setPointerCapture(e.pointerId);
+  stripDrag.value = { grab, atBar: bar, start: { ...region.value } };
+}
+
+function onStripMove(e: PointerEvent) {
+  const drag = stripDrag.value;
+  if (!drag) {
+    // Not dragging: just say what the pointer is over, so the cursor can.
+    if (!loopOn.value) return;
+    const grab = stripGrabAt(stripX(e));
+    loopCursor.value = grab === "body" ? "body" : grab ? "edge" : null;
+    return;
+  }
+  const raw = stripBarAtPoint(stripX(e));
+  if (raw === null) return;
+  const s = drag.start;
+  if (drag.grab === "body") {
+    // Moving: the length is what you set, so it is kept and the position gives
+    // way at the ends — which is what `clampRegion` does on its own.
+    setLoopRegion({ fromBar: s.fromBar + (raw - drag.atBar), bars: s.bars }, false);
+    return;
+  }
+  // Resizing: the *other* edge is held still, so this one is clamped to the
+  // run here rather than left to `clampRegion` — its rule preserves the length
+  // and slides the region, which for a drag on one edge would haul the far one
+  // along behind it.
+  const bar = Math.max(0, Math.min(raw, runBars.value - 1));
+  if (drag.grab === "from") {
+    const end = s.fromBar + s.bars;
+    const from = Math.min(bar, end - 1);
+    setLoopRegion({ fromBar: from, bars: end - from }, false);
+  } else {
+    setLoopRegion({ fromBar: s.fromBar, bars: Math.max(1, bar + 1 - s.fromBar) }, false);
+  }
+}
+
+function onStripUp(e: PointerEvent) {
+  if (!stripDrag.value) return;
+  const el = e.currentTarget as HTMLCanvasElement;
+  if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+  stripDrag.value = null;
+  // Committed once, at the end: while playing this re-enters the run, and
+  // doing that on every pixel of a drag would be unusable.
+  if (region.value) setLoopRegion({ ...region.value }, true);
+}
+
+function onStripHoverOut() {
+  if (!stripDrag.value) loopCursor.value = null;
 }
 
 /**
@@ -869,6 +960,22 @@ watch(
 
       </template>
 
+      <!-- Drill a passage. Pressing it plants an eight-bar region at the
+           playhead — where you are when you press it is where it starts —
+           and the mini strip is where it is then moved and resized. Its
+           on-state is the amber the home screen rings a chosen card with,
+           which is the same colour the region is edged in. -->
+      <button
+        v-if="view === 'trainer'"
+        class="seg-i solo loop"
+        :class="{ on: loopOn }"
+        :aria-pressed="loopOn"
+        data-tip="Loop a stretch of the run to practise it — drag it on the strip above"
+        @click="setLoop(!loopOn)"
+      >
+        LOOP
+      </button>
+
       <!-- Degrees are a statement about a scale, so both of these are piano
            only, and neither means anything without the other: the key names
            what 1 is, and without it a digit says nothing (handoff 11 §1.5). -->
@@ -1346,7 +1453,16 @@ watch(
       />
 
       <section v-else class="stage">
-        <canvas ref="overviewCanvas" class="overview" />
+        <canvas
+          ref="overviewCanvas"
+          class="overview"
+          :class="{ loopable: loopOn, [`grab-${loopCursor}`]: loopOn && loopCursor !== null }"
+          @pointerdown="onStripDown"
+          @pointermove="onStripMove"
+          @pointerup="onStripUp"
+          @pointercancel="onStripUp"
+          @pointerleave="onStripHoverOut"
+        />
 
         <template v-if="!isPiano">
           <div class="lane-wrap">
@@ -1744,6 +1860,36 @@ watch(
 /* The colour-mode cells: the arrow pair's geometry (20 x 16, 2px gap and
    padding from `.seg`), holding three 2.5 x 9px bars 1.5px apart — a
    miniature of the palette that state produces (handoff 12 §2). */
+/* A `seg-i` standing on its own rather than inside a `.seg` pair, so it has
+   to bring the group's own chrome with it. */
+.solo {
+  height: 20px;
+  flex: none;
+  padding: 0 8px;
+  border-radius: var(--r-field);
+  background: var(--track);
+  box-shadow: var(--outline);
+}
+/* The one control whose on-state is *not* the bar's inverted chip: looping is
+   a region you picked, and the app already has a colour for that — the amber
+   that rings a chosen card on the home screen, and that edges the region on
+   the strip. Reading the two as one thing is the point.
+
+   Named with `.seg-i` so it outranks `.seg-i.on`, which is declared later and
+   would otherwise win the tie on source order alone and give this the ordinary
+   inverted chip. */
+.seg-i.loop.on,
+.seg-i.loop.on:hover {
+  background: var(--led1);
+  color: var(--active-txt);
+  box-shadow: none;
+}
+
+/* The strip only invites a drag while there is a region to drag. */
+.overview.loopable { touch-action: none; }
+.overview.grab-edge { cursor: ew-resize; }
+.overview.grab-body { cursor: grab; }
+
 .swatch { width: 20px; padding: 0; justify-content: center; }
 .bars { display: flex; align-items: center; gap: 1.5px; }
 .bars i { display: block; width: 2.5px; height: 9px; border-radius: 0.5px; }

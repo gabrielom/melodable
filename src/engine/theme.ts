@@ -232,6 +232,14 @@ export interface Palette {
    *  for the playhead or a rating. */
   viewFill: string;
   viewEdge: string;
+  /**
+   * The home screen's selected-card accent, `--led1`.
+   *
+   * The `--led*` chrome accents are deliberately *not* mirrored here — except
+   * this one, which the loop region needs on the overview's canvas, and canvas
+   * cannot read a custom property. Keep it in step with `styles.css`.
+   */
+  accent: string;
 }
 
 const DARK: Palette = {
@@ -256,6 +264,7 @@ const DARK: Palette = {
   miniOff: "#2e2e30",
   viewFill: "#1b1b1d",
   viewEdge: "#4a4a4e",
+  accent: "#f0a129",
 };
 
 const LIGHT: Palette = {
@@ -280,6 +289,7 @@ const LIGHT: Palette = {
   miniOff: "#b6b6b6",
   viewFill: "#d4d4d4",
   viewEdge: "#8f8f8f",
+  accent: "#b1720f",
 };
 
 export const PALETTE: Readonly<Record<Theme, Palette>> = { dark: DARK, light: LIGHT };

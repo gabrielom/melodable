@@ -80,7 +80,7 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   The overview strip spans the whole run, which is what makes its viewport
   rectangle a meaningful slice rather than the entire width.
 - Lane identity is a **hue from the fourteen** (`hueOf`), indexed by the lane's position on screen — not by pad number or pitch, so a lane keeps its colour between lessons. Pads walk the list in order; piano starts on the cool end (blue, violet, bronze, teal) so a chord reads as separate voices. The **dimmed** value is derived, never authored: `mix(hue, field, 0.60)` in dark against `#0d0d0e`, `0.35` in light against `#cccccc`. That reproduces the design's own dimmed column for all fourteen in both themes, and `tests/theme.test.ts` pins it. A lane's strip, its lit mini-grid cell and its unplayed notes are all that same dim tint; full strength means the lane is sounding *now*. This supersedes the old 8-colour LED set, three of which doubled as rating colours.
-- `--led0..2` in `styles.css` are **not** lane identity — they are chrome accents (the device dot, the resume flag, the monitor's source dots) and are deliberately not mirrored in `theme.ts`.
+- `--led0..2` in `styles.css` are **not** lane identity — they are chrome accents (the device dot, the resume flag, the monitor's source dots) and are deliberately not mirrored in `theme.ts`. **One exception**: `--led1` is mirrored as `palette.accent`, because the loop region is edged in it on the overview's canvas and canvas cannot read a custom property. Keep the two in step like every other token.
 - Respect `prefers-reduced-motion`; keep controls keyboard-focusable.
 - **A strike that hits nothing is a wrong note, and it is charged.** One rule
   covers both cases: a lane the lesson never asks for has no targets at all,
@@ -101,6 +101,49 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   worth knowing: in a lane whose notes are closer together than twice the
   grace, no strike can ever be wrong, which is right — "completely out of time"
   has to mean completely.
+- **LOOP is practice, and a region is played as a pattern of its own.**
+  Pressing it plants an eight-bar region (`LOOP_BARS`) at the playhead — where
+  you are when you press it is where it starts, which is why it needs no
+  default position and is not persisted — and the mini strip is where it is
+  then moved and resized. **It never ends**: `play` gives the transport
+  `totalLoops: Infinity`, so `pos.finished` never comes true, so `finishRun` is
+  never reached, so there is no summary, nothing written to history and no
+  clearing a lesson by drilling its easy eight bars. That one value is the
+  whole of "practice, not a run" — don't add a second gate for it.
+  **The timing engine learns nothing about this.** `engine/loop-region.ts`
+  flattens the region into a pattern rebased to beat 0 and hands it to an
+  ordinary `Transport` and `Scorer`; nothing in either has to run backwards,
+  and none of the scheduling, sweeping or pruning — all of which assume a
+  playhead that only moves forward — is reconsidered. What that buys is paid
+  for in translation: the strip still draws the **whole run**, so it keeps the
+  lesson's own `loopBeats`/`totalLoops` (never the transport's, which would
+  describe an eight-bar run repeating for ever), maps the playhead back with
+  `runBeatOf`, and puts each rating on the run's own note through the
+  `sources` list `regionTargets` returns beside its targets.
+  **Toggling it, or letting go of a drag, restarts the run** while playing —
+  count-in and all. Swapping the pattern under a running transport is exactly
+  the surgery the derived-pattern approach avoids, and the count-in is fair
+  warning that the music is about to jump. A drag commits once, on pointer-up;
+  committing on every pixel would be unusable.
+  **The two clamp rules differ on purpose.** Moving keeps the length and lets
+  the position give way at the ends (`clampRegion`) — a length set by hand is a
+  decision, a position out of room is only a limit. Resizing clamps the
+  *dragged edge* to the run in the handler instead, because `clampRegion`'s
+  rule would haul the far edge along behind it. Whole bars throughout.
+  Loop mode drops on a lesson change: a region is placed in *this* run's bars
+  and means nothing in another's. The ribbon and the chord overrides are
+  region-aware — the ribbon describes the region, since that is the pattern
+  under the playhead, and an override is still stored against the *lesson's*
+  bar (`patternBarToLesson`) so it survives being looked at through a region
+  starting anywhere.
+  **The region is edged in `palette.accent`**, which is `--led1`, the amber the
+  home screen rings a chosen card with — and the LOOP button's on-state is the
+  same amber rather than the bar's usual inverted chip, so the control and the
+  thing it made read as one. That on-state needs `.seg-i.loop.on` to outrank
+  `.seg-i.on`, which is declared later and would otherwise win on source order.
+  The region's tint goes *under* the dots and the strip outside it is **not
+  dimmed** — the dots are never veiled, this is a minimap and all of it has to
+  read.
 - **Stop holds the run's last frame; Start is what goes back to the top.**
   Three states, not two: running, **held**, and parked. Stopping part-way
   freezes the lane exactly where it was — played notes in their rating
@@ -148,7 +191,7 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   that position, notation having a place for every pitch.
 - **A note can have a length.** `NoteEvent.duration` is in beats; anything under `HOLD_MIN_BEATS` is an ornament and normalised to zero by `lessonTargets`. A held note is judged twice and independently: the onset rating is unchanged and alone decides the colour, and the sustain is measured from the note's *written* onset so a late strike is not charged twice. Overholding is not an error — the fraction clamps at 1, and a hold still open at the written end closes itself, which is also what stops a controller that never sends note-off from scoring every hold as dropped. Combo breaks on a dropped hold, survives a short one. Pads carry no duration on import (a drum has decayed before you could let go), though the renderers support pad holds if a lesson authors them.
 - **Everything lives in the one transport bar**, which is also the macOS titlebar (left padding clears the traffic lights). It is 34px tall with every control 20px, and stays a single row with nothing hidden. No second toolbar row, no in-stage header.
-- **The window floor is what keeps the bar intact**: `minWidth` in `tauri.conf.json` is **1000**, measured as the narrowest width where every control fits at natural size — **both bars**, taking the larger. The binding case is **piano in sheet** (988px) — `KEY`, `NOTE | DEGREE`, the colour toggle and `ROLL | SHEET` at once; piano in roll needs 966, pads 715, and the home bar only 596, so the longest *pads* title stopped being the constraint at handoff 11. **A plain browser understates the floor** — the device chip reads "NO DEVICE" at 91px rather than its 116px cap, and `linkAvailable` is false so the Link toggle is absent, so force the widest label when measuring (`scratchpad/floor13.mjs` does). Both now bite on the *home* bar only, which is 500px clear of the floor, so neither can decide it any more. The bar's 84px left inset is part of the budget too; the frames use 72, and the extra 12 is ours (72 left the ✕ almost touching the zoom button). Below the floor **nothing is pushed out** — handoff 11 §3.2's shrink order takes over: the spacers collapse, then the lesson title truncates (min 36px). The device name was the step between them (min 46px, keeping the LED and the caret) and still is, on the home bar, which never gets near the floor. It rose 16px when the `KEY` chip got the design's own `gap: 5px` / `0 7px` back (67.7 → 83.7px) — that spacing is the chip, so the width was paid rather than shaved — and then fell 123px when the device chip became home-only and another 103px when `GUIDE | CLICK` went. Handoff 12 §4 names the next lever if it is ever needed: compress the colour cells from 20px to 14px (−18px) before truncating anything. The bar's own symptom is silent, so the check is `bar.scrollWidth <= bar.clientWidth`; jsdom has no layout, so that is a browser measurement and not a unit test.
+- **The window floor is what keeps the bar intact**: `minWidth` in `tauri.conf.json` is **1050**, measured as the narrowest width where every control fits at natural size — **both bars**, taking the larger. The binding case is **piano in sheet** (1036px) — `KEY`, `NOTE | DEGREE`, the colour toggle and `ROLL | SHEET` at once; piano in roll needs 1014, pads 763, and the home bar only 596, so the longest *pads* title stopped being the constraint at handoff 11. **A plain browser understates the floor** — the device chip reads "NO DEVICE" at 91px rather than its 116px cap, and `linkAvailable` is false so the Link toggle is absent, so force the widest label when measuring (`scratchpad/floor13.mjs` does). Both now bite on the *home* bar only, which is 500px clear of the floor, so neither can decide it any more. The bar's 84px left inset is part of the budget too; the frames use 72, and the extra 12 is ours (72 left the ✕ almost touching the zoom button). Below the floor **nothing is pushed out** — handoff 11 §3.2's shrink order takes over: the spacers collapse, then the lesson title truncates (min 36px). The device name was the step between them (min 46px, keeping the LED and the caret) and still is, on the home bar, which never gets near the floor. It rose 16px when the `KEY` chip got the design's own `gap: 5px` / `0 7px` back (67.7 → 83.7px) — that spacing is the chip, so the width was paid rather than shaved — and then fell 123px when the device chip became home-only and another 103px when `GUIDE | CLICK` went, then rose 48px for `LOOP`. Handoff 12 §4 names the next lever if it is ever needed: compress the colour cells from 20px to 14px (−18px) before truncating anything. The bar's own symptom is silent, so the check is `bar.scrollWidth <= bar.clientWidth`; jsdom has no layout, so that is a browser measurement and not a unit test.
 - The bar carries **`data-tauri-drag-region="deep"`**, not the bare attribute. Tauri's shim walks up from the clicked node and stops at the first interactive element, so controls opt out of dragging by themselves; the bare form only catches direct hits on the header, which at this density is gaps and nothing else. Anything non-interactive that hangs off the bar — the dropdowns — needs `="false"` so a click on its own chrome doesn't drag the window. `-webkit-app-region` is Electron-only and does nothing here.
 - Dragging also needs **`core:window:allow-start-dragging`** in `src-tauri/capabilities/default.json`. `core:default` does *not* include it, and the shim swallows the rejection, so the failure is silent and looks like a CSS problem: the window still moves on the click that focuses it (AppKit handles that one) and double-click-zoom still works (`internal-toggle-maximize` *is* in the default set). Don't drop that grant.
 - Keep `-webkit-user-select: none` alongside the unprefixed rule. WKWebView only honours the plain property from Safari 17, and a live text selection beats the drag on the same mousedown.
