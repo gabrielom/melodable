@@ -50,6 +50,10 @@ function openLesson(index: number) {
 
 function goHome() {
   if (playing.value) stop();
+  // Stopping holds the run's last frame on the lane; leaving ends that hold,
+  // so re-opening a lesson shows what you are about to play rather than where
+  // you left off last sitting.
+  park();
   view.value = "home";
 }
 
@@ -150,6 +154,7 @@ const {
   strike,
   release,
   padAtPoint,
+  park,
   chords,
   chordOverrides,
   chordBarAtPoint,

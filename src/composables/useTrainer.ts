@@ -14,7 +14,13 @@ import { useHistory } from "@/stores/history";
 import { useChords } from "@/stores/chords";
 import type { HoldResult, LinkState, Rating } from "@/engine/types";
 import { HOLD_MIN_BEATS } from "@/engine/types";
-import { Transport, phaseDelta, START_DELAY, type StartGrid } from "@/engine/transport";
+import {
+  Transport,
+  phaseDelta,
+  START_DELAY,
+  type StartGrid,
+  type TransportPosition,
+} from "@/engine/transport";
 import { PALETTE } from "@/engine/theme";
 import {
   Scorer,
@@ -372,6 +378,24 @@ export function useTrainer(
     -transport.countInBeats - START_DELAY / transport.secPerBeat;
 
   /**
+   * The frame a stopped run is held on, or null when the lane is parked.
+   *
+   * Stopping pauses the picture where it is; **Start** is what returns to the
+   * top of the exercise, count-in and all. So there are three states here, not
+   * two: running, held, and parked — and the middle one is a stopped transport
+   * that must still draw a moving run's last frame.
+   *
+   * The clock is stored with the position because every note's place on screen
+   * derives from `now`: an instance carries an absolute audio time, and the
+   * renderers draw it at `(inst.time - f.now) / secPerBeat` beats from the
+   * playhead. Draw a held frame against the live clock and it scrolls away
+   * exactly as if nothing had been stopped — which is the same trap the
+   * wrong-note dots fell into, `now` advancing whether the transport does or
+   * not.
+   */
+  let held: { now: number; pos: TransportPosition } | null = null;
+
+  /**
    * The idle preview's instances, rebuilt only when the lesson, the run length
    * or the lane's window actually changes. The list is stable and only the
    * times are rewritten each frame, so sitting on the lesson screen does not
@@ -484,6 +508,8 @@ export function useTrainer(
 
   /** Start a run. The caller must have initialized audio (user gesture). */
   function play(): void {
+    // Start always returns to the top of the exercise, whatever was held.
+    held = null;
     runComplete.value = false;
     runResult.value = null;
     runRatings.clear();
@@ -507,12 +533,39 @@ export function useTrainer(
   }
 
   function stop(): void {
+    // Read the position *before* stopping: a stopped transport reports beat 0,
+    // which is the one answer this must not get.
+    //
+    // Nothing is held out of a count-in. It runs *before* the exercise, so
+    // there is no place on the timeline to pause at — and a frozen countdown
+    // sits there mid-ring still reading ESC TO STOP, which is an instruction
+    // for a run that is no longer going. Parking is the honest picture there,
+    // and it is what the lane already showed a moment earlier.
+    const at = audio.now;
+    const pos = playing.value && transport.isPlaying ? transport.position(at) : null;
+    held = pos && !pos.countIn ? { now: at, pos } : null;
     transport.stop();
     playing.value = false;
-    wrongMarks.length = 0;
+    // The dots are **not** cleared here. They belong to the run, and the run
+    // is being held rather than thrown away — so they stay for as long as the
+    // frame they were struck in does. What keeps them off a parked lane is the
+    // gate in `drawFrame`, which is the mechanism and always was; clearing at
+    // each stop path is what shipped first and what missed this one.
+    //
     // The click and the guide are queued ahead of the playhead; without this
     // they keep sounding for a beat or two after the transport has stopped.
     audio.cancelScheduled("metronome", "guide");
+  }
+
+  /**
+   * Drop a held frame and show the lesson parked and ready.
+   *
+   * Leaving the trainer ends the hold: coming back to a lesson should show
+   * what you are about to play, not a half-played lane from the last sitting.
+   * `play` and a lesson change do the same thing on their own way there.
+   */
+  function park(): void {
+    held = null;
   }
 
   /**
@@ -521,6 +574,7 @@ export function useTrainer(
    * lanes, and HUD all reflect the new lesson before the next Play.
    */
   function resetForLesson(): void {
+    held = null;
     runComplete.value = false;
     runResult.value = null;
     runRatings.clear();
@@ -785,6 +839,14 @@ export function useTrainer(
 
       // The run is over: grade whatever is left and come to rest.
       if (pos.finished) finishRun();
+    } else if (held) {
+      // Stopped part-way: the last frame of the run, drawn from the clock it
+      // was stopped on rather than the live one, so it holds still instead of
+      // scrolling on without a transport behind it.
+      drawFrame(held.now, held.pos);
+      // Never a count-in — `stop` refuses to hold one — so the strip always
+      // has a beat to mark.
+      drawOverview(held.pos.absBeat);
     } else {
       // Parked one count-in before the run: the strip's rectangle is clamped
       // to the run, so it still covers exactly the slice of it the lane is
@@ -952,6 +1014,7 @@ export function useTrainer(
     strike,
     release,
     padAtPoint,
+    park,
     chords,
     chordOverrides,
     chordBarAtPoint,

@@ -101,6 +101,33 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   worth knowing: in a lane whose notes are closer together than twice the
   grace, no strike can ever be wrong, which is right — "completely out of time"
   has to mean completely.
+- **Stop holds the run's last frame; Start is what goes back to the top.**
+  Three states, not two: running, **held**, and parked. Stopping part-way
+  freezes the lane exactly where it was — played notes in their rating
+  colours, upcoming ones ahead, the wrong-note dots, the ribbon's current bar —
+  and the next Start returns to the beginning of the exercise with the
+  count-in, which is what `play` already did. **The held frame is drawn
+  against a stored clock**, captured with the position in `stop`: every note's
+  place on screen is `(inst.time - f.now) / secPerBeat` beats from the
+  playhead, so drawing it against the live clock lets it scroll on with no
+  transport behind it — the same trap the dots fell into, `now` advancing
+  whether the transport does or not. Read the position *before* `transport.stop()`;
+  a stopped transport reports beat 0.
+  **Nothing is held out of a count-in.** That runs before the exercise, so
+  there is no place on the timeline to pause at, and a frozen countdown sits
+  mid-ring still reading `ESC TO STOP` — an instruction for a run that is no
+  longer going. `stop` refuses to hold one and the lane parks, which is what
+  it was showing a moment earlier anyway.
+  `stop` **does not clear `wrongMarks`** any more: they belong to the run and
+  the run is being held rather than thrown away. What keeps them off a parked
+  lane is still the gate in `drawFrame` — that is the mechanism and always was.
+  The hold ends at `play`, at a lesson change, and at `park()`, which `goHome`
+  calls so that re-opening a lesson shows what you are about to play rather
+  than where you left off last sitting. A *finished* run does not hold: the
+  summary covers the lane, and dismissing it should leave the lesson ready.
+  Verified in the browser rather than by unit test — the check is that the
+  canvas fingerprints identically across seconds while held, differs from the
+  parked preview, and returns to the parked one after leaving.
 - **The wrong-note mark is a small dot, and it scrolls with the music.** Not a
   flash at the playhead: that would be gone before you could look at it and
   would say only *that* something was wrong, never *where*. Left in the
