@@ -73,8 +73,39 @@ import type { NoteInstance } from "@/engine/scoring";
 /** Distance between two staff lines — every other measurement scales off it. */
 const SPACE = 17;
 const HALF_SPACE = SPACE / 2;
-const LINE_W = 1.4;
 const STAFF_H = SPACE * 4;
+
+/**
+ * Every ink weight on the staff, in **staff spaces**, measured off the printed
+ * Lavoe transcription at 600dpi where a space is 47px.
+ *
+ * They were absolute pixels before, and every one of them was too thin — the
+ * staff line at 0.082 spaces against the page's 0.128, the stem at 0.106, and
+ * the **beam at 0.247 against 0.553, less than half**. Thin ink at fractional
+ * widths is what "the PDF is much cleaner" was looking at: a beam that should
+ * read as a solid bar came out a hairline, and a staff drawn at four fifths of
+ * its proper weight looks washed out beside it. Held as ratios now, so they
+ * survive a change of `SPACE` instead of quietly going wrong with it.
+ *
+ * The page uses **one weight** for its staff lines, stems and barlines, which
+ * is not something to assume — `0.128` for all three is what it measures, and
+ * it is close to the 0.12-0.13 the engraving manuals give. Ledgers are drawn
+ * heavier than staff lines, at `0.213`.
+ *
+ * `beamGap` is the only one not measured here: this piece is quavers
+ * throughout and so has no stacked beams to measure between. `0.25` is the
+ * standard separation, and the pitch below is beam plus gap.
+ */
+const INK = {
+  staffLine: 0.128,
+  stem: 0.128,
+  barline: 0.128,
+  ledger: 0.213,
+  beam: 0.553,
+  beamGap: 0.25,
+} as const;
+
+const LINE_W = SPACE * INK.staffLine;
 
 /**
  * The clef's own column: five short staff lines, then a rule.
@@ -138,7 +169,7 @@ const SIG_X0_GRAND = sigStart(true);
 /** Accidentals are drawn smaller than a notehead, in the signature and before a note. */
 const ACCIDENTAL_SCALE = 0.62;
 
-const BARLINE_W = 1.8;
+const BARLINE_W = SPACE * INK.barline;
 /** Beat hairlines run this much past the staff, top and bottom. */
 const GRID_OVERHANG = 10;
 /** The playhead runs further still, so it reads over the notes. */
@@ -146,7 +177,9 @@ const PLAYHEAD_W = 2;
 const PLAYHEAD_OVERHANG = 26;
 
 const LEDGER_LEN = 30;
-const LEDGER_W = 2.6;
+const LEDGER_W = SPACE * INK.ledger;
+/** The rim of a hollow drawn head, which has to match the glyph's beside it. */
+const HEAD_RIM = SPACE * 0.129;
 
 /**
  * Augmentation dot: the font's own is a combining mark with no advance, so it
@@ -164,16 +197,18 @@ const DOT_CLEAR = 5;
 /**
  * Beamed groups are assembled, not glyphs — the font has no beam.
  *
- * The numbers are the catalogue's, scaled off its own 12.5px staff space to
- * ours: a 1.8px stem, a 4.2px beam per subdivision stacked at 6.4px, and a
- * half-length stub for a broken group.
+ * The weights come from `INK`, measured off the printed page. They were the
+ * catalogue's absolute pixels (a 1.8px stem, a 4.2px beam stacked at 6.4px);
+ * the catalogue still governs which figure is drawn and what it looks like,
+ * but not how heavy its ink is, which measured at well under half the page's.
  */
-const STEM_W = 1.8;
+const STEM_W = SPACE * INK.stem;
 /** How far a stem must pass the head at its far end, when a chord is wider than a stem is long. */
 const STEM_MIN_PAST = SPACE;
-const BEAM_H = 4.2;
-const BEAM_GAP = 6.4;
-const BEAM_STUB = 11;
+const BEAM_H = SPACE * INK.beam;
+/** Beam to beam, which is one beam plus the separation between them. */
+const BEAM_GAP = SPACE * (INK.beam + INK.beamGap);
+const BEAM_STUB = SPACE * 0.647;
 
 /** Soft highlight behind the note being played right now. */
 const HIGHLIGHT_R = 13;
@@ -286,6 +321,8 @@ interface System {
 
 export class SheetStaff implements LaneRenderer {
   private ctx: CanvasRenderingContext2D;
+  /** Device pixels per CSS pixel, for snapping rules onto the physical grid. */
+  private dpr = 1;
   private window: VisibleWindow = { behind: 0, ahead: 0 };
   /** Left column's width this frame: brace, clef, key signature and metre. */
   private gutter = CLEF_GUTTER;
@@ -302,6 +339,7 @@ export class SheetStaff implements LaneRenderer {
 
   resize(): void {
     const dpr = window.devicePixelRatio || 1;
+    this.dpr = dpr;
     const w = Math.max(1, Math.round(this.el.clientWidth));
     const h = Math.max(1, Math.round(this.el.clientHeight));
     if (this.el.width !== w * dpr || this.el.height !== h * dpr) {
@@ -494,6 +532,23 @@ export class SheetStaff implements LaneRenderer {
     };
   }
 
+  /**
+   * Snap a length or a coordinate onto the **device** pixel grid.
+   *
+   * A staff line is `0.128` of a space — 2.18px — and drawn at a fractional
+   * offset it straddles two device rows and antialiases into two soft greys
+   * instead of one crisp rule. Five of those per staff, across the whole
+   * width, is most of the ink on the page, and softening all of it is the
+   * other half of why print looked cleaner: the weights were too light *and*
+   * what weight there was got smeared. Rules whose position is the renderer's
+   * own — the staff, the barlines — are snapped; anything tied to a notehead
+   * is left alone, because moving a stem to a round pixel would part it from
+   * the head it grows out of.
+   */
+  private crisp(v: number): number {
+    return Math.round(v * this.dpr) / this.dpr;
+  }
+
   private staffLines(
     ctx: CanvasRenderingContext2D,
     x: number,
@@ -502,8 +557,9 @@ export class SheetStaff implements LaneRenderer {
     ink: string,
   ): void {
     ctx.fillStyle = ink;
+    const h = Math.max(1 / this.dpr, this.crisp(LINE_W));
     for (let i = 0; i < 5; i++) {
-      ctx.fillRect(x, topLineY + i * SPACE - LINE_W / 2, w, LINE_W);
+      ctx.fillRect(x, this.crisp(topLineY + i * SPACE - LINE_W / 2), w, h);
     }
   }
 
@@ -531,9 +587,9 @@ export class SheetStaff implements LaneRenderer {
         // what says they are one instrument and not two parts.
         ctx.fillStyle = f.palette.txt3;
         ctx.fillRect(
-          Math.round(x) - BARLINE_W / 2,
+          this.crisp(Math.round(x) - BARLINE_W / 2),
           sys.top,
-          BARLINE_W,
+          this.crisp(BARLINE_W),
           sys.bottom - sys.top + LINE_W / 2,
         );
       } else {
@@ -923,7 +979,7 @@ export class SheetStaff implements LaneRenderer {
     ctx.ellipse(n.x, n.y, rx, ry, -0.32, 0, Math.PI * 2);
     const hollow = n.fig.figure === "whole" || n.fig.figure === "half";
     if (hollow) {
-      ctx.lineWidth = 2.2;
+      ctx.lineWidth = HEAD_RIM;
       ctx.strokeStyle = n.ink;
       ctx.stroke();
     } else {

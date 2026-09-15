@@ -682,6 +682,35 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   rasterising: the whole lands on steps 6→5, the half on 4→5, the rest on 4.
   A rest takes `palette.txt` and never a timing colour: a silence is notation,
   not a result, so it stays outside both colour languages.
+- **Every ink weight on the staff is a ratio of the staff space, measured off
+  the printed page** (`INK` in `SheetStaff.ts`). At 600dpi the Lavoe
+  transcription's space is 47px, and against it: staff line `0.128`, stem
+  `0.128`, barline `0.128` — the page uses **one weight for all three**, which
+  is not something to assume and is close to the 0.12-0.13 the manuals give —
+  ledger `0.213`, and **beam `0.553`**.
+  Ours were absolute pixels and every one was too thin: staff line `0.082`,
+  stem `0.106`, barline `0.106`, ledger `0.153`, and the beam `0.247`, **less
+  than half** the page's. That is what "the PDF is much cleaner" was: a beam
+  that should read as a solid bar came out a hairline. Ratios now, so a change
+  of `SPACE` carries them instead of silently breaking them. `beamGap` is the
+  one number not measured — the piece is quavers throughout and has no stacked
+  beams — so it takes the standard `0.25` separation, and `BEAM_GAP` is beam
+  plus gap.
+  **This supersedes the catalogue's beam figures** (a 1.8px stem, 4.2px beam
+  at 6.4px) for *weight only*. The catalogue is still the reference for which
+  figure is drawn and what it looks like — see the beaming entry — but its ink
+  was well under half of print's, and the user's own reference page is the
+  better authority on how heavy a line should be.
+- **Rules the renderer owns are snapped to the device pixel grid** (`crisp`).
+  A 2.18px staff line at a fractional offset straddles two device rows and
+  antialiases into two soft greys instead of one rule; five per staff across
+  the full width is most of the ink on the page, so that softening was the
+  other half of the cleanliness gap — the weights were too light *and* smeared.
+  Only the staff lines and barlines are snapped, because their position is
+  ours to choose. **Anything tied to a notehead is left alone**: rounding a
+  stem to a whole pixel would part it from the head it grows out of, which is
+  the two-copies bug the stem entry warns about, arrived at from the other
+  direction.
 - **`MIN_NOTE_GAP_PX` is two staff spaces, and it was measured.** Taking every
   adjacent pair of note columns across the three pages of a printed piano
   transcription and normalising by its own staff space (23.7px at 300dpi):
