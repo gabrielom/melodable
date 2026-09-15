@@ -506,6 +506,10 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   Beaming was deleted once on exactly that misreading and the notation stopped
   being correct — don't repeat it. A **chord** shares one stem too, because
   stacking a glyph per notehead stacks a stem per head and reads as a smear.
+  Since the stem-direction work, a **lone note is assembled as well** and the
+  composed glyphs are down to the whole note — see the stem entry below. The
+  catalogue is still the reference for what each figure looks like; it is only
+  the means of drawing it that changed.
 - **A bare head is the glyph's head, measured, and one function places the
   stem** — `NOTEHEAD_EM_HALF_WIDTH` (`0.1464em`, rasterised at the drawn size)
   for the head's radius *and* for where the stem attaches, `SPACE / 2` for its
@@ -518,8 +522,51 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   "the stem doesn't connect" was, and it is a two-copies bug, never a reason to
   stop beaming.
 - **What the font does not give you** (§1.4): the augmentation dot is a
-  combining mark with no advance width, so it is drawn; and every stemmed glyph
-  is stem-**up**, which the frames accept.
+  combining mark with no advance width, so it is drawn. The composed figures
+  are stem-**up** only, which the frames accepted and which is **no longer
+  what ships** — see the next two entries.
+- **Stems point the way notation points them, and that meant giving up the
+  composed glyphs.** A note below the middle line takes its stem up, one on or
+  above it takes it down, and what decides a chord or a beamed group is the
+  note **furthest** from the middle line — ties going down, the convention for
+  the ambiguous case. `stemsUp` is that rule and it reads each note's place on
+  **its own** staff, so the two hands of a grand staff answer separately.
+  Every stem went up before this, whatever the note, which was the single
+  thing that most kept the staff from reading like a piano part: the user put
+  a real engraved score beside a screenshot and asked for the score.
+  The font cannot do it — `GLYPH` is stem-up — so everything but the whole
+  note is **assembled**: a bare head, a drawn stem, and a combining flag
+  (`FLAG`, U+1D16E…) mirrored about the tip when the stem is down. The whole
+  note keeps its glyph, having no stem to point and a head a good deal wider
+  than a stemmed one. An up-stem leaves the head's right edge and a down-stem
+  its left; `stemX` takes the direction and is still the one place that offset
+  lives.
+  Two numbers come off the font with the rest: the quarter's ink stops at
+  `1.009em` and the notehead centre is at `0.134em`, so `STEM_EM_LEN` is the
+  difference — `0.875em`, 3.47 staff spaces, the 3.5 every manual asks for.
+  The drawn stems used a flat **32px**, under two spaces, so a chord's stem
+  was little over half the one on the single note beside it; one number now,
+  and an assembled note is the glyph's twin. `FLAG_EM_TIP` is where a flag
+  meets that same tip.
+- **Beams run to the half-bar for plain eighths, and to the beat for
+  everything else.** Beaming by the beat is what `beamGroups` builds, and it
+  is correct — but a running quaver passage engraved that way comes out as a
+  row of two-note groups, where printed music beams it in fours. `joinEighths`
+  is a pass over the finished groups that merges adjacent ones sharing a
+  half-bar. Deliberately a post-pass and deliberately narrow: **only plain
+  eighths join**, so a sixteenth keeps its group on the beat where the
+  subdivision has to read, and a broken group — the dotted eighth against a
+  sixteenth that the beam stubs exist for — is never swept into a longer beam.
+  Only in a metre the half-bar divides, so 3/4 stays on the beat. The
+  consequence is that **a beam now crosses the beat line** and the old test
+  saying it never does is gone; what it may not cross is the half-bar.
+  A run of one is carried as far as the join and dropped after it, which is
+  how two eighths straddling beat 1 come to be beamed at all.
+- **The augmentation dot was inside its own notehead.** `DOT_GAP` was 7px from
+  the head's **centre** and a head's half-width is 9.88px at this staff size.
+  It is measured off the head's right edge now (`DOT_CLEAR`). Nothing caught
+  it because a dotted figure needs an onset gap of exactly 1.5 beats and no
+  built-in lesson has one — it took a probe written for the stem work.
 - **The degree row's drop is derived too, and its clearance is read off the
   design's own number.** Handoff 11 §1.2 puts the row 35px below the bottom
   staff line, which is right until the music goes under the staff: A3 puts its

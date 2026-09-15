@@ -29,10 +29,14 @@ import {
   needsBassStaff,
   onBassStaff,
   FIGURE_BEAMS,
+  FLAG,
+  FLAG_EM_TIP,
   GLYPH,
   NOTEHEAD_EM_CENTRE,
   NOTEHEAD_EM_HALF_WIDTH,
   NOTEHEAD_EM_HEIGHT,
+  STEM_EM_LEN,
+  stemsUp,
   beamGroups,
   figureFor,
   ledgerSteps,
@@ -141,9 +145,18 @@ const PLAYHEAD_OVERHANG = 26;
 const LEDGER_LEN = 30;
 const LEDGER_W = 2.6;
 
-/** Augmentation dot: the font's own is a combining mark with no advance. */
+/**
+ * Augmentation dot: the font's own is a combining mark with no advance, so it
+ * is drawn.
+ *
+ * `DOT_CLEAR` is measured from the notehead's **right edge**, not its centre.
+ * It was 7px from the centre, and a head's half-width is 9.88px at this staff
+ * size — so every dot was drawn inside the note it belonged to. Nothing caught
+ * it because a dotted figure needs an onset gap of exactly 1.5 beats and the
+ * built-in lessons have none.
+ */
 const DOT_R = 2.5;
-const DOT_GAP = 7;
+const DOT_CLEAR = 5;
 
 /**
  * Beamed groups are assembled, not glyphs — the font has no beam.
@@ -153,7 +166,6 @@ const DOT_GAP = 7;
  * half-length stub for a broken group.
  */
 const STEM_W = 1.8;
-const STEM_LEN = 32;
 const BEAM_H = 4.2;
 const BEAM_GAP = 6.4;
 const BEAM_STUB = 11;
@@ -715,8 +727,6 @@ export class SheetStaff implements LaneRenderer {
 
   /** Heads, stems and beams for one staff's worth of columns. */
   private engrave(f: LaneFrame, columns: Placed[][], size: number): void {
-    const ctx = this.ctx;
-
     // Beaming runs over columns, not notes: a chord of eighths beams once.
     const groups = beamGroups(
       columns.map((c) => ({
@@ -729,6 +739,19 @@ export class SheetStaff implements LaneRenderer {
     const beamed = new Set<number>();
     for (const g of groups) for (const m of g.members) beamed.add(m);
 
+    // Which way each column's stem goes. A beam is one unbroken line, so a
+    // whole group answers together off every note under it; a lone column
+    // answers for itself. Positions are each note's place on **its own**
+    // staff (`local`), so the two hands of a grand staff decide separately.
+    const up = new Map<number, boolean>();
+    for (const g of groups) {
+      const dir = stemsUp(g.members.flatMap((m) => columns[m].map((n) => n.local)));
+      for (const m of g.members) up.set(m, dir);
+    }
+    for (let i = 0; i < columns.length; i++) {
+      if (!up.has(i)) up.set(i, stemsUp(columns[i].map((n) => n.local)));
+    }
+
     for (let i = 0; i < columns.length; i++) {
       const col = columns[i];
       if (!col.some((n) => n.visible)) continue;
@@ -737,25 +760,8 @@ export class SheetStaff implements LaneRenderer {
         this.ledgers(n);
         this.accidental(n, size);
       }
-      // A single unbeamed note keeps the font's own glyph, flag and all —
-      // the one case where the stemmed glyph is usable (§1.4.2).
-      if (col.length === 1 && !beamed.has(i)) {
-        const n = col[0];
-        ctx.fillStyle = n.ink;
-        ctx.font = `${size}px ${MUSIC}`;
-        ctx.fillText(
-          GLYPH[n.fig.figure],
-          n.x - this.headHalfWidth(size, n.fig.figure),
-          n.y + NOTEHEAD_EM_CENTRE * size,
-        );
-      } else if (!beamed.has(i)) {
-        // A chord: bare heads, one shared stem. Drawing each note's own glyph
-        // would stack a stem per notehead, which is not how a chord is
-        // engraved and reads as a smear at this size.
-        for (const n of col) this.head(n, size);
-        this.stem(col, size);
-      }
-      for (const n of col) if (n.fig.dotted) this.dot(n);
+      if (!beamed.has(i)) this.column(col, size, up.get(i) ?? true);
+      for (const n of col) if (n.fig.dotted) this.dot(n, size);
     }
 
     for (const g of groups) {
@@ -763,8 +769,65 @@ export class SheetStaff implements LaneRenderer {
       // Drawn whole if any part of it is on screen; the canvas clips the rest,
       // which is what keeps a beam entering from the edge intact.
       if (!cols.some((c) => c.some((n) => n.visible))) continue;
-      this.beamGroup(cols, g.beams, size);
+      this.beamGroup(cols, g.beams, size, up.get(g.members[0]) ?? true);
     }
+  }
+
+  /**
+   * One column of heads, and the stem and flag that belong to it.
+   *
+   * Everything but the whole note is **assembled** now, where a lone note used
+   * to take the font's composed glyph. The glyphs are stem-up only, so using
+   * them meant a note high on the staff kept a stem climbing away from it
+   * while the chord beside it had a short drawn one — two paths that disagreed
+   * about both the direction and the length of the same thing. `STEM_EM_LEN`
+   * and `FLAG_EM_TIP` are read off those glyphs, so the assembled note is the
+   * glyph's twin and there is one path left.
+   */
+  private column(col: Placed[], size: number, up: boolean): void {
+    const ctx = this.ctx;
+    const figure = col[0].fig.figure;
+    if (figure === "whole") {
+      // The one figure still taken from the font: it has no stem, so nothing
+      // to point, and its head is a good deal wider than a stemmed one — a
+      // difference the glyph carries and the drawn ellipse does not.
+      ctx.font = `${size}px ${MUSIC}`;
+      for (const n of col) {
+        ctx.fillStyle = n.ink;
+        ctx.fillText(
+          GLYPH.whole,
+          n.x - this.headHalfWidth(size, "whole"),
+          n.y + NOTEHEAD_EM_CENTRE * size,
+        );
+      }
+      return;
+    }
+    for (const n of col) this.head(n, size);
+    this.stem(col, size, up);
+    const flags = FIGURE_BEAMS[figure];
+    if (flags > 0) this.flag(col, size, up, flags);
+  }
+
+  /** A flag, hung off the stem's tip — mirrored about it when the stem is down. */
+  private flag(col: Placed[], size: number, up: boolean, flags: number): void {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.fillStyle = col[0].ink;
+    ctx.font = `${size}px ${MUSIC}`;
+    // The flag's ink starts at its own pen, so the pen goes on the stem's
+    // outer edge — the side the flag curls away from.
+    const x = this.stemX(col, size, up) - STEM_W / 2;
+    const tip = this.stemTip(col, size, up);
+    if (up) {
+      ctx.fillText(FLAG[flags], x, tip + FLAG_EM_TIP * size);
+    } else {
+      // Flipping about the tip puts the flag's attachment on the stem's
+      // bottom and curls it back up, which is the down-stem shape.
+      ctx.translate(0, tip);
+      ctx.scale(1, -1);
+      ctx.fillText(FLAG[flags], x, FLAG_EM_TIP * size);
+    }
+    ctx.restore();
   }
 
   /**
@@ -870,13 +933,29 @@ export class SheetStaff implements LaneRenderer {
     ctx.restore();
   }
 
-  private stem(col: Placed[], size: number): void {
+  /**
+   * The stem runs from the head at its own end of the column to the tip: a
+   * chord's stem spans all its heads and then stands the full length clear of
+   * the outermost one.
+   */
+  private stem(col: Placed[], size: number, up: boolean): void {
     if (col[0].fig.figure === "whole") return; // a whole note has no stem
     const ctx = this.ctx;
-    const top = Math.min(...col.map((n) => n.y));
-    const bottom = Math.max(...col.map((n) => n.y));
+    const tip = this.stemTip(col, size, up);
+    const foot = up ? Math.max(...col.map((n) => n.y)) : Math.min(...col.map((n) => n.y));
     ctx.fillStyle = col[0].ink;
-    ctx.fillRect(this.stemX(col, size) - STEM_W / 2, top - STEM_LEN, STEM_W, bottom - top + STEM_LEN);
+    ctx.fillRect(
+      this.stemX(col, size, up) - STEM_W / 2,
+      Math.min(tip, foot),
+      STEM_W,
+      Math.abs(foot - tip),
+    );
+  }
+
+  /** The free end of a column's stem, a full stem clear of the outermost head. */
+  private stemTip(col: Placed[], size: number, up: boolean): number {
+    const len = STEM_EM_LEN * size;
+    return up ? Math.min(...col.map((n) => n.y)) - len : Math.max(...col.map((n) => n.y)) + len;
   }
 
   /**
@@ -889,8 +968,11 @@ export class SheetStaff implements LaneRenderer {
    * beamed group stood 2.3px clear of the heads they belonged to. One
    * function, read by both callers, is what keeps them touching.
    */
-  private stemX(col: Placed[], size: number): number {
-    return col[0].x + size * NOTEHEAD_EM_HALF_WIDTH;
+  private stemX(col: Placed[], size: number, up: boolean): number {
+    // An up-stem rises from the head's right edge and a down-stem falls from
+    // its left — the side it leaves the head on is part of the convention,
+    // not a detail, and a down-stem on the right reads as a mistake.
+    return col[0].x + (up ? 1 : -1) * size * NOTEHEAD_EM_HALF_WIDTH;
   }
 
   /**
@@ -901,42 +983,50 @@ export class SheetStaff implements LaneRenderer {
    * and it draws beams even though the trainer staff beside it happens to
    * hold no group short enough to need one.
    *
-   * Stems are all up. Noto Music has no stem-down variants, and the frames
-   * accept that — beginner notation often does (§1.4.3).
+   * The whole group takes **one** direction, decided by its own outermost
+   * note, and the beam sits on the far side of the heads from them: above for
+   * stems up, below for stems down. Beams after the first stack back *toward*
+   * the heads, so the outermost beam is always the one the stems reach.
    */
-  private beamGroup(columns: Placed[][], beams: number, size: number): void {
+  private beamGroup(columns: Placed[][], beams: number, size: number, up: boolean): void {
     if (columns.length < 2) return;
     const ctx = this.ctx;
 
-    // Every stem in a group ends on the same beam line: hang it a full stem
-    // above the highest head in the whole group.
-    const topY = Math.min(...columns.flat().map((n) => n.y));
-    const beamY = topY - STEM_LEN;
+    // Every stem in a group ends on the same beam line: a full stem clear of
+    // the outermost head in the group, on the side the stems point.
+    const heads = columns.flat().map((n) => n.y);
+    const len = STEM_EM_LEN * size;
+    const beamY = up ? Math.min(...heads) - len : Math.max(...heads) + len;
 
     for (const col of columns) {
       for (const n of col) this.head(n, size);
-      const bottom = Math.max(...col.map((n) => n.y));
+      const foot = up ? Math.max(...col.map((n) => n.y)) : Math.min(...col.map((n) => n.y));
       ctx.fillStyle = col[0].ink;
-      ctx.fillRect(this.stemX(col, size) - STEM_W / 2, beamY, STEM_W, bottom - beamY);
+      ctx.fillRect(
+        this.stemX(col, size, up) - STEM_W / 2,
+        Math.min(beamY, foot),
+        STEM_W,
+        Math.abs(foot - beamY),
+      );
     }
 
-    const x0 = this.stemX(columns[0], size) - STEM_W / 2;
-    const x1 = this.stemX(columns[columns.length - 1], size) + STEM_W / 2;
+    /** The top of beam `b`, counting outward-in from the stems' tips. */
+    const beamTop = (b: number) => (up ? beamY + b * BEAM_GAP : beamY - b * BEAM_GAP - BEAM_H);
+
+    const x0 = this.stemX(columns[0], size, up) - STEM_W / 2;
+    const x1 = this.stemX(columns[columns.length - 1], size, up) + STEM_W / 2;
     ctx.fillStyle = columns[0][0].ink;
-    for (let b = 0; b < beams; b++) {
-      ctx.fillRect(x0, beamY + b * BEAM_GAP, x1 - x0, BEAM_H);
-    }
+    for (let b = 0; b < beams; b++) ctx.fillRect(x0, beamTop(b), x1 - x0, BEAM_H);
 
     // A broken group — a dotted eighth against a sixteenth — gets a
     // half-length stub on the stem carrying the extra beam (§1.4.2).
     for (let i = 0; i < columns.length; i++) {
       const extra = FIGURE_BEAMS[columns[i][0].fig.figure] - beams;
       for (let b = 0; b < extra; b++) {
-        const y = beamY + (beams + b) * BEAM_GAP;
-        const sx = this.stemX(columns[i], size);
+        const sx = this.stemX(columns[i], size, up);
         const back = i > 0;
         ctx.fillStyle = columns[i][0].ink;
-        ctx.fillRect(back ? sx - BEAM_STUB : sx, y, BEAM_STUB, BEAM_H);
+        ctx.fillRect(back ? sx - BEAM_STUB : sx, beamTop(beams + b), BEAM_STUB, BEAM_H);
       }
     }
   }
@@ -1006,12 +1096,20 @@ export class SheetStaff implements LaneRenderer {
    * and cannot be positioned, so it is drawn (§1.4.1). On a line it lifts into
    * the space above, which is where an engraver puts it.
    */
-  private dot(n: Placed): void {
+  private dot(n: Placed, size: number): void {
+    // A dot on a line is unreadable, so it goes in the space above — which is
+    // also why it is placed off the head's edge rather than its centre.
     const onLine = ((n.step % 2) + 2) % 2 === 0;
     const ctx = this.ctx;
     ctx.fillStyle = n.ink;
     ctx.beginPath();
-    ctx.arc(n.x + DOT_GAP, n.y - (onLine ? HALF_SPACE : 0), DOT_R, 0, Math.PI * 2);
+    ctx.arc(
+      n.x + size * NOTEHEAD_EM_HALF_WIDTH + DOT_CLEAR + DOT_R,
+      n.y - (onLine ? HALF_SPACE : 0),
+      DOT_R,
+      0,
+      Math.PI * 2,
+    );
     ctx.fill();
   }
 

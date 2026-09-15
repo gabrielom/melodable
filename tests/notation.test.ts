@@ -4,6 +4,11 @@ import {
   FIGURE_BEAMS,
   FIGURE_BEATS,
   ACCIDENTAL_EM_CENTRE,
+  MIDDLE_LINE_STEP,
+  STEM_EM_LEN,
+  FLAG_EM_TIP,
+  FLAG,
+  stemsUp,
   BRACE_INK_EM,
   CLEF_INK_EM,
   CLEF_REF_EM,
@@ -123,6 +128,72 @@ describe("the font's measured constants", () => {
     // 0.161em wide but its right edge is 0.211em from the pen.
     expect(BRACE_INK_EM.x1 - BRACE_INK_EM.x0).toBeCloseTo(0.161, 4);
     expect(BRACE_INK_EM.x0).toBeGreaterThan(0);
+  });
+
+  it("takes the stem's length off the font, not a round number", () => {
+    // The composed quarter's ink stops at 1.009em and the notehead centre is
+    // at 0.134em, so the font's own stem is the difference — 3.47 staff
+    // spaces, which is the 3.5 engraving asks for. The drawn stems used a
+    // flat 32px, under two spaces, so a chord's stem was little over half the
+    // one on the single note beside it.
+    expect(STEM_EM_LEN).toBeCloseTo(0.875, 3);
+    expect(STEM_EM_LEN * (17 / NOTEHEAD_EM_HEIGHT)).toBeCloseTo(59, 0);
+    expect(STEM_EM_LEN * (17 / NOTEHEAD_EM_HEIGHT) / 17).toBeGreaterThan(3.4);
+    // The flag meets the stem at the same tip the stem is measured to.
+    expect(FLAG_EM_TIP).toBeCloseTo(STEM_EM_LEN + NOTEHEAD_EM_CENTRE, 6);
+  });
+
+  it("has a combining flag for every figure that carries one", () => {
+    // Indexed by beam count, so FIGURE_BEAMS reads straight into it.
+    for (const figure of ["eighth", "sixteenth", "thirtysecond"] as const) {
+      expect(FLAG[FIGURE_BEAMS[figure]]).toBeTruthy();
+    }
+    expect(FLAG[FIGURE_BEAMS.quarter]).toBe("");
+  });
+});
+
+describe("stemsUp", () => {
+  // Steps are positions on the note's own staff: 0 is the bottom line, 8 the
+  // top, and MIDDLE_LINE_STEP the line the rule turns on.
+  it("puts the middle line on the third line", () => {
+    expect(MIDDLE_LINE_STEP).toBe(4);
+  });
+
+  it("sends a low note's stem up and a high note's down", () => {
+    expect(stemsUp([0])).toBe(true); // bottom line
+    expect(stemsUp([3])).toBe(true); // just under the middle
+    expect(stemsUp([8])).toBe(false); // top line
+    expect(stemsUp([5])).toBe(false); // just over the middle
+  });
+
+  it("sends a note on the middle line down, which is the convention", () => {
+    expect(stemsUp([MIDDLE_LINE_STEP])).toBe(false);
+  });
+
+  it("lets the note furthest from the middle decide a chord", () => {
+    // Bottom note is four steps out, top note only one: the chord goes up.
+    expect(stemsUp([0, 3, 5])).toBe(true);
+    // And the reverse — the top note is furthest, so the chord goes down.
+    expect(stemsUp([3, 5, 8])).toBe(false);
+  });
+
+  it("sends an evenly straddling chord down", () => {
+    // Equally far either way is the genuinely ambiguous case, and notation
+    // settles it downward rather than leaving it to the order of the notes.
+    expect(stemsUp([2, 6])).toBe(false);
+    expect(stemsUp([6, 2])).toBe(false);
+    expect(stemsUp([0, 8])).toBe(false);
+  });
+
+  it("answers for an empty set without throwing", () => {
+    // Never reached — a column is built from at least one note — but a
+    // Math.min over nothing is -Infinity and would place a stem off-screen.
+    expect(stemsUp([])).toBe(true);
+  });
+
+  it("holds below the staff and above it", () => {
+    expect(stemsUp([-6])).toBe(true); // well below, on ledgers
+    expect(stemsUp([14])).toBe(false); // well above
   });
 });
 
@@ -597,10 +668,67 @@ describe("beamGroups", () => {
     expect(g).toEqual([{ members: [0, 1], beams: 1 }]);
   });
 
-  it("never beams across a beat line", () => {
+  it("beams a run of eighths in fours, across the beat line", () => {
+    // Printed music beams running quavers to the half-bar, not the beat — the
+    // beat-by-beat version comes out as a row of two-note groups and is what
+    // made the trainer's staff not read like a piano part.
+    const g = beamGroups(
+      notes([[0, "eighth"], [0.5, "eighth"], [1, "eighth"], [1.5, "eighth"]]),
+      4,
+    );
+    expect(g).toEqual([{ members: [0, 1, 2, 3], beams: 1 }]);
+  });
+
+  it("beams two eighths that straddle a beat line inside one half-bar", () => {
+    // The consequence of the rule above, and the reason a lone run is carried
+    // as far as the join: neither of these fills its own beat.
     const g = beamGroups(notes([[0.5, "eighth"], [1, "eighth"]]), 4);
-    // Two lone eighths, each keeping its own flag.
-    expect(g).toEqual([]);
+    expect(g).toEqual([{ members: [0, 1], beams: 1 }]);
+  });
+
+  it("never beams across the half-bar", () => {
+    // Which is the line the beat line used to be: a beam may cross beat 1 and
+    // may not cross beat 2.
+    expect(beamGroups(notes([[1.5, "eighth"], [2, "eighth"]]), 4)).toEqual([]);
+    const full = beamGroups(
+      notes([
+        [0, "eighth"], [0.5, "eighth"], [1, "eighth"], [1.5, "eighth"],
+        [2, "eighth"], [2.5, "eighth"], [3, "eighth"], [3.5, "eighth"],
+      ]),
+      4,
+    );
+    expect(full).toEqual([
+      { members: [0, 1, 2, 3], beams: 1 },
+      { members: [4, 5, 6, 7], beams: 1 },
+    ]);
+  });
+
+  it("keeps sixteenths on the beat, where the subdivision has to read", () => {
+    // Only plain eighths join. Eight sixteenths are two groups of four, not
+    // one of eight — the join is deliberately the narrower rule.
+    const g = beamGroups(
+      notes([
+        [0, "sixteenth"], [0.25, "sixteenth"], [0.5, "sixteenth"], [0.75, "sixteenth"],
+        [1, "sixteenth"], [1.25, "sixteenth"], [1.5, "sixteenth"], [1.75, "sixteenth"],
+      ]),
+      4,
+    );
+    expect(g).toEqual([
+      { members: [0, 1, 2, 3], beams: 2 },
+      { members: [4, 5, 6, 7], beams: 2 },
+    ]);
+  });
+
+  it("keeps a metre the half-bar does not divide on the beat", () => {
+    // 3/4 has no half-bar to beam to, so the beat stands.
+    const g = beamGroups(
+      notes([[0, "eighth"], [0.5, "eighth"], [1, "eighth"], [1.5, "eighth"]]),
+      3,
+    );
+    expect(g).toEqual([
+      { members: [0, 1], beams: 1 },
+      { members: [2, 3], beams: 1 },
+    ]);
   });
 
   it("leaves a single eighth to its own flag", () => {

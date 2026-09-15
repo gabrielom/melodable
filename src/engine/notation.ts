@@ -129,6 +129,35 @@ export const BRACE = "\u{1D114}";
 export const ACCIDENTAL = { sharp: "♯", flat: "♭", natural: "♮" } as const;
 
 /**
+ * The **combining** flags, indexed by how many the figure carries.
+ *
+ * These are what make a stem-down note drawable at all. The font's composed
+ * figures (`GLYPH`) are stem-**up** only, so for years every note on the staff
+ * pointed up whatever its position — which is the single thing that most made
+ * the trainer's staff not look like engraved music. The flags have no advance
+ * width and are drawn to hang off a stem whose tip is at `FLAG_EM_TIP`; for a
+ * down-stem the same glyph is mirrored about the tip, which is how it curls
+ * the right way.
+ */
+export const FLAG = ["", "\u{1D16E}", "\u{1D16F}", "\u{1D170}"] as const;
+
+/**
+ * A stem's length from the notehead's centre, and where a flag meets its tip —
+ * both in em, both read off the composed quarter and eighth rather than
+ * chosen.
+ *
+ * The quarter's ink stops at `1.009em` above the baseline and the notehead's
+ * centre sits at `NOTEHEAD_EM_CENTRE`, so the font's own stem is the
+ * difference: `0.875em`, or 3.47 staff spaces, which is the 3.5 every
+ * engraving manual asks for. The drawn stems used a flat 32px — under two
+ * spaces — so a chord's stem was little over half the length of the stem on
+ * the single note beside it. One number now, and the assembled note is the
+ * glyph's twin.
+ */
+export const FLAG_EM_TIP = 1.009;
+export const STEM_EM_LEN = FLAG_EM_TIP - NOTEHEAD_EM_CENTRE;
+
+/**
  * Where each clef's own reference line sits above its baseline, in em.
  *
  * The treble's is the notehead centre, which is what the font seats every
@@ -277,6 +306,30 @@ const PITCH_CLASS: ReadonlyArray<readonly [number, boolean]> = [
  */
 export const BOTTOM_LINE_PITCH = 64;
 const BOTTOM_LINE_DIATONIC = 30; // E4: octave 4 × 7 + E's index 2
+
+/** The middle line, which is what decides a stem's direction. */
+export const MIDDLE_LINE_STEP = 4;
+
+/**
+ * Which way the stems go for a set of notes sharing one — a chord, or every
+ * note under one beam.
+ *
+ * The rule notation has always used: a note **below** the middle line takes
+ * its stem up, one on or above it takes it down, so the stem stays inside the
+ * staff instead of running off the page. What decides a group is the note
+ * **furthest from the middle line**; if the extremes are equally far, the
+ * stem goes down, which is the convention for the ambiguous case.
+ *
+ * Steps are the notes' positions on **their own staff** — on a grand staff
+ * each hand answers for itself, which is exactly why a two-hand strike must
+ * not be one column.
+ */
+export function stemsUp(steps: readonly number[]): boolean {
+  if (steps.length === 0) return true;
+  let furthest = 0;
+  for (const s of steps) furthest = Math.max(furthest, Math.abs(s - MIDDLE_LINE_STEP));
+  return steps.every((s) => Math.abs(s - MIDDLE_LINE_STEP) < furthest || s < MIDDLE_LINE_STEP);
+}
 
 /** Diatonic step of `pitch` above the bottom staff line. Negative is below. */
 export function staffStep(pitch: number): number {
@@ -633,8 +686,10 @@ export function beamGroups(notes: readonly BeamCandidate[], beatsPerBar: number)
   let runBeat = -1;
   let runLoop = -1;
 
+  // A run of one is kept this far so `joinEighths` can still pair it with the
+  // next beat's; what cannot be beamed to anything is dropped at the end.
   const flush = () => {
-    if (run.length > 1) {
+    if (run.length > 0) {
       groups.push({
         members: run,
         beams: Math.min(...run.map((i) => FIGURE_BEAMS[notes[i].figure])),
@@ -663,7 +718,57 @@ export function beamGroups(notes: readonly BeamCandidate[], beatsPerBar: number)
     run.push(i);
   }
   flush();
-  return groups;
+  // A lone note has no beam — it wears the font's flag instead.
+  return joinEighths(groups, notes, beatsPerBar).filter((g) => g.members.length > 1);
+}
+
+/** How many beats a run of plain eighths may beam across. */
+const BEAM_SPAN_BEATS = 2;
+
+/**
+ * Join per-beat groups of plain eighths that fill the same half-bar.
+ *
+ * Beaming by the beat is correct and is what the groups above are built on,
+ * but a running quaver passage engraved that way comes out as a row of
+ * two-note groups, and printed music beams it in fours. Both are right; the
+ * four is what a reader expects and what every piano part this was checked
+ * against does.
+ *
+ * Deliberately a pass over the finished groups rather than a wider unit in
+ * the loop. Only **plain eighths** merge, so a sixteenth keeps its group on
+ * the beat where the eye needs the subdivision, and a broken group — a dotted
+ * eighth against a sixteenth, the case the beam stubs exist for — is never
+ * swept into a longer beam. And only in a metre the half-bar divides, so 3/4
+ * stays on the beat.
+ */
+function joinEighths(
+  groups: BeamGroup[],
+  notes: readonly BeamCandidate[],
+  beatsPerBar: number,
+): BeamGroup[] {
+  if (beatsPerBar % BEAM_SPAN_BEATS !== 0) return groups;
+  const plain = (g: BeamGroup) => g.members.every((m) => FIGURE_BEAMS[notes[m].figure] === 1);
+  const halfBarOf = (m: number) => {
+    const inBar = ((notes[m].beat % beatsPerBar) + beatsPerBar) % beatsPerBar;
+    return Math.floor(inBar / BEAM_SPAN_BEATS + 1e-9);
+  };
+
+  const out: BeamGroup[] = [];
+  for (const g of groups) {
+    const prev = out[out.length - 1];
+    const joins =
+      prev !== undefined &&
+      plain(prev) &&
+      plain(g) &&
+      // Adjacent in the music, not merely adjacent in the list: a rest or a
+      // longer note between them has already ended the beam.
+      prev.members[prev.members.length - 1] + 1 === g.members[0] &&
+      (notes[g.members[0]].loop ?? 0) === (notes[prev.members[0]].loop ?? 0) &&
+      halfBarOf(g.members[0]) === halfBarOf(prev.members[0]);
+    if (joins) prev.members = [...prev.members, ...g.members];
+    else out.push({ ...g, members: [...g.members] });
+  }
+  return out;
 }
 
 /**
