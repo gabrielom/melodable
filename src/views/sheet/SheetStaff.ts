@@ -164,15 +164,27 @@ const DOT_CLEAR = 5;
 /**
  * Beamed groups are assembled, not glyphs — the font has no beam.
  *
- * The numbers are the catalogue's, scaled off its own 12.5px staff space to
- * ours: a 1.8px stem, a 4.2px beam per subdivision stacked at 6.4px, and a
- * half-length stub for a broken group.
+ * The stem and the stub are the catalogue's, scaled off its own 12.5px staff
+ * space to ours. **The beam is not**: at `4.2px` it was `0.247` of a staff
+ * space, and the printed Lavoe transcription measures `0.553` — at 600dpi,
+ * where its space is 47px, its beams are 26px. Less than half weight is why a
+ * bar that should read as one solid stroke came out a tangle of hairlines.
+ * Held as a ratio so it survives a change of `SPACE`.
+ *
+ * The **separation** between stacked beams is the one number not measured
+ * here: that piece is quavers throughout and has no stacked beams in it, so
+ * it takes the standard `0.25` of a space. `BEAM_GAP` is beam-to-beam, which
+ * is the beam plus that separation.
+ *
+ * This is weight only. The catalogue still governs which figure is drawn and
+ * what its shape is, and every other rule on the staff — staff lines, stems,
+ * barlines, ledgers — is deliberately untouched.
  */
 const STEM_W = 1.8;
 /** How far a stem must pass the head at its far end, when a chord is wider than a stem is long. */
 const STEM_MIN_PAST = SPACE;
-const BEAM_H = 4.2;
-const BEAM_GAP = 6.4;
+const BEAM_H = SPACE * 0.553;
+const BEAM_GAP = SPACE * (0.553 + 0.25);
 const BEAM_STUB = 11;
 
 /** Soft highlight behind the note being played right now. */
@@ -1052,11 +1064,23 @@ export class SheetStaff implements LaneRenderer {
    * long still needs its stem to pass the far head, so it grows to
    * `STEM_MIN_PAST` beyond it and no further.
    */
-  private tipOf(heads: readonly number[], size: number, up: boolean): number {
+  private tipOf(
+    heads: readonly number[],
+    size: number,
+    up: boolean,
+    reserve = 0,
+  ): number {
     const len = STEM_EM_LEN * size;
     const top = Math.min(...heads);
     const bottom = Math.max(...heads);
-    return up ? Math.min(bottom - len, top - STEM_MIN_PAST) : Math.max(top + len, bottom + STEM_MIN_PAST);
+    // `reserve` is ink that will sit *inside* the tip — the beam stack. Without
+    // it the clamp measures to the stem's end and the beam then grows back
+    // toward the notehead, so a thick beam eats the clearance it was supposed
+    // to keep: at one space past the head a 0.55-space beam leaves 0.45 of
+    // visible stem. Reserving its thickness keeps the clear stem the same
+    // whatever the beam weighs.
+    const past = STEM_MIN_PAST + reserve;
+    return up ? Math.min(bottom - len, top - past) : Math.max(top + len, bottom + past);
   }
 
   /**
@@ -1095,7 +1119,9 @@ export class SheetStaff implements LaneRenderer {
 
     // Every stem in a group ends on the same beam line: a full stem clear of
     // the outermost head in the group, on the side the stems point.
-    const beamY = this.tipOf(columns.flat().map((n) => n.y), size, up);
+    // The whole stack has to clear the nearest head, not just the first beam.
+    const stack = BEAM_H + (beams - 1) * BEAM_GAP;
+    const beamY = this.tipOf(columns.flat().map((n) => n.y), size, up, stack);
 
     for (const col of columns) {
       for (const n of col) this.head(n, size);

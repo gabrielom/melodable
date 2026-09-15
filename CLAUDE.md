@@ -594,6 +594,36 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   no further.
   A **single** note is unaffected either way — one head is both ends — which
   is why this survived the check that an assembled note matches the glyph.
+- **The beam's weight is the printed page's; every other rule on the staff is
+  not.** `BEAM_H` is `0.553` of a staff space, measured off the Lavoe
+  transcription at 600dpi where its space is 47px and its beams are 26px. It
+  was `4.2px` — `0.247`, under half — which is why a beamed bar read as a
+  tangle of hairlines rather than one stroke. `BEAM_GAP` is beam-to-beam: the
+  beam plus the standard `0.25` separation, that separation being the one
+  number not measurable here, since the piece is quavers throughout and has no
+  stacked beams.
+  **The staff lines, stems, barlines, ledgers and notehead rim were changed to
+  match the page too, and that was reverted at the user's request** — they want
+  the existing line weights kept and only the beams adjusted. Don't re-apply
+  it: `LINE_W` 1.4, `STEM_W` 1.8, `BARLINE_W` 1.8, `LEDGER_W` 2.6 and the
+  2.2px head rim are deliberate, and so is the absence of any device-pixel
+  snapping. The measurements are in the history if they are ever wanted
+  (staff line, stem and barline all measure `0.128` on the page, ledger
+  `0.213`), but the decision went the other way.
+  Three treatments were rendered against the Lavoe MIDI and **A was chosen**:
+  print-weight beams at the existing note spacing. B added the page's own
+  2.4-space spacing and more stem clearance but cost a bar of lookahead; C
+  kept the beams lighter at 0.40.
+- **A beam stack is reserved inside the stem, not added on top of it**
+  (`tipOf`'s `reserve`). The clamp that keeps a stem clear of the nearest head
+  measures to the stem's *tip*, and for a beamed group the beam then grows
+  back **toward** the notehead — so thickening the beam ate the very clearance
+  the clamp existed to keep: at one space past the head a `0.553` beam leaves
+  `0.45` of visible stem, and the group reads as heads stuck to a slab. That
+  is what "on no one it looked odd with the notes that were close to the
+  glyph" was. `beamGroup` passes the whole stack's depth — `BEAM_H +
+  (beams - 1) * BEAM_GAP`, so a semiquaver group clears as well as a quaver
+  one — and the clear stem is then the same whatever the beam weighs.
 - **Beams run to the half-bar for plain eighths, and to the beat for
   everything else.** Beaming by the beat is what `beamGroups` builds, and it
   is correct — but a running quaver passage engraved that way comes out as a
