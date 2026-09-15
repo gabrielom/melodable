@@ -166,6 +166,8 @@ const DOT_CLEAR = 5;
  * half-length stub for a broken group.
  */
 const STEM_W = 1.8;
+/** How far a stem must pass the head at its far end, when a chord is wider than a stem is long. */
+const STEM_MIN_PAST = SPACE;
 const BEAM_H = 4.2;
 const BEAM_GAP = 6.4;
 const BEAM_STUB = 11;
@@ -960,8 +962,36 @@ export class SheetStaff implements LaneRenderer {
 
   /** The free end of a column's stem, a full stem clear of the outermost head. */
   private stemTip(col: Placed[], size: number, up: boolean): number {
+    return this.tipOf(
+      col.map((n) => n.y),
+      size,
+      up,
+    );
+  }
+
+  /**
+   * The free end of a stem, measured from the head the stem **starts** at.
+   *
+   * Which head that is, is the whole of it. A stem-up chord's stem rises out
+   * of its *lowest* note, so its length is a full stem above that — and the
+   * notes above are simply passed on the way. Measuring from the far head
+   * instead adds the chord's own span to every stem: a chord spanning a fifth
+   * got three and a half spaces plus a fifth, a beamed group spanning an
+   * octave got three and a half plus an octave, and on a grand staff those
+   * stems and their beams sprawled out of the staff and into the gap, where
+   * they tangled with the other hand's ledger lines. That is what "it still
+   * looks really bad" was: not the spacing, which measures within a tenth of a
+   * space of the printed score, but every stem being half again too long.
+   *
+   * The clamp is the other half of the rule: a chord wider than a stem is
+   * long still needs its stem to pass the far head, so it grows to
+   * `STEM_MIN_PAST` beyond it and no further.
+   */
+  private tipOf(heads: readonly number[], size: number, up: boolean): number {
     const len = STEM_EM_LEN * size;
-    return up ? Math.min(...col.map((n) => n.y)) - len : Math.max(...col.map((n) => n.y)) + len;
+    const top = Math.min(...heads);
+    const bottom = Math.max(...heads);
+    return up ? Math.min(bottom - len, top - STEM_MIN_PAST) : Math.max(top + len, bottom + STEM_MIN_PAST);
   }
 
   /**
@@ -1000,9 +1030,7 @@ export class SheetStaff implements LaneRenderer {
 
     // Every stem in a group ends on the same beam line: a full stem clear of
     // the outermost head in the group, on the side the stems point.
-    const heads = columns.flat().map((n) => n.y);
-    const len = STEM_EM_LEN * size;
-    const beamY = up ? Math.min(...heads) - len : Math.max(...heads) + len;
+    const beamY = this.tipOf(columns.flat().map((n) => n.y), size, up);
 
     for (const col of columns) {
       for (const n of col) this.head(n, size);

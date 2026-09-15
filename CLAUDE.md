@@ -575,6 +575,25 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   was little over half the one on the single note beside it; one number now,
   and an assembled note is the glyph's twin. `FLAG_EM_TIP` is where a flag
   meets that same tip.
+- **A stem's length is measured from the head it starts at, never the far
+  one** (`tipOf`). Which head that is, is the whole of the rule: a stem-up
+  chord rises out of its *lowest* note, so it is a full stem above **that**,
+  and the notes above are passed on the way. Measured from the far head
+  instead — which is what shipped first — every stem gains the chord's own
+  span: a chord spanning a fifth got three and a half spaces plus a fifth, a
+  beamed group spanning an octave got three and a half plus an octave, and on
+  a grand staff those stems and their beams sprawled out of the staff into the
+  gap and tangled with the other hand's ledger lines. **That was the "still
+  looks really bad" against the printed Lavoe transcription, and it was worth
+  measuring rather than guessing**: the horizontal spacing was the suspect and
+  it is *not* the problem — the score's tightest pair is 1.20 staff spaces
+  (29px against a 23.7px space at 300dpi) and `MIN_NOTE_GAP_PX` is 1.29, so
+  ours is already the more generous. Every stem simply being half again too
+  long was. The clamp is the other half: a chord wider than a stem is long
+  still has to pass its far head, so it grows to `STEM_MIN_PAST` past it and
+  no further.
+  A **single** note is unaffected either way — one head is both ends — which
+  is why this survived the check that an assembled note matches the glyph.
 - **Beams run to the half-bar for plain eighths, and to the beat for
   everything else.** Beaming by the beat is what `beamGroups` builds, and it
   is correct — but a running quaver passage engraved that way comes out as a
