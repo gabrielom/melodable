@@ -123,6 +123,22 @@ export const TIMING_WINDOWS = { perfect: 0.032, great: 0.06, loose: 0.1 } as con
 export const WRONG_GRACE = 0.25;
 
 /**
+ * The tempo range the app accepts, everywhere it accepts one.
+ *
+ * **One range, because there were two.** The transport readout clamped to
+ * 50-160 while the import dialog offered 40-240, so a clip could enter the
+ * library at a tempo the bar could not express: the imported Lavoe montuno is
+ * 200 BPM, displayed correctly because the lesson sets it directly, and the
+ * first touch of the readout — a drag, an arrow key, a typed number — snapped
+ * it to 160 with no way back up. The ceiling has to cover anything the
+ * importer will take, or importing is a one-way door.
+ *
+ * The built-in lessons run 70-98, which is why 160 was never felt.
+ */
+export const TEMPO_MIN = 40;
+export const TEMPO_MAX = 240;
+
+/**
  * Score weight per rating. `early` and `late` carry what the old single loose
  * band did, so splitting it changes no accuracy maths.
  */

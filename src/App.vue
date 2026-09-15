@@ -17,6 +17,7 @@ import { useTrainer } from "@/composables/useTrainer";
 import { AudioEngine, type Bus } from "@/engine/audio";
 import { PADS, PAD_KEY_MAP, PIANO_KEY_MAP, noteToPad } from "@/engine/gm";
 import { parseMidiFile, midiToLesson, type ParsedMidi } from "@/engine/midi-file";
+import { TEMPO_MAX, TEMPO_MIN } from "@/engine/types";
 import type { MidiMessage, InstrumentType } from "@/engine/types";
 
 import DeviceMenu from "@/components/DeviceMenu.vue";
@@ -378,8 +379,10 @@ function pickChord(degree: number | null) {
 // ------------------------------------------------------------------- tempo
 // The design replaces the slider with a recessed readout you drag: a compact
 // control that still gives fine adjustment, which a 54px slider could not.
-const TEMPO_MIN = 50;
-const TEMPO_MAX = 160;
+//
+// Its range is `TEMPO_MIN`/`TEMPO_MAX`, shared with the import dialog — see
+// the constants. It used to carry its own 50-160, which silently capped any
+// clip imported faster than that.
 /** Pixels of vertical drag per BPM. Up is faster. */
 const TEMPO_PX_PER_BPM = 3;
 
@@ -935,8 +938,8 @@ watch(
           role="slider"
           tabindex="0"
           :aria-valuenow="bpmLabel"
-          aria-valuemin="50"
-          aria-valuemax="160"
+          :aria-valuemin="TEMPO_MIN"
+          :aria-valuemax="TEMPO_MAX"
           aria-label="Tempo"
           :data-tip="`Tempo — ${bpmLabel} BPM. Click to type, drag to scrub.`"
           @pointerdown="onTempoDragStart"

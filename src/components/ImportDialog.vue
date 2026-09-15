@@ -9,6 +9,7 @@
  */
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import type { MidiAnalysis } from "@/engine/midi-file";
+import { TEMPO_MAX, TEMPO_MIN } from "@/engine/types";
 import type { InstrumentType } from "@/engine/types";
 import { PADS } from "@/engine/gm";
 import { noteName } from "@/engine/pitch";
@@ -143,7 +144,7 @@ onUnmounted(() => {
             <label class="field">
               <span class="flabel">TEMPO</span>
               <div class="bpmrow">
-                <input v-model.number="bpm" class="input bpm" type="number" min="40" max="240" />
+                <input v-model.number="bpm" class="input bpm" type="number" :min="TEMPO_MIN" :max="TEMPO_MAX" />
                 <span class="unit">BPM</span>
               </div>
             </label>

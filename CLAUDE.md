@@ -671,6 +671,19 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   re-measured, per the rule above: the piano-plus-sheet bar fits at 1026px,
   inside the existing floor, because the floor is set by the longest *pads*
   title ("Syncopated Groove") and pads never show the pair.
+- **One tempo range, `TEMPO_MIN`/`TEMPO_MAX` in `engine/types.ts`, and both
+  controls read it.** There were two: the transport readout clamped to 50-160
+  while the import dialog offered 40-240, so a clip could enter the library at
+  a tempo the bar could not express. The imported Lavoe montuno is 200 BPM and
+  *displayed* as 200, because a lesson sets `bpm` directly and nothing clamps
+  it — but the first touch of the readout, a drag or an arrow key or a typed
+  number, ran it through `applyTempo` and snapped it to 160 with **no way back
+  up**. Importing must not be a one-way door, so the ceiling covers anything
+  the importer will take.
+  The built-in lessons run 70-98, which is why 160 was never felt. The aria
+  bounds on the readout were a third copy of the numbers and are bound now.
+  `Transport.setBpm` has never clamped and still doesn't — `applyTempo` is the
+  one gate, which is what made this a single-line fault with a two-file cause.
 - **The bar's icons are SVG paths, not characters.** Volume, import and Ableton Link carry path data copied verbatim from handoff 08. They were a system glyph (`⇪`) and hand-built curves before, and that is exactly why they drifted from the drawings — a character is at the mercy of the font stack and the platform's rasteriser. **Do not substitute a font character, an emoji, an icon-set component, or rebuild the curves from `border-radius`.** They ink from `currentColor`, which `.ico` sets to `--txt2` — the same value handoff 08 names for both themes.
 - **A fader at zero is the switch; there is no `GUIDE | CLICK` pair.** Both
   were gates on *scheduling audio* and nothing else — neither touched the
