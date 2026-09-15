@@ -271,6 +271,8 @@ interface System {
   /** The whole system's extent, for the grid, the barlines and the playhead. */
   top: number;
   bottom: number;
+  /** Whether a step goes on the bass staff — false outright when there isn't one. */
+  bass(step: number): boolean;
   /** Canvas y of a step spelled against the treble staff's bottom line. */
   yOf(step: number): number;
   /** That step in its own staff's coordinates — what ledger lines count in. */
@@ -324,7 +326,7 @@ export class SheetStaff implements LaneRenderer {
 
     // The key signature lives in the gutter, so it sets the track's origin.
     const marks = signatureMarks(f.keyFifths);
-    const grand = needsBassStaff(f.hueOrder);
+    const grand = needsBassStaff(f.hueOrder, f.staffSplit);
     // The brace takes a column of its own in front of the clef rather than
     // sitting on top of it, so the gutter grows by exactly its width — and by
     // the few pixels the wider bass clef pushes the signature, so the metre
@@ -461,7 +463,9 @@ export class SheetStaff implements LaneRenderer {
    * the bottom.
    */
   private system(f: LaneFrame, fieldH: number): System {
-    const grand = needsBassStaff(f.hueOrder);
+    // Where the hands divide, decided by the lesson rather than by C4.
+    const split = f.staffSplit;
+    const grand = needsBassStaff(f.hueOrder, split);
     const height = grand ? STAFF_H * 2 + GRAND_GAP : STAFF_H;
     const trebleTop = Math.round((fieldH - height) / 2);
     const trebleBottom = trebleTop + STAFF_H;
@@ -475,11 +479,13 @@ export class SheetStaff implements LaneRenderer {
       bassBottom,
       top: trebleTop,
       bottom: grand ? bassBottom : trebleBottom,
+      bass: (step) => grand && onBassStaff(step, split),
       yOf: (step) =>
-        grand && onBassStaff(step)
+        grand && onBassStaff(step, split)
           ? bassBottom - (step + GRAND_STEP_OFFSET) * HALF_SPACE
           : trebleBottom - step * HALF_SPACE,
-      localOf: (step) => (grand && onBassStaff(step) ? step + GRAND_STEP_OFFSET : step),
+      localOf: (step) =>
+        grand && onBassStaff(step, split) ? step + GRAND_STEP_OFFSET : step,
     };
   }
 
@@ -714,7 +720,7 @@ export class SheetStaff implements LaneRenderer {
     // not what is written where — spans both.
     if (sys.grand) {
       for (const bass of [true, false]) {
-        this.engrave(f, columnsOf(placed.filter((n) => onBassStaff(n.step) === bass)), size);
+        this.engrave(f, columnsOf(placed.filter((n) => sys.bass(n.step) === bass)), size);
       }
     } else {
       this.engrave(f, columnsOf(placed), size);

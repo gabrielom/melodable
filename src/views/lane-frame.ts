@@ -99,6 +99,15 @@ export interface LaneFrame {
    */
   hueOrder: number[];
 
+  /**
+   * Sheet: the step at or above which a note goes on the treble staff.
+   *
+   * Derived per lesson by `handSplit` and passed in rather than recomputed
+   * per frame, for the same reason `noteValues` is: it must be the *lesson's*
+   * answer, so a note never changes staff as the music scrolls.
+   */
+  staffSplit: number;
+
   /** Pads: pad indices in use, left-to-right. */
   padLanes: number[];
   /** Pads: the controller arrangement, for the mini grid in the gutter. */

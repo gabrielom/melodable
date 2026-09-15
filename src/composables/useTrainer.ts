@@ -39,7 +39,7 @@ import { PadLanes } from "@/views/pads/PadLanes";
 import { PianoRoll } from "@/views/piano/PianoRoll";
 import { SheetStaff } from "@/views/sheet/SheetStaff";
 import { useNotationFont } from "@/composables/useNotationFont";
-import { engraveOnsets, keySignatureFor } from "@/engine/notation";
+import { engraveOnsets, handSplit, keySignatureFor } from "@/engine/notation";
 import { chordsForLoop, diatonicTriad, hasHarmony } from "@/engine/harmony";
 import {
   clampRegion,
@@ -258,6 +258,12 @@ export function useTrainer(
    * the staff would be a worse trade than getting it right from the notes.
    * Pads have no pitch, so there is nothing to derive and nothing that reads it.
    */
+  /**
+   * Where this lesson's hands divide on a grand staff. Off `lesson.notes`, so
+   * it is the lesson's own answer and a loop region cannot move a note from
+   * one staff to the other half way through a sitting.
+   */
+  const staffSplit = computed(() => (isPiano.value ? handSplit(lesson.value.notes) : 0));
   const derivedKey = computed(() =>
     isPiano.value ? keySignatureFor(targets.value.map((t) => t.lane)) : 0,
   );
@@ -578,6 +584,7 @@ export function useTrainer(
       chords: chords.value,
       instrument: lesson.value.instrument,
       hueOrder: isPiano.value ? lessonPitches.value : lanes.value,
+      staffSplit: staffSplit.value,
       padLanes: lanes.value,
       padLayout: settings.padLayout,
       lowNote: pianoRange.value[0],

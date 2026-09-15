@@ -25,6 +25,8 @@ import {
   degreeRowDrop,
   GRAND_STEP_OFFSET,
   onBassStaff,
+  handSplit,
+  MIDDLE_C_STEP,
   needsBassStaff,
   bassSignatureMarks,
   keyName,
@@ -841,7 +843,67 @@ describe("the grand staff", () => {
     }
   });
 
+  it("reads the hands' own dividing line off the moments they play together", () => {
+    // The montuno from the printed piano part: G3 B3 C4 D4 in the left hand
+    // against G4 B4 C5 D5 G5 in the right, one of each on every eighth. The
+    // textbook C4 split sends the left hand's C4 and D4 up onto the treble
+    // staff with the right hand, which is a grand staff that still reads like
+    // one crowded one.
+    //
+    // What is pinned is the **division**, not the number: every line from E4
+    // to G4 separates these hands identically, and which of them comes back
+    // is a tie-break (nearest middle C) rather than a fact about the music.
+    const lh = [55, 59, 60, 62, 55, 59, 60, 62];
+    const rh = [67, 71, 72, 74, 67, 71, 72, 74];
+    const notes = lh.flatMap((low, i) => [
+      { time: i * 0.5, pitch: low },
+      { time: i * 0.5, pitch: rh[i] },
+    ]);
+    const split = handSplit(notes);
+    for (const p of lh) expect(onBassStaff(staffStep(p), split)).toBe(true);
+    for (const p of rh) expect(onBassStaff(staffStep(p), split)).toBe(false);
+    // And it has moved off C4, which is the whole point: at C4 the left
+    // hand's own C4 and D4 would be drawn on the treble staff.
+    expect(split).toBeGreaterThan(MIDDLE_C_STEP);
+    expect(onBassStaff(staffStep(62), split)).toBe(true); // D4, left hand
+    expect(onBassStaff(staffStep(62), MIDDLE_C_STEP)).toBe(false); // as it used to be
+  });
+
+  it("keeps middle C for a melody, which has no hands to divide", () => {
+    const line = [60, 62, 64, 65, 67].map((pitch, i) => ({ time: i, pitch }));
+    expect(handSplit(line)).toBe(MIDDLE_C_STEP);
+    expect(handSplit([])).toBe(MIDDLE_C_STEP);
+  });
+
+  it("does not mistake a chord for two hands", () => {
+    // A triad's internal gaps are thirds. Splitting inside one would put the
+    // bottom of a chord on the other staff from its top.
+    const triad = [60, 64, 67].map((pitch) => ({ time: 0, pitch }));
+    expect(handSplit(triad)).toBe(MIDDLE_C_STEP);
+  });
+
+  it("finds the line under a left-hand chord, not inside it", () => {
+    // C3-E3-G3 under a C5 melody: the only gap wide enough is the one
+    // between the hands, so the chord stays whole on the bass staff.
+    const notes = [48, 52, 55, 72].map((pitch) => ({ time: 0, pitch }));
+    const split = handSplit(notes);
+    for (const p of [48, 52, 55]) expect(onBassStaff(staffStep(p), split)).toBe(true);
+    expect(onBassStaff(staffStep(72), split)).toBe(false);
+  });
+
+  it("holds still when one moment disagrees with the rest", () => {
+    // Every bar of the montuno votes for G4; a single stray octave should not
+    // move a line the whole piece is read against.
+    const steady = Array.from({ length: 16 }, (_, i) => i).flatMap((i) => [
+      { time: i * 0.5, pitch: 60 },
+      { time: i * 0.5, pitch: 72 },
+    ]);
+    const before = handSplit(steady);
+    expect(handSplit([...steady, { time: 99, pitch: 40 }, { time: 99, pitch: 41 }])).toBe(before);
+  });
+
   it("splits the hands at middle C, which keeps its own ledger on the treble", () => {
+    // The default when nothing says otherwise, which is still the classic line.
     expect(onBassStaff(staffStep(60))).toBe(false); // C4, one ledger below treble
     expect(onBassStaff(staffStep(62))).toBe(false); // D4
     expect(onBassStaff(staffStep(59))).toBe(true); // B3
@@ -855,6 +917,22 @@ describe("the grand staff", () => {
     expect(needsBassStaff([60, 64, 72])).toBe(false);
     expect(needsBassStaff([55, 64, 71])).toBe(true); // G3 is past it
     expect(needsBassStaff([48, 60, 72])).toBe(true);
+  });
+
+  it("asks for one when the music climbs off the top instead", () => {
+    // The mirror of the rule above, and the case a two-hand piece trips when
+    // its left hand never goes low: C6 is two ledgers up and is the limit,
+    // and a montuno running B3 to G6 needs the second staff even though its
+    // bottom note is only B3.
+    expect(needsBassStaff([60, 72, 84])).toBe(false); // C6 is the limit
+    expect(needsBassStaff([59, 72, 91])).toBe(true); // B3..G6
+  });
+
+  it("never draws a bass staff with nothing on it", () => {
+    // Music living entirely above the treble staff is still too wide for it,
+    // but a bass clef underneath would be empty — that wants ledger lines.
+    expect(needsBassStaff([84, 88, 91])).toBe(false); // C6..G6, all high
+    expect(needsBassStaff([72, 84, 91])).toBe(false); // C5..G6, still all above C4
   });
 
   it("wants none for an empty lesson", () => {

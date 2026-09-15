@@ -353,37 +353,130 @@ export function staffStep(pitch: number): number {
 export const GRAND_STEP_OFFSET = 12;
 
 /**
- * Middle C is the line between the hands: C4 and up on the treble staff,
- * below it on the bass.
+ * Which staff a note goes on, given where this lesson's hands divide.
  *
- * C4 is `step -2`, one ledger under the treble staff, and that is where the
- * convention puts it — the ledger belongs to the treble staff, not to the gap.
+ * Middle C is the classic line and is still the default, but it is **not** a
+ * constant: plenty of two-hand music keeps the left hand above middle C, and
+ * splitting such a piece at C4 leaves the bass staff nearly empty while the
+ * left hand crowds in under the right. `handSplit` reads the real line off
+ * the music; this only applies it.
  */
-export function onBassStaff(step: number): boolean {
-  return step < -2;
+export function onBassStaff(step: number, split = MIDDLE_C_STEP): boolean {
+  return step < split;
 }
 
 /**
- * How far below the treble staff a note may sit before a bass staff is worth
- * drawing: two ledger lines, which is A3.
+ * What one treble staff holds without the reader counting lines: two ledgers
+ * either side, `A3` (-4) below and `C6` (12) above.
  *
- * Any lower and the reader is counting lines instead of reading them. Any
- * *higher* a threshold and a melody that merely dips — the imported No One
- * bottoms out on exactly A3 — would be split across two staves, which is far
- * worse than a couple of ledgers: a single line of music belongs on a single
- * staff.
+ * The low half is the older rule and its reasoning is unchanged — a melody
+ * that merely dips, like the imported No One bottoming out on exactly A3,
+ * belongs on one staff, because a single line of music does. The high half is
+ * the same sentence the other way up, and it is what a two-hand piece trips
+ * when its left hand never goes low: the right hand climbs off the top
+ * instead. Without it a montuno sitting between B3 and G6 was drawn on one
+ * staff with four ledgers above and three below.
  */
-const LEDGERS_BEFORE_BASS = -4;
+const TREBLE_LOW = -4;
+const TREBLE_HIGH = 12;
 
 /**
  * Whether a lesson's pitches need the bass staff at all.
  *
  * Derived, like the key signature and the harmony: nothing authors it, and a
  * clip that stays in one register keeps the single treble staff it has always
- * had. Only music that actually reaches down gets the second one.
+ * had. Only music that reaches past what one staff holds gets the second one.
  */
-export function needsBassStaff(pitches: readonly number[]): boolean {
-  return pitches.some((p) => staffStep(p) < LEDGERS_BEFORE_BASS);
+export function needsBassStaff(pitches: readonly number[], split = MIDDLE_C_STEP): boolean {
+  if (pitches.length === 0) return false;
+  const steps = pitches.map(staffStep);
+  const tooWide = Math.min(...steps) < TREBLE_LOW || Math.max(...steps) > TREBLE_HIGH;
+  if (!tooWide) return false;
+  // And only if the split leaves each staff something to hold. Music living
+  // entirely above the treble staff is still too wide for it, but a second
+  // staff underneath would be empty — that case wants ledger lines, or an
+  // `8va` we do not draw, and never a bass clef with nothing on it.
+  return steps.some((s) => s < split) && steps.some((s) => s >= split);
+}
+
+/** C4, one ledger under the treble staff — the classic line between the hands. */
+export const MIDDLE_C_STEP = -2;
+/**
+ * How far the derived split may stray from middle C: down to A3 and up to G4,
+ * which is the band both staves can still reach without absurd ledgers.
+ */
+const SPLIT_LOW = -4;
+const SPLIT_HIGH = 2;
+/**
+ * The smallest gap inside one simultaneity that counts as two hands rather
+ * than one chord — a fifth. A triad's internal gaps are thirds; hands are
+ * usually an octave or more apart.
+ */
+const MIN_HAND_GAP = 4;
+/** Onsets within this many beats are the same moment, as everywhere else here. */
+const ONSET_TOLERANCE = 1 / 16;
+
+/**
+ * Where a lesson's hands divide, read off the moments they play together.
+ *
+ * Middle C is the textbook answer and is wrong for a great deal of real
+ * music. A mambo montuno plays `G3 B3 C4 D4` in the left hand against
+ * `G4 B4 C5 D5 G5` in the right: split at C4 and the left hand's C4 and D4
+ * climb onto the treble staff with the right hand, which is how ours came to
+ * draw two staves and still look like one crowded one. There is no ledger-line
+ * argument that finds the real line either — C4 and D4 sit perfectly
+ * comfortably on the treble staff. What finds it is that the two hands
+ * **sound together**: every onset of that montuno is one low note and one high
+ * one, and the gap between them is never crossed. Each such moment votes for
+ * the splits lying inside its own widest gap, and the winner is the line the
+ * music itself never crosses — here G4, which is exactly where the printed
+ * score puts it.
+ *
+ * A clip with no simultaneities is a melody and has no hands to divide, so it
+ * keeps middle C; so does one whose gaps are all chord-sized. Ties go to
+ * middle C as well. Derived from the whole lesson, never from what is on
+ * screen — a staff that moved a note as you scrolled would be unreadable.
+ */
+export function handSplit(notes: readonly { time: number; pitch: number }[]): number {
+  const moments = new Map<number, number[]>();
+  for (const n of notes) {
+    const key = Math.round(n.time / ONSET_TOLERANCE);
+    const at = moments.get(key);
+    if (at) at.push(staffStep(n.pitch));
+    else moments.set(key, [staffStep(n.pitch)]);
+  }
+
+  const votes = new Map<number, number>();
+  for (const steps of moments.values()) {
+    const sorted = [...new Set(steps)].sort((a, b) => a - b);
+    if (sorted.length < 2) continue;
+    let widest = 0;
+    let at = 0;
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i] - sorted[i - 1] > widest) {
+        widest = sorted[i] - sorted[i - 1];
+        at = i;
+      }
+    }
+    if (widest < MIN_HAND_GAP) continue;
+    // A split of `v` sends everything below `v` down, so the splits that
+    // divide this moment cleanly are the ones inside its gap.
+    const from = Math.max(SPLIT_LOW, sorted[at - 1] + 1);
+    const to = Math.min(SPLIT_HIGH, sorted[at]);
+    for (let v = from; v <= to; v++) votes.set(v, (votes.get(v) ?? 0) + 1);
+  }
+
+  let best = MIDDLE_C_STEP;
+  let bestVotes = 0;
+  for (let v = SPLIT_LOW; v <= SPLIT_HIGH; v++) {
+    const n = votes.get(v) ?? 0;
+    const closer = Math.abs(v - MIDDLE_C_STEP) < Math.abs(best - MIDDLE_C_STEP);
+    if (n > bestVotes || (n === bestVotes && n > 0 && closer)) {
+      bestVotes = n;
+      best = v;
+    }
+  }
+  return bestVotes > 0 ? best : MIDDLE_C_STEP;
 }
 
 /**

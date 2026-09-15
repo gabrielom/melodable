@@ -248,16 +248,43 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   `sheetAvailable` is the gate.
 - **The bass clef appears only for music that needs it, and the threshold is
   the ledger count, not the clef's range.** `needsBassStaff` asks for the
-  grand staff once a lesson reaches past **two ledgers below the treble** —
-  G3 and lower. A melody that merely dips is better read with a couple of
-  ledger lines than split across two staves, so A3 is deliberately the limit
-  and the imported No One, which bottoms out on exactly A3, stays on one
-  staff. Everything else about a single-staff lesson is **untouched** by the
-  grand staff: the gutter is the same 92px, the clef sits at the same x, and
-  the staff is centred in the same field.
-  Once there are two, `onBassStaff` splits the hands at **middle C**, which
-  keeps its own ledger on the treble. The two staves are not one continuous
-  ladder — E4 and A3 are four diatonic steps apart but a whole staff height
+  grand staff once a lesson reaches past **two ledgers either side** of the
+  treble staff — below A3 (-4) *or* above C6 (12). A melody that merely dips
+  is better read with a couple of ledger lines than split across two staves,
+  so A3 is deliberately the limit and the imported No One, which bottoms out
+  on exactly A3, stays on one staff. **The high half is not decoration**: a
+  two-hand piece whose left hand never goes low climbs off the *top* instead,
+  and the low-only rule drew a montuno spanning B3 to G6 on one staff with
+  four ledgers above and three below. One guard on top: the split must leave
+  **each staff something to hold**, so music living entirely above the treble
+  staff keeps its ledgers rather than gaining an empty bass clef. Everything
+  else about a single-staff lesson is **untouched** by the grand staff: the
+  gutter is the same 92px, the clef sits at the same x, and the staff is
+  centred in the same field.
+- **Where the hands divide is derived, and middle C is only the default.**
+  `handSplit` reads the line off the music; `onBassStaff(step, split)` applies
+  it. Middle C is the textbook answer and is wrong for a great deal of real
+  music: the mambo montuno plays `G3 B3 C4 D4` in the left hand against
+  `G4 B4 C5 D5 G5` in the right, so splitting at C4 sends the left hand's own
+  C4 and D4 up onto the treble staff — a grand staff that still reads like one
+  crowded one, which is exactly what the user reported as "worse".
+  **No ledger-line argument finds the real line either**, and that is the
+  thing to understand before changing this: C4 and D4 sit perfectly
+  comfortably on the treble staff, so a cost function counting ledgers is
+  indifferent. What finds it is that the hands **sound together** — every
+  onset of that montuno is one low note against one high one, and the gap
+  between them is never crossed. Each simultaneity votes for the splits inside
+  its own widest gap, and the winner is the line the music never crosses.
+  A gap under `MIN_HAND_GAP` (a fifth) is a chord, not two hands, so a triad
+  is never split down the middle; a clip with no simultaneities is a melody
+  and keeps middle C; ties go to middle C too. Bounded to A3..G4, the band
+  both staves can still reach. Derived from the **whole lesson** and passed in
+  as `LaneFrame.staffSplit`, never recomputed per frame — a note that changed
+  staff as the music scrolled would be unreadable.
+  What is pinned in the tests is the **division**, not the number: several
+  lines separate the montuno's hands identically and which one comes back is a
+  tie-break, not a fact about the music.
+  The two staves are not one continuous ladder — E4 and A3 are four diatonic steps apart but a whole staff height
   apart on the page — so `GRAND_STEP_OFFSET` (12 steps, E4 over G2) rebases
   every bass note into its own staff's coordinates and *everything* under a
   note then works there unchanged: ledgers, the accidental, the degree row's
