@@ -647,6 +647,41 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   `lesson.notes` rather than `targets` for exactly this reason. The staff
   cannot do that, because a loop region rebases the beats, so both lengths
   travel on the target instead and neither is re-derived.
+- **Silences are drawn, and a rest belongs to a staff.** `restsFor` derives
+  them from the same `written` lengths the figures come from: the gap between
+  a note's written end and the next onset, plus anything before the first
+  onset and after the last.
+  **Per staff, never per system** — the two hands rest independently and
+  constantly. In the imported Lavoe the right hand has 14 silences and the
+  left 38 and almost none coincide, so one set derived from the merged onsets
+  would find only what both hands happen to share. The corollary bit on the
+  way in: on **one** staff there is no bass half to ask for, and asking
+  anyway hands `restsFor` an empty note set, which correctly answers "a bar
+  rest for every bar" — silence for a staff carrying the whole lesson.
+  `useTrainer` splits only when `needsBassStaff` says there are two staves.
+  Two engraving rules shape the decomposition and both are in `fillSilence`:
+  a rest **never crosses a barline**, and never crosses a metrical boundary
+  coarser than itself — enforced by only placing a value on a multiple of
+  itself, so a silence from beat 0.5 to 2 is a quaver rest then a crotchet
+  rest and never one dotted crotchet on an offbeat. No dotted rests at all.
+  A silence covering a whole bar is **one whole rest** whatever the metre;
+  4/4 reaches that by the greedy fill anyway, 3/4 would not. A length no
+  undotted figure can spell — a tuplet — draws **nothing**, because the
+  nearest figure would misstate the rhythm.
+  **A beam stops at a rest.** `beamGroups` takes the staff's rest beats and
+  breaks a run across them, and `joinEighths` will not merge across one
+  either. Without it the half-bar rule swept a beam straight over the quaver
+  rest in the Lavoe's opening bar, which reads as a run of notes that is not
+  there; the printed score breaks its beam either side.
+  Seating is measured, not guessed (`REST_SEAT`). A **whole** rest hangs from
+  the fourth line, a **half** sits on the middle line — the two occupy the
+  same space and are told apart by hanging against sitting, which is why they
+  need different anchors — and everything shorter is centred on the middle
+  line, which the font confirms by measuring the quarter, eighth and
+  sixteenth ink centres within a thousandth of each other. Verified by
+  rasterising: the whole lands on steps 6→5, the half on 4→5, the rest on 4.
+  A rest takes `palette.txt` and never a timing colour: a silence is notation,
+  not a result, so it stays outside both colour languages.
 - **`MIN_NOTE_GAP_PX` is two staff spaces, and it was measured.** Taking every
   adjacent pair of note columns across the three pages of a printed piano
   transcription and normalising by its own staff space (23.7px at 300dpi):

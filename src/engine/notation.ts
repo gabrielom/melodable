@@ -121,6 +121,145 @@ export const REST_GLYPH: Record<Figure, string> = {
   thirtysecond: "\u{1D140}",
 };
 
+/**
+ * Where each rest glyph sits, measured off the font and seated by the rule
+ * notation uses for it.
+ *
+ * `em` is the offset above the baseline of the part of the glyph that lands on
+ * `step`, and the two differ per figure because rests are not all seated the
+ * same way:
+ *
+ * - a **whole** rest *hangs* from the fourth line, so its **top** goes on
+ *   step 6 and its half-space body drops into the space below;
+ * - a **half** rest *sits* on the middle line, so its **bottom** goes on
+ *   step 4 and its body rises into the same space — which is why the two are
+ *   told apart by hanging against sitting and not by shape;
+ * - everything shorter is **centred** on the middle line, and the font agrees:
+ *   the quarter, eighth and sixteenth all measure their ink centre at
+ *   `0.4995`-`0.5005em`, within a thousandth of each other.
+ *
+ * `dx` is the em from the pen to the ink's horizontal centre, so a rest
+ * centres on its beat the way a notehead centres on its own.
+ */
+export const REST_SEAT: Record<Figure, { em: number; step: number; dx: number }> = {
+  whole: { em: 0.512, step: 6, dx: (0.05 + 0.733) / 2 },
+  half: { em: 0.244, step: 4, dx: (0.05 + 0.733) / 2 },
+  quarter: { em: 0.5005, step: 4, dx: (0.051 + 0.307) / 2 },
+  eighth: { em: 0.4995, step: 4, dx: (0.05 + 0.312) / 2 },
+  sixteenth: { em: 0.4995, step: 4, dx: (0.05 + 0.38) / 2 },
+  thirtysecond: { em: 0.4755, step: 4, dx: (0.05 + 0.451) / 2 },
+};
+
+/** A silence, drawn. `beat` is where it starts within the pattern. */
+export interface Rest {
+  beat: number;
+  figure: Figure;
+}
+
+/** Longest first, which is the order the greedy fill has to try them in. */
+const REST_FIGURES: readonly Figure[] = [
+  "whole",
+  "half",
+  "quarter",
+  "eighth",
+  "sixteenth",
+  "thirtysecond",
+];
+const REST_EPS = 1e-6;
+
+/**
+ * The silences in one staff's worth of music, as rests.
+ *
+ * **Per staff, never per system.** The two hands rest independently and
+ * constantly: in the imported Lavoe the right hand has 14 silences and the
+ * left 38, and almost none of them line up. Deriving from the merged onsets
+ * would have found the 14 the hands happen to share and drawn nothing for the
+ * rest — which is worse than drawing none at all, because the page would look
+ * finished.
+ *
+ * A note with **no written length** ends where the next one starts, so it
+ * leaves no silence — that is the pad case, and a clip whose note-offs never
+ * arrived. Everything else is the gap between a note's written end and the
+ * next onset.
+ *
+ * Two rules shape the decomposition, and both are what an engraver does:
+ * a rest **never crosses a barline**, and it never crosses a metrical
+ * boundary coarser than itself — enforced by only ever placing a value on a
+ * multiple of itself. A quaver's silence from beat 0.5 to beat 2 therefore
+ * comes out as a quaver rest then a crotchet rest, which is how it is
+ * printed, rather than as one dotted crotchet in the wrong place. No dotted
+ * rests at all: in simple metre the pair reads better and is commoner.
+ *
+ * A silence covering a whole bar is a **bar rest** — one whole rest, whatever
+ * the metre. In 4/4 the greedy fill arrives there anyway; in 3/4 it would
+ * otherwise write a minim and a crotchet, which is wrong.
+ */
+export function restsFor(
+  notes: readonly { beat: number; written: number }[],
+  beatsPerBar: number,
+  loopBeats: number,
+): Rest[] {
+  const at = new Map<number, number>();
+  for (const n of notes) at.set(n.beat, Math.max(at.get(n.beat) ?? 0, n.written));
+  const onsets = [...at.keys()].sort((a, b) => a - b);
+
+  const out: Rest[] = [];
+  const fill = (from: number, to: number) => fillSilence(from, to, beatsPerBar, out);
+
+  if (onsets.length === 0) {
+    fill(0, loopBeats);
+    return out;
+  }
+  // A pattern that starts after beat 0 starts with a silence, and one that
+  // ends early ends with one — both are real rests on the page.
+  fill(0, onsets[0]);
+  for (let i = 0; i < onsets.length; i++) {
+    const written = at.get(onsets[i]) ?? 0;
+    const next = i + 1 < onsets.length ? onsets[i + 1] : loopBeats;
+    if (written <= 0) continue; // no length to end: it runs to the next onset
+    fill(Math.min(onsets[i] + written, next), next);
+  }
+  return out;
+}
+
+/** Split a silence at every barline, then fill each piece. */
+function fillSilence(from: number, to: number, beatsPerBar: number, out: Rest[]): void {
+  let t = from;
+  while (t < to - REST_EPS) {
+    const barEnd = (Math.floor(t / beatsPerBar + REST_EPS) + 1) * beatsPerBar;
+    const end = Math.min(to, barEnd);
+    // A whole bar of silence is one rest, whatever the metre says it is worth.
+    if (Math.abs(end - t - beatsPerBar) < REST_EPS && alignedTo(t, beatsPerBar)) {
+      out.push({ beat: t, figure: "whole" });
+    } else {
+      fillBar(t, end, out);
+    }
+    t = end;
+  }
+}
+
+/** Largest value that both fits and may legally start here, until it is full. */
+function fillBar(from: number, to: number, out: Rest[]): void {
+  let t = from;
+  while (t < to - REST_EPS) {
+    const left = to - t;
+    const figure = REST_FIGURES.find(
+      (f) => FIGURE_BEATS[f] <= left + REST_EPS && alignedTo(t, FIGURE_BEATS[f]),
+    );
+    // Nothing fits only for a length no undotted figure can spell — a tuplet.
+    // Drawing the nearest one would be a lie about the rhythm, so draw none.
+    if (figure === undefined) return;
+    out.push({ beat: t, figure });
+    t += FIGURE_BEATS[figure];
+  }
+}
+
+/** Whether `t` sits on a multiple of `v` — what keeps a rest off the offbeat. */
+function alignedTo(t: number, v: number): boolean {
+  const k = t / v;
+  return Math.abs(k - Math.round(k)) < 1e-6;
+}
+
 export const CLEF_TREBLE = "\u{1D11E}";
 /** The F clef, for the bass staff of a grand staff. Its dots straddle F3. */
 export const CLEF_BASS = "\u{1D122}";
@@ -778,7 +917,11 @@ export interface BeamCandidate {
  * A lone eighth is left out — it keeps its own flag from the font, which is
  * the one case where the single-note glyph is usable (handoff 10 §1.4.2).
  */
-export function beamGroups(notes: readonly BeamCandidate[], beatsPerBar: number): BeamGroup[] {
+export function beamGroups(
+  notes: readonly BeamCandidate[],
+  beatsPerBar: number,
+  restBeats: readonly number[] = [],
+): BeamGroup[] {
   const groups: BeamGroup[] = [];
   let run: number[] = [];
   let runBeat = -1;
@@ -808,7 +951,13 @@ export function beamGroups(notes: readonly BeamCandidate[], beatsPerBar: number)
     const inBar = ((n.beat % beatsPerBar) + beatsPerBar) % beatsPerBar;
     const beatIndex = Math.floor(inBar + 1e-9);
     const loop = n.loop ?? 0;
-    if (run.length > 0 && (beatIndex !== runBeat || loop !== runLoop)) flush();
+    // A silence ends a beam. The printed score breaks its beam either side of
+    // a quaver rest rather than carrying one over the top of it, and a beam
+    // spanning a rest reads as a run of notes that is not there.
+    const prev = run.length > 0 ? notes[run[run.length - 1]] : undefined;
+    const rested =
+      prev !== undefined && restBeats.some((r) => r > prev.beat + 1e-9 && r < n.beat - 1e-9);
+    if (run.length > 0 && (beatIndex !== runBeat || loop !== runLoop || rested)) flush();
     if (run.length === 0) {
       runBeat = beatIndex;
       runLoop = loop;
@@ -817,7 +966,7 @@ export function beamGroups(notes: readonly BeamCandidate[], beatsPerBar: number)
   }
   flush();
   // A lone note has no beam — it wears the font's flag instead.
-  return joinEighths(groups, notes, beatsPerBar).filter((g) => g.members.length > 1);
+  return joinEighths(groups, notes, beatsPerBar, restBeats).filter((g) => g.members.length > 1);
 }
 
 /** How many beats a run of plain eighths may beam across. */
@@ -843,6 +992,7 @@ function joinEighths(
   groups: BeamGroup[],
   notes: readonly BeamCandidate[],
   beatsPerBar: number,
+  restBeats: readonly number[],
 ): BeamGroup[] {
   if (beatsPerBar % BEAM_SPAN_BEATS !== 0) return groups;
   const plain = (g: BeamGroup) => g.members.every((m) => FIGURE_BEAMS[notes[m].figure] === 1);
@@ -862,7 +1012,13 @@ function joinEighths(
       // longer note between them has already ended the beam.
       prev.members[prev.members.length - 1] + 1 === g.members[0] &&
       (notes[g.members[0]].loop ?? 0) === (notes[prev.members[0]].loop ?? 0) &&
-      halfBarOf(g.members[0]) === halfBarOf(prev.members[0]);
+      halfBarOf(g.members[0]) === halfBarOf(prev.members[0]) &&
+      // …and nothing rests between them, for the reason above.
+      !restBeats.some(
+        (r) =>
+          r > notes[prev.members[prev.members.length - 1]].beat + 1e-9 &&
+          r < notes[g.members[0]].beat - 1e-9,
+      );
     if (joins) prev.members = [...prev.members, ...g.members];
     else out.push({ ...g, members: [...g.members] });
   }

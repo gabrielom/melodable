@@ -38,7 +38,15 @@ import { PadLanes } from "@/views/pads/PadLanes";
 import { PianoRoll } from "@/views/piano/PianoRoll";
 import { SheetStaff } from "@/views/sheet/SheetStaff";
 import { useNotationFont } from "@/composables/useNotationFont";
-import { engraveOnsets, handSplit, keySignatureFor } from "@/engine/notation";
+import {
+  engraveOnsets,
+  handSplit,
+  keySignatureFor,
+  needsBassStaff,
+  onBassStaff,
+  restsFor,
+  staffStep,
+} from "@/engine/notation";
 import { chordsForLoop, diatonicTriad, hasHarmony } from "@/engine/harmony";
 import {
   clampRegion,
@@ -257,12 +265,41 @@ export function useTrainer(
    * the staff would be a worse trade than getting it right from the notes.
    * Pads have no pitch, so there is nothing to derive and nothing that reads it.
    */
+
   /**
    * Where this lesson's hands divide on a grand staff. Off `lesson.notes`, so
    * it is the lesson's own answer and a loop region cannot move a note from
    * one staff to the other half way through a sitting.
    */
   const staffSplit = computed(() => (isPiano.value ? handSplit(lesson.value.notes) : 0));
+
+  /**
+   * The silences, as rests, split by staff.
+   *
+   * Per staff because the hands rest independently — one set derived from the
+   * merged onsets would only find the silences both hands share. Off
+   * `patternTargets` so a loop region rests correctly too, and off `written`
+   * rather than `duration`, for the reason `engraveOnsets` gives.
+   */
+  const rests = computed(() => {
+    if (!isPiano.value) return { treble: [], bass: [] };
+    const split = staffSplit.value;
+    const bars = patternBeats.value;
+    const pick = (notes: typeof patternTargets.value) =>
+      restsFor(notes, lesson.value.beatsPerBar, bars);
+    // **Only split when there are two staves to split onto.** On one staff
+    // every note is "treble", so asking for the bass staff's rests hands
+    // `restsFor` an empty set and gets back a bar rest for every bar of the
+    // piece — silence for a staff that is carrying the whole lesson.
+    if (!needsBassStaff(lessonPitches.value, split)) {
+      return { treble: pick(patternTargets.value), bass: [] };
+    }
+    const onBass = (t: { lane: number }) => onBassStaff(staffStep(t.lane), split);
+    return {
+      treble: pick(patternTargets.value.filter((t) => !onBass(t))),
+      bass: pick(patternTargets.value.filter(onBass)),
+    };
+  });
   const derivedKey = computed(() =>
     isPiano.value ? keySignatureFor(targets.value.map((t) => t.lane)) : 0,
   );
@@ -590,6 +627,8 @@ export function useTrainer(
       lowNote: pianoRange.value[0],
       highNote: pianoRange.value[1],
       noteValues: noteValues.value,
+      rests: rests.value,
+      loopBeats: patternBeats.value,
     });
   }
 

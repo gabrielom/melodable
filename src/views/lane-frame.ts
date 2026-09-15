@@ -10,7 +10,7 @@
  */
 
 import type { NoteInstance } from "@/engine/scoring";
-import type { Engraved } from "@/engine/notation";
+import type { Engraved, Rest } from "@/engine/notation";
 import type { Palette, Theme } from "@/engine/theme";
 import type { InstrumentType } from "@/engine/types";
 import type { WrongMark } from "@/views/lane-geometry";
@@ -125,6 +125,18 @@ export interface LaneFrame {
    * *after* it, and that one may not be visible yet.
    */
   noteValues: ReadonlyMap<number, Engraved>;
+
+  /**
+   * Sheet: the silences, as rests, **per staff**.
+   *
+   * Two lists because the hands rest independently — deriving one set from
+   * the merged onsets would only find the silences both hands happen to
+   * share. Computed once per lesson beside `noteValues`, and repeated per
+   * loop by the renderer the way the barlines are.
+   */
+  rests: { treble: readonly Rest[]; bass: readonly Rest[] };
+  /** Sheet: the playing pattern's length, which is what a rest's beat is within. */
+  loopBeats: number;
 }
 
 /**

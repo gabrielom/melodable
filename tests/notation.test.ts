@@ -37,6 +37,9 @@ import {
   spell,
   beatsOf,
   engraveOnsets,
+  restsFor,
+  REST_SEAT,
+  REST_GLYPH,
   figureFor,
   ledgerSteps,
   sheetPxPerBeat,
@@ -495,6 +498,101 @@ describe("signatureMarks", () => {
   });
 });
 
+describe("restsFor", () => {
+  /** `[beat, written length]`, the same shape the engraver takes. */
+  const at = (spec: Array<[number, number]>) => spec.map(([beat, written]) => ({ beat, written }));
+
+  it("draws the silence the Lavoe montuno actually has", () => {
+    // Its opening: quaver, quaver + quaver rest, quaver, then crotchets.
+    const v = restsFor(at([[0, 0.5], [0.5, 0.5], [1.5, 0.5], [2, 1], [3, 1]]), 4, 4);
+    expect(v).toEqual([{ beat: 1, figure: "eighth" }]);
+  });
+
+  it("never crosses a barline", () => {
+    // A silence running from the last quaver of one bar into the next is two
+    // rests, not one minim lying across the line.
+    const v = restsFor(at([[0, 3.5], [5, 3]]), 4, 8);
+    expect(v).toEqual([
+      { beat: 3.5, figure: "eighth" },
+      { beat: 4, figure: "quarter" },
+    ]);
+  });
+
+  it("never starts a value off its own multiple", () => {
+    // 0.5 to 2 is a beat and a half. Printed as a quaver then a crotchet —
+    // never one dotted crotchet starting on an offbeat.
+    const v = restsFor(at([[0, 0.5], [2, 2]]), 4, 4);
+    expect(v).toEqual([
+      { beat: 0.5, figure: "eighth" },
+      { beat: 1, figure: "quarter" },
+    ]);
+  });
+
+  it("writes a silent bar as one rest, in any metre", () => {
+    // 4/4 reaches this by the greedy fill alone; 3/4 would otherwise get a
+    // minim and a crotchet, which is not how a silent bar is written.
+    expect(restsFor(at([[0, 4], [8, 4]]), 4, 12)).toEqual([{ beat: 4, figure: "whole" }]);
+    expect(restsFor(at([[0, 3], [6, 3]]), 3, 9)).toEqual([{ beat: 3, figure: "whole" }]);
+  });
+
+  it("rests before the first note and after the last", () => {
+    const v = restsFor(at([[1, 1]]), 4, 4);
+    expect(v).toEqual([
+      { beat: 0, figure: "quarter" },
+      { beat: 2, figure: "half" },
+    ]);
+  });
+
+  it("leaves no silence for a note with no written length", () => {
+    // The pad case, and a clip whose note-offs never arrived: such a note
+    // runs to the next onset, so there is nothing to rest through.
+    expect(restsFor(at([[0, 0], [2, 0]]), 4, 4)).toEqual([]);
+  });
+
+  it("fills an empty pattern", () => {
+    expect(restsFor([], 4, 8)).toEqual([
+      { beat: 0, figure: "whole" },
+      { beat: 4, figure: "whole" },
+    ]);
+  });
+
+  it("says nothing rather than lying about a tuplet", () => {
+    // A third of a beat cannot be spelled by any undotted figure; drawing the
+    // nearest one would misstate the rhythm.
+    const v = restsFor(at([[0, 1 / 3]]), 4, 1 / 3);
+    expect(v).toEqual([]);
+  });
+});
+
+describe("rest seating", () => {
+  it("hangs the semibreve and sits the minim in the same space", () => {
+    // The pair is told apart by hanging against sitting, not by shape — they
+    // are the same glyph box. The whole's top goes on the fourth line and the
+    // half's bottom on the middle one, which puts both in the space between.
+    expect(REST_SEAT.whole.step).toBe(6);
+    expect(REST_SEAT.half.step).toBe(4);
+    // And the font draws them adjacent: the whole's bottom is the half's top.
+    expect(REST_SEAT.whole.em - 0.134).toBeCloseTo(REST_SEAT.half.em + 0.134, 3);
+  });
+
+  it("centres every shorter rest on the middle line", () => {
+    for (const f of ["quarter", "eighth", "sixteenth", "thirtysecond"] as const) {
+      expect(REST_SEAT[f].step).toBe(4);
+    }
+    // The font says so itself — three of them agree to a thousandth.
+    expect(REST_SEAT.quarter.em).toBeCloseTo(0.5, 2);
+    expect(REST_SEAT.eighth.em).toBeCloseTo(0.5, 2);
+    expect(REST_SEAT.sixteenth.em).toBeCloseTo(0.5, 2);
+  });
+
+  it("has a glyph and a seat for every figure", () => {
+    for (const f of Object.keys(REST_GLYPH) as Array<keyof typeof REST_GLYPH>) {
+      expect(REST_GLYPH[f]).toBeTruthy();
+      expect(REST_SEAT[f].dx).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe("keySignatureFor", () => {
   it("finds E major from the notes of E major", () => {
     // The case this was built for: an imported clip in four sharps.
@@ -718,6 +816,32 @@ describe("beamGroups", () => {
     // as far as the join: neither of these fills its own beat.
     const g = beamGroups(notes([[0.5, "eighth"], [1, "eighth"]]), 4);
     expect(g).toEqual([{ members: [0, 1], beams: 1 }]);
+  });
+
+  it("stops a beam at a silence", () => {
+    // The printed score breaks its beam either side of a quaver rest rather
+    // than carrying one over the top of it: a beam spanning a rest reads as a
+    // run of notes that is not there. Without the rest these four would be
+    // one group of four, by the half-bar rule above.
+    // Quaver, quaver, quaver rest, quaver, quaver — the shape the Lavoe bar
+    // has. A rest always falls strictly between two onsets, never on one.
+    const run = notes([[0, "eighth"], [0.5, "eighth"], [1.5, "eighth"], [2, "eighth"]]);
+    // Told nothing about the silence, the half-bar rule sweeps all three
+    // quavers of the first half into one beam, straight over the rest.
+    expect(beamGroups(run, 4)).toEqual([{ members: [0, 1, 2], beams: 1 }]);
+    // Told about it, the beam stops and the stranded quaver takes its flag.
+    expect(beamGroups(run, 4, [1])).toEqual([{ members: [0, 1], beams: 1 }]);
+  });
+
+  it("leaves a note alone when a rest strands it", () => {
+    // Break a pair and neither half can beam to anything, so both take flags.
+    const pair = notes([[0, "eighth"], [0.5, "eighth"]]);
+    expect(beamGroups(pair, 4, [0.25])).toEqual([]);
+  });
+
+  it("ignores a rest that falls outside the run", () => {
+    const four = notes([[0, "eighth"], [0.5, "eighth"], [1, "eighth"], [1.5, "eighth"]]);
+    expect(beamGroups(four, 4, [3.5])).toEqual([{ members: [0, 1, 2, 3], beams: 1 }]);
   });
 
   it("never beams across the half-bar", () => {

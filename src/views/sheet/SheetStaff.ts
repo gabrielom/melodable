@@ -32,6 +32,8 @@ import {
   FLAG,
   FLAG_EM_TIP,
   GLYPH,
+  REST_GLYPH,
+  REST_SEAT,
   NOTEHEAD_EM_CENTRE,
   NOTEHEAD_EM_HALF_WIDTH,
   NOTEHEAD_EM_HEIGHT,
@@ -48,6 +50,7 @@ import {
   smallestGap,
   spell,
   type Engraved,
+  type Rest,
   type Figure,
   type SignatureMark,
 } from "@/engine/notation";
@@ -722,10 +725,20 @@ export class SheetStaff implements LaneRenderer {
     // not what is written where — spans both.
     if (sys.grand) {
       for (const bass of [true, false]) {
-        this.engrave(f, columnsOf(placed.filter((n) => sys.bass(n.step) === bass)), size);
+        this.engrave(
+          f,
+          columnsOf(placed.filter((n) => sys.bass(n.step) === bass)),
+          size,
+          bass ? f.rests.bass : f.rests.treble,
+        );
       }
+      this.rests(f, f.rests.treble, sys.trebleBottom, xOfBeat, size);
+      this.rests(f, f.rests.bass, sys.bassBottom, xOfBeat, size);
     } else {
-      this.engrave(f, columnsOf(placed), size);
+      this.engrave(f, columnsOf(placed), size, f.rests.treble);
+      // One staff, so `rests.treble` already holds the whole lesson's silences
+      // and `rests.bass` is empty — the split happens where the staves do.
+      this.rests(f, f.rests.treble, sys.trebleBottom, xOfBeat, size);
     }
 
     if (f.labelMode === "degree") {
@@ -733,9 +746,60 @@ export class SheetStaff implements LaneRenderer {
     }
   }
 
+  /**
+   * One staff's rests, repeated for every pass of the pattern on screen.
+   *
+   * Placed from the pattern beat like the barlines rather than from a note
+   * instance, because a rest is not a note: nothing spawns it, nothing scores
+   * it, and it has no rating to wear. It takes `palette.txt` for the same
+   * reason — a silence is notation, never a result, so it stays outside the
+   * two colour languages entirely.
+   */
+  private rests(
+    f: LaneFrame,
+    rests: readonly Rest[],
+    bottomLineY: number,
+    xOfBeat: (b: number) => number,
+    size: number,
+  ): void {
+    if (rests.length === 0 || f.loopBeats <= 0) return;
+    const ctx = this.ctx;
+    const W = this.el.clientWidth;
+    const from = f.absBeat - this.window.behind;
+    const to = f.absBeat + this.window.ahead;
+    const firstPass = Math.floor(from / f.loopBeats);
+    const lastPass = Math.ceil(to / f.loopBeats);
+
+    ctx.save();
+    ctx.fillStyle = f.palette.txt;
+    ctx.font = `${size}px ${MUSIC}`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    for (let pass = firstPass; pass <= lastPass; pass++) {
+      const origin = pass * f.loopBeats;
+      for (const r of rests) {
+        const x = xOfBeat(origin + r.beat);
+        if (x < this.gutter - 40 || x > W + 40) continue;
+        const seat = REST_SEAT[r.figure];
+        ctx.fillText(
+          REST_GLYPH[r.figure],
+          x - seat.dx * size,
+          bottomLineY - seat.step * HALF_SPACE + seat.em * size,
+        );
+      }
+    }
+    ctx.restore();
+  }
+
   /** Heads, stems and beams for one staff's worth of columns. */
-  private engrave(f: LaneFrame, columns: Placed[][], size: number): void {
+  private engrave(
+    f: LaneFrame,
+    columns: Placed[][],
+    size: number,
+    rests: readonly Rest[],
+  ): void {
     // Beaming runs over columns, not notes: a chord of eighths beams once.
+    // The staff's own rests go in too — a beam stops at a silence.
     const groups = beamGroups(
       columns.map((c) => ({
         beat: c[0].inst.beat,
@@ -743,6 +807,7 @@ export class SheetStaff implements LaneRenderer {
         loop: c[0].inst.loopIndex,
       })),
       f.beatsPerBar,
+      rests.map((r) => r.beat),
     );
     const beamed = new Set<number>();
     for (const g of groups) for (const m of g.members) beamed.add(m);
