@@ -11,7 +11,7 @@ import {
 import { HOLD_MIN_BEATS, type Lesson } from "@/engine/types";
 
 /** One two-beat hold on lane 60, at beat 0. spb = 1, so times are beats. */
-const held: TargetNote[] = [{ lane: 60, beat: 0, duration: 2 }];
+const held: TargetNote[] = [{ lane: 60, beat: 0, duration: 2, written: 2 }];
 const timeOf = (loop: number, beat: number) => loop * 4 + beat;
 
 const scorer = () => {
@@ -130,8 +130,8 @@ describe("the scorer's holds", () => {
 
   it("closes the first hold when a lane is struck again", () => {
     const two = new Scorer([
-      { lane: 60, beat: 0, duration: 2 },
-      { lane: 60, beat: 2, duration: 2 },
+      { lane: 60, beat: 0, duration: 2, written: 2 },
+      { lane: 60, beat: 2, duration: 2, written: 2 },
     ]);
     two.spawnLoop(0, timeOf);
     two.hit(60, 0);
@@ -168,7 +168,7 @@ describe("the scorer's holds", () => {
   });
 
   it("never opens a hold on an instant note", () => {
-    const s = new Scorer([{ lane: 12, beat: 0, duration: 0 }]);
+    const s = new Scorer([{ lane: 12, beat: 0, duration: 0, written: 0 }]);
     s.spawnLoop(0, timeOf);
     s.hit(12, 0);
     expect(s.instances[0].heldFrom).toBeNull();

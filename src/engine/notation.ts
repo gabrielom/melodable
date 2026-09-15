@@ -244,27 +244,32 @@ export function beatsOf(e: Engraved): number {
 /**
  * The engraved value of every distinct onset in a loop.
  *
- * **Not the note's `duration`.** That answers a different question — how long
- * you must hold it — and `lessonTargets` deliberately zeroes anything under
- * `HOLD_MIN_BEATS`, because a short note is not a hold. Read as notation that
- * turns every quaver in a piece into a crotchet: no flag, no beam, and a bar
- * of eighths drawn as four times too much music.
+ * Read from `written`, the length the clip actually carries, **not** from
+ * `duration`, which answers how long you must hold a note and is zeroed below
+ * `HOLD_MIN_BEATS` because a short note is not a hold.
  *
- * What decides a note's *shape* is the rhythmic slot it occupies, which is the
- * distance to the next onset. So: use the written length when it survived the
- * hold floor and is therefore real, and otherwise fill in from the gap.
+ * That zeroing is why this used to fall back to the **gap to the next onset**,
+ * and the fallback is wrong wherever a note is shorter than its slot. Every
+ * quaver at every tempo is under the hold floor, so on a montuno of running
+ * quaver chords — `Ⓑ 0, 0.5, 1.5, 2.0 …` — the note at 0.5 was a quaver
+ * followed by a quaver rest and came out a **crotchet**, because that is the
+ * distance to the next one. Crotchets carry no beam, so a passage printed as
+ * beamed fours was drawn as alternating quavers and crotchets, and no amount
+ * of fixing the beaming rules could have reached it.
+ *
+ * The gap survives only as the answer for a note with no length at all — a
+ * pad hit, or a clip whose note-offs never arrived.
  *
  * Notes struck together are one onset and take one value — a chord is a
  * column, and its longest written note speaks for it.
  */
 export function engraveOnsets(
-  notes: readonly { beat: number; duration: number }[],
+  notes: readonly { beat: number; written: number }[],
   loopBeats: number,
-  holdFloor: number,
 ): Map<number, Engraved> {
   const held = new Map<number, number>();
   for (const n of notes) {
-    held.set(n.beat, Math.max(held.get(n.beat) ?? 0, n.duration));
+    held.set(n.beat, Math.max(held.get(n.beat) ?? 0, n.written));
   }
   const onsets = [...held.keys()].sort((a, b) => a - b);
 
@@ -275,7 +280,7 @@ export function engraveOnsets(
     const next = i + 1 < onsets.length ? onsets[i + 1] : loopBeats;
     const gap = Math.max(0, next - beat);
     const written = held.get(beat) ?? 0;
-    const value = written >= holdFloor ? Math.min(written, loopBeats) : gap;
+    const value = written > 0 ? Math.min(written, loopBeats) : gap;
     out.set(beat, figureFor(value));
   }
   return out;
@@ -902,7 +907,28 @@ export function degreeRowDrop(
  * drawn zoom of 60px per beat a sixteenth falls 15px after its neighbour and
  * overlaps.
  */
-export const MIN_NOTE_GAP_PX = 22;
+/**
+ * The closest two onsets may be drawn, in pixels — **two staff spaces**.
+ *
+ * Measured off a printed piano transcription rather than chosen. Taking every
+ * adjacent pair of note columns across its three pages and normalising by its
+ * own staff space (23.7px at 300dpi), the spacings pile up hard in one band:
+ * 52% of 471 pairs fall between 2.0 and 2.5 spaces, the median is 2.47, and
+ * the tail below 1.5 is chords with a second in them, drawn head-beside-head,
+ * rather than successive notes at all.
+ *
+ * This was **22px, or 1.29 spaces** — about half what the printed page uses,
+ * and on a montuno of continuous quaver chords in both hands that is what
+ * "this could be much improved" was looking at. A notehead is 1.16 spaces
+ * wide, so 1.29 left two pixels of air between one head and the next.
+ *
+ * Two spaces is the *floor* of the printed band rather than its median, and
+ * the difference is paid in lookahead: on that piece, 2.0 spaces shows four
+ * bars where 1.29 showed five, and 2.4 would show three and a third. A
+ * scrolling trainer has to keep something on screen to read ahead into, so it
+ * takes the bottom of what print considers normal and not the middle.
+ */
+export const MIN_NOTE_GAP_PX = 34;
 
 /**
  * Pixels per beat that keep the closest pair in a lesson legible.

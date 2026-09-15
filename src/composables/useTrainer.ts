@@ -13,7 +13,6 @@ import { useLessons } from "@/stores/lessons";
 import { useHistory } from "@/stores/history";
 import { useChords } from "@/stores/chords";
 import type { HoldResult, LinkState, Rating } from "@/engine/types";
-import { HOLD_MIN_BEATS } from "@/engine/types";
 import {
   Transport,
   phaseDelta,
@@ -250,7 +249,7 @@ export function useTrainer(
    * the figure off `duration` drew every quaver as a crotchet.
    */
   const noteValues = computed(() =>
-    engraveOnsets(patternTargets.value, patternBeats.value, HOLD_MIN_BEATS),
+    engraveOnsets(patternTargets.value, patternBeats.value),
   );
   /**
    * The key the lesson is written in, derived from its own pitches — imported
@@ -294,6 +293,7 @@ export function useTrainer(
       lane: n.pitch,
       beat: n.time,
       duration: n.duration ?? 0,
+      written: n.duration ?? 0,
     }));
     // Looping, the ribbon describes the *region*, because that is the pattern
     // under the playhead. Reading the lesson's chords against a region that

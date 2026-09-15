@@ -20,6 +20,21 @@ export interface TargetNote {
   beat: number;
   /** Written length in beats; 0 for an instant note. See `NoteEvent`. */
   duration: number;
+  /**
+   * The length the clip actually carries, before the hold floor flattens it.
+   *
+   * `duration` answers "is this a hold, and how long do I have to keep it
+   * down"; below `HOLD_MIN_BEATS` the answer is no and it is zeroed, which is
+   * exactly right for scoring and exactly wrong for notation. Every quaver at
+   * any tempo is under the floor, so the staff had nothing left to read and
+   * fell back to the gap to the next onset — drawing a quaver followed by a
+   * quaver rest as a **crotchet**, which beams to nothing. A montuno of
+   * running quavers came out as a row of alternating quavers and crotchets.
+   * The chord ribbon already sidesteps this by reading `lesson.notes`; the
+   * staff cannot, because a loop region rebases the beats. So both lengths
+   * travel together and neither has to be re-derived.
+   */
+  written: number;
 }
 
 /** One occurrence of a target note in a specific loop, in clock time. */
@@ -140,8 +155,13 @@ export function lessonTargets(lesson: Lesson, laneOf: (pitch: number) => number 
     // A length under the floor is an ornament, not a hold — normalised away
     // here so nothing downstream has to keep re-deciding.
     if (lane !== null) {
-      const duration = n.duration ?? 0;
-      out.push({ lane, beat: n.time, duration: duration >= HOLD_MIN_BEATS ? duration : 0 });
+      const written = n.duration ?? 0;
+      out.push({
+        lane,
+        beat: n.time,
+        duration: written >= HOLD_MIN_BEATS ? written : 0,
+        written,
+      });
     }
   }
   return out.sort((a, b) => a.beat - b.beat);

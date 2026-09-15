@@ -15,10 +15,10 @@ import type { TargetNote } from "@/engine/scoring";
  * Beats 0, 1, 4, 6 within each repeat, on four different lanes.
  */
 const PATTERN: TargetNote[] = [
-  { lane: 0, beat: 0, duration: 0 },
-  { lane: 1, beat: 1, duration: 0 },
-  { lane: 2, beat: 4, duration: 0 },
-  { lane: 3, beat: 6, duration: 0 },
+  { lane: 0, beat: 0, duration: 0, written: 0 },
+  { lane: 1, beat: 1, duration: 0, written: 0 },
+  { lane: 2, beat: 4, duration: 0, written: 0 },
+  { lane: 3, beat: 6, duration: 0, written: 0 },
 ];
 const LOOP_BEATS = 8; // two bars of 4/4
 const REPEATS = 4; // an eight-bar run
@@ -108,9 +108,9 @@ describe("regionTargets", () => {
     // A note starting inside the region belongs to it even if it is still
     // sounding past the end — the same way a held note at the end of a pattern
     // already behaves.
-    const held: TargetNote[] = [{ lane: 0, beat: 6, duration: 4 }];
+    const held: TargetNote[] = [{ lane: 0, beat: 6, duration: 4, written: 4 }];
     const got = regionTargets(held, LOOP_BEATS, REPEATS, { fromBar: 0, bars: 2 }, BPB);
-    expect(got.targets).toEqual([{ lane: 0, beat: 6, duration: 4 }]);
+    expect(got.targets).toEqual([{ lane: 0, beat: 6, duration: 4, written: 4 }]);
   });
 
   it("excludes a note landing exactly on the region's end", () => {
@@ -138,7 +138,7 @@ describe("regionTargets", () => {
   });
 
   it("finds nothing in a region of silence", () => {
-    const sparse: TargetNote[] = [{ lane: 0, beat: 0, duration: 0 }];
+    const sparse: TargetNote[] = [{ lane: 0, beat: 0, duration: 0, written: 0 }];
     const got = regionTargets(sparse, LOOP_BEATS, REPEATS, { fromBar: 1, bars: 1 }, BPB);
     expect(got.targets).toEqual([]);
   });

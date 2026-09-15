@@ -303,6 +303,18 @@ describe("ledgerSteps", () => {
 });
 
 describe("the sheet zoom", () => {
+  it("gives the closest pair two staff spaces, which is what print does", () => {
+    // Measured across a printed piano transcription: 52% of adjacent note
+    // columns sit between 2.0 and 2.5 staff spaces apart, median 2.47. This
+    // was 1.29 spaces — half the page's — which left two pixels of air
+    // between one notehead and the next on a passage of continuous quavers.
+    expect(MIN_NOTE_GAP_PX).toBe(2 * 17);
+    // A notehead is 1.16 spaces wide, so two spaces is a little over one
+    // head of clear air between neighbours.
+    const head = 2 * NOTEHEAD_EM_HALF_WIDTH * (17 / NOTEHEAD_EM_HEIGHT);
+    expect(MIN_NOTE_GAP_PX - head).toBeGreaterThan(head * 0.6);
+  });
+
   it("leaves a lesson of quarters at the roll's zoom", () => {
     expect(sheetPxPerBeat(1, 64)).toBe(64);
   });
@@ -351,67 +363,87 @@ describe("smallestGap", () => {
  * as a crotchet — no flag, no beam, four times the music in a bar.
  */
 describe("engraveOnsets", () => {
-  const FLOOR = 0.75;
-  const at = (spec: Array<[number, number]>) => spec.map(([beat, duration]) => ({ beat, duration }));
+  /** `[beat, written length]` — the length the clip carries, not the hold. */
+  const at = (spec: Array<[number, number]>) => spec.map(([beat, written]) => ({ beat, written }));
+
+  it("draws a note shorter than its slot at its own length", () => {
+    // The Lavoe montuno: a quaver, then a quaver and a quaver rest, then the
+    // next beat. Reading the *gap* called the note at 0.5 a crotchet, which
+    // carries no beam — so a passage printed as beamed fours came out as
+    // alternating quavers and crotchets. This is the case that could not be
+    // reached by fixing anything in the beaming rules.
+    const v = engraveOnsets(at([[0, 0.5], [0.5, 0.5], [1.5, 0.5], [2, 1]]), 4);
+    expect(v.get(0)).toEqual({ figure: "eighth", dotted: false });
+    expect(v.get(0.5)).toEqual({ figure: "eighth", dotted: false });
+    expect(v.get(1.5)).toEqual({ figure: "eighth", dotted: false });
+    expect(v.get(2)).toEqual({ figure: "quarter", dotted: false });
+  });
+
+  it("falls back to the gap only when a note has no length at all", () => {
+    // A pad hit, or a clip whose note-offs never arrived.
+    const v = engraveOnsets(at([[0, 0], [1, 0], [2, 0], [3, 0]]), 4);
+    for (const beat of [0, 1, 2, 3]) {
+      expect(v.get(beat)).toEqual({ figure: "quarter", dotted: false });
+    }
+  });
 
   it("reads a bar of quavers as quavers, not crotchets", () => {
-    // What an imported eighth-note run actually looks like after the floor.
     const notes = at([[0, 0], [0.5, 0], [1, 0], [1.5, 0], [2, 0], [2.5, 0], [3, 0], [3.5, 0]]);
-    const v = engraveOnsets(notes, 4, FLOOR);
+    const v = engraveOnsets(notes, 4);
     for (const beat of [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5]) {
       expect(v.get(beat)).toEqual({ figure: "eighth", dotted: false });
     }
   });
 
   it("reads a bar of crotchets as crotchets", () => {
-    const v = engraveOnsets(at([[0, 0], [1, 0], [2, 0], [3, 0]]), 4, FLOOR);
+    const v = engraveOnsets(at([[0, 0], [1, 0], [2, 0], [3, 0]]), 4);
     for (const beat of [0, 1, 2, 3]) {
       expect(v.get(beat)).toEqual({ figure: "quarter", dotted: false });
     }
   });
 
-  it("keeps a written length that survived the floor", () => {
+  it("keeps a written length", () => {
     // A half note is a real hold and says so itself.
-    const v = engraveOnsets(at([[0, 2], [2, 2]]), 4, FLOOR);
+    const v = engraveOnsets(at([[0, 2], [2, 2]]), 4);
     expect(v.get(0)).toEqual({ figure: "half", dotted: false });
   });
 
   it("runs the last onset to the end of the loop", () => {
-    expect(engraveOnsets(at([[0, 0], [3.5, 0]]), 4, FLOOR).get(3.5)).toEqual({
+    expect(engraveOnsets(at([[0, 0], [3.5, 0]]), 4).get(3.5)).toEqual({
       figure: "eighth",
       dotted: false,
     });
-    expect(engraveOnsets(at([[0, 0], [3, 0]]), 4, FLOOR).get(3)).toEqual({
+    expect(engraveOnsets(at([[0, 0], [3, 0]]), 4).get(3)).toEqual({
       figure: "quarter",
       dotted: false,
     });
   });
 
   it("gives a chord one value, spoken for by its longest note", () => {
-    const v = engraveOnsets(at([[0, 2], [0, 0], [0, 1]]), 4, FLOOR);
+    const v = engraveOnsets(at([[0, 2], [0, 0], [0, 1]]), 4);
     expect(v.size).toBe(1);
     expect(v.get(0)).toEqual({ figure: "half", dotted: false });
   });
 
   it("reads sixteenths as sixteenths", () => {
-    const v = engraveOnsets(at([[0, 0], [0.25, 0], [0.5, 0], [0.75, 0]]), 4, FLOOR);
+    const v = engraveOnsets(at([[0, 0], [0.25, 0], [0.5, 0], [0.75, 0]]), 4);
     expect(v.get(0)).toEqual({ figure: "sixteenth", dotted: false });
     // The last of the run still runs to the next onset, not to the bar end.
     expect(v.get(0.5)).toEqual({ figure: "sixteenth", dotted: false });
   });
 
   it("reads a dotted-quaver against a semiquaver", () => {
-    const v = engraveOnsets(at([[0, 0], [0.75, 0]]), 4, FLOOR);
+    const v = engraveOnsets(at([[0, 0], [0.75, 0]]), 4);
     expect(v.get(0)).toEqual({ figure: "eighth", dotted: true });
   });
 
   it("never lets a written length outrun the loop", () => {
-    const v = engraveOnsets(at([[0, 99]]), 4, FLOOR);
+    const v = engraveOnsets(at([[0, 99]]), 4);
     expect(v.get(0)).toEqual({ figure: "whole", dotted: false });
   });
 
   it("has an answer for an empty loop", () => {
-    expect(engraveOnsets([], 4, FLOOR).size).toBe(0);
+    expect(engraveOnsets([], 4).size).toBe(0);
   });
 });
 

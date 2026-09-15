@@ -118,7 +118,7 @@ export function regionTargets(
     targets.forEach((t, index) => {
       const runBeat = r * loop + t.beat;
       if (runBeat < span.from - 1e-9 || runBeat >= span.to - 1e-9) return;
-      out.push({ lane: t.lane, beat: runBeat - span.from, duration: t.duration });
+      out.push({ lane: t.lane, beat: runBeat - span.from, duration: t.duration, written: t.written });
       sources.push({ loopIndex: r, index });
     });
   }

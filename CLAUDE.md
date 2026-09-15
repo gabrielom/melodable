@@ -627,6 +627,41 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   *lesson's* lowest note (`hueOrder[0]`), never the lowest on screen: the row
   has to hold still while the music scrolls, and one that jumped whenever a low
   note came into view would be worse than one sitting on a notehead.
+- **What a note is worth on the staff comes from its written length, never
+  from the gap to the next onset.** `TargetNote` carries **two** lengths:
+  `duration`, which answers "is this a hold and how long must I keep it down"
+  and is zeroed below `HOLD_MIN_BEATS` because a short note is not a hold; and
+  `written`, the length the clip actually carries. `engraveOnsets` reads
+  `written`.
+  It used to read `duration` and fall back to the **gap** whenever that was
+  zero — which is every quaver at every tempo, since the hold floor is 0.75
+  beats. Wherever a note is shorter than its slot the fallback is simply
+  wrong: in the imported Lavoe montuno, onsets at `0, 0.5, 1.5, 2.0` are all
+  quavers, but the one at 0.5 is a quaver *and a quaver rest*, so the gap made
+  it a **crotchet**. Crotchets carry no beam, so a passage printed as beamed
+  fours was drawn as alternating quavers and crotchets — and **no amount of
+  fixing the beaming rules could have reached it**, because by then the figure
+  was already wrong. The gap survives only for a note with no length at all: a
+  pad hit, or a clip whose note-offs never arrived.
+  This is the same trap the chord ribbon already names — it reads
+  `lesson.notes` rather than `targets` for exactly this reason. The staff
+  cannot do that, because a loop region rebases the beats, so both lengths
+  travel on the target instead and neither is re-derived.
+- **`MIN_NOTE_GAP_PX` is two staff spaces, and it was measured.** Taking every
+  adjacent pair of note columns across the three pages of a printed piano
+  transcription and normalising by its own staff space (23.7px at 300dpi):
+  52% of 471 pairs land between 2.0 and 2.5 spaces, median 2.47, and the tail
+  under 1.5 is chords containing a second, drawn head-beside-head, rather than
+  successive notes. Ours was **22px — 1.29 spaces**, about half the page, which
+  on a montuno of continuous quaver chords left two pixels of air between one
+  notehead and the next. Note that the *minimum* is a red herring: the printed
+  minimum is 1.2 spaces and ours was 1.29, so a min-to-min comparison says we
+  were fine. It is the **mode** that matters.
+  Two spaces is the floor of the printed band rather than its median, and the
+  difference is paid in lookahead — on that piece 2.0 shows four bars where
+  1.29 showed five and 2.4 would show three and a third. A scrolling trainer
+  has to keep something on screen to read into, so it takes the bottom of what
+  print considers normal.
 - **Sheet's zoom is derived, not fixed.** §1.7 leaves it open: at 60px per beat
   a sixteenth falls 15px after its neighbour while a notehead is 19px wide.
   `sheetPxPerBeat` keeps the roll's five bars unless the lesson's closest pair
