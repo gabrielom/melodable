@@ -4,6 +4,9 @@ import {
   FIGURE_BEAMS,
   FIGURE_BEATS,
   ACCIDENTAL_EM_CENTRE,
+  BRACE_INK_EM,
+  CLEF_INK_EM,
+  CLEF_REF_EM,
   beamGroups,
   type BeamCandidate,
   NOTEHEAD_EM_DX,
@@ -15,6 +18,10 @@ import {
   accidentalFor,
   degreeOf,
   degreeRowDrop,
+  GRAND_STEP_OFFSET,
+  onBassStaff,
+  needsBassStaff,
+  bassSignatureMarks,
   keyName,
   keySignatureFor,
   tonicLetter,
@@ -85,6 +92,37 @@ describe("the font's measured constants", () => {
     // of the way, so centring it like the others lifts it off its own line.
     expect(ACCIDENTAL_EM_CENTRE.flat).toBeCloseTo(0.1175, 4);
     expect(ACCIDENTAL_EM_CENTRE.flat).toBeLessThan(NOTEHEAD_EM_CENTRE);
+  });
+
+  it("seats the bass clef on the midpoint of its two dots", () => {
+    // The F clef decomposes into three contours: the hook, and two dots at
+    // 0.700..0.809 and 0.480..0.589em. Their centres straddle the F line and
+    // the line is the midpoint — the font saying where the clef points.
+    expect(CLEF_REF_EM.bass).toBeCloseTo((0.7545 + 0.5345) / 2, 4);
+    // The treble's reference is the notehead centre, like every other glyph.
+    expect(CLEF_REF_EM.treble).toBe(NOTEHEAD_EM_CENTRE);
+    // And the two are nowhere near each other, which is why one number for
+    // both would have put the bass clef half a staff out.
+    expect(CLEF_REF_EM.bass - CLEF_REF_EM.treble).toBeGreaterThan(0.5);
+  });
+
+  it("gives the bass clef more width than the treble, which the gutter pays for", () => {
+    expect(CLEF_INK_EM.treble).toBeCloseTo(0.661, 4);
+    expect(CLEF_INK_EM.bass).toBeCloseTo(0.742, 4);
+    expect(CLEF_INK_EM.bass).toBeGreaterThan(CLEF_INK_EM.treble);
+    // At the drawn staff size that difference is real pixels, not rounding —
+    // enough to put the first accidental of a signature on the clef.
+    expect((CLEF_INK_EM.bass - CLEF_INK_EM.treble) * (17 / NOTEHEAD_EM_HEIGHT)).toBeGreaterThan(5);
+  });
+
+  it("makes the brace fill its em box, and start right of its own pen", () => {
+    // Top to bottom exactly, which is what lets the renderer size it by the
+    // system's height and drop it on both outer staff lines with no fudge.
+    expect(BRACE_INK_EM.top - BRACE_INK_EM.bottom).toBe(1);
+    // And the left bearing, which is the one that was dropped: the ink is
+    // 0.161em wide but its right edge is 0.211em from the pen.
+    expect(BRACE_INK_EM.x1 - BRACE_INK_EM.x0).toBeCloseTo(0.161, 4);
+    expect(BRACE_INK_EM.x0).toBeGreaterThan(0);
   });
 });
 
@@ -660,5 +698,70 @@ describe("degreeRowDrop", () => {
 
   it("is never above the handoff's own drop, however high the music sits", () => {
     for (const step of [10, 14, 20]) expect(drop(step)).toBe(35);
+  });
+});
+
+describe("the grand staff", () => {
+  it("puts the bass staff's bottom line twelve steps under the treble's", () => {
+    // Treble bottom is E4, bass bottom is G2, and everything in this module
+    // counts from E4 — so one `spell` answers for both staves.
+    expect(GRAND_STEP_OFFSET).toBe(12);
+    expect(staffStep(64) - staffStep(43)).toBe(GRAND_STEP_OFFSET); // E4 over G2
+    // Which puts the bass staff's own five lines back at 0, 2, 4, 6, 8.
+    for (const [pitch, line] of [[43, 0], [47, 2], [50, 4], [53, 6], [57, 8]] as const) {
+      expect(staffStep(pitch) + GRAND_STEP_OFFSET).toBe(line);
+    }
+  });
+
+  it("splits the hands at middle C, which keeps its own ledger on the treble", () => {
+    expect(onBassStaff(staffStep(60))).toBe(false); // C4, one ledger below treble
+    expect(onBassStaff(staffStep(62))).toBe(false); // D4
+    expect(onBassStaff(staffStep(59))).toBe(true); // B3
+    expect(onBassStaff(staffStep(48))).toBe(true); // C3
+  });
+
+  it("asks for a bass staff only when the music reaches past two ledgers", () => {
+    // A melody that merely dips is better with a couple of ledger lines than
+    // split across two staves — the imported No One bottoms out on exactly A3.
+    expect(needsBassStaff([57, 64, 71])).toBe(false); // A3 is the limit
+    expect(needsBassStaff([60, 64, 72])).toBe(false);
+    expect(needsBassStaff([55, 64, 71])).toBe(true); // G3 is past it
+    expect(needsBassStaff([48, 60, 72])).toBe(true);
+  });
+
+  it("wants none for an empty lesson", () => {
+    expect(needsBassStaff([])).toBe(false);
+  });
+
+  it("writes the signature two steps lower in the bass clef", () => {
+    // The F# on the treble's top line sits on the bass's fourth line, and the
+    // rest follow it down by the same third.
+    for (const fifths of [-7, -3, -1, 1, 4, 7]) {
+      const treble = signatureMarks(fifths);
+      const bass = bassSignatureMarks(fifths);
+      expect(bass.length).toBe(treble.length);
+      bass.forEach((m, i) => {
+        expect(m.accidental).toBe(treble[i].accidental);
+        expect(m.step).toBe(treble[i].step - 2);
+      });
+    }
+  });
+
+  it("keeps every bass-clef accidental on the staff", () => {
+    // The marks come back in the bass staff's *own* coordinates, so its five
+    // lines are 0, 2, 4, 6, 8 exactly as the treble's are — an accidental
+    // outside that would be hanging off the staff.
+    //
+    // Up to six either way. The seventh flat is the one exception: the whole
+    // signature is written a third lower and F♭ lands a space under the bottom
+    // line. No lesson has ever derived seven flats — `keySignatureFor` picks
+    // the cheapest signature the notes allow — and drawing it a space low is a
+    // better failure than moving six correct accidentals to rescue one.
+    for (let fifths = -6; fifths <= 6; fifths++) {
+      for (const m of bassSignatureMarks(fifths)) {
+        expect(m.step).toBeGreaterThanOrEqual(0);
+        expect(m.step).toBeLessThanOrEqual(8);
+      }
+    }
   });
 });

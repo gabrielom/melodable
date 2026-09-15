@@ -246,6 +246,52 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   about a drum pad, and no percussion staff was ever drawn. Six of the seven
   built-ins are pads, so for most of the library the pair is simply absent —
   `sheetAvailable` is the gate.
+- **The bass clef appears only for music that needs it, and the threshold is
+  the ledger count, not the clef's range.** `needsBassStaff` asks for the
+  grand staff once a lesson reaches past **two ledgers below the treble** —
+  G3 and lower. A melody that merely dips is better read with a couple of
+  ledger lines than split across two staves, so A3 is deliberately the limit
+  and the imported No One, which bottoms out on exactly A3, stays on one
+  staff. Everything else about a single-staff lesson is **untouched** by the
+  grand staff: the gutter is the same 92px, the clef sits at the same x, and
+  the staff is centred in the same field.
+  Once there are two, `onBassStaff` splits the hands at **middle C**, which
+  keeps its own ledger on the treble. The two staves are not one continuous
+  ladder — E4 and A3 are four diatonic steps apart but a whole staff height
+  apart on the page — so `GRAND_STEP_OFFSET` (12 steps, E4 over G2) rebases
+  every bass note into its own staff's coordinates and *everything* under a
+  note then works there unchanged: ledgers, the accidental, the degree row's
+  collision test. The whole system is **centred as one**, so adding the bass
+  staff lifts the treble rather than pushing the music off the bottom.
+  **A stem belongs to one staff.** Two hands strike together constantly, so
+  keying a column on the beat alone made those notes one chord: a single stem
+  ran from the right hand's head down through the gap into the left hand's,
+  and a beam joined them across it. `columnsOf` is now run per staff and only
+  the **degree row spans both**, because it names what is *sounding* and not
+  what is written where — a two-hand unison rightly shows both digits.
+  Barlines and the playhead span the system; beat hairlines do too, which is
+  why a grand staff can look "continuous" in a screenshot when the staves are
+  in fact a clean `GRAND_GAP` apart. Measure before believing it.
+  The bass signature is the treble's written a third lower
+  (`bassSignatureMarks`), which keeps every accidental on the staff up to six
+  either way; the seventh flat lands a space under the bottom line and is left
+  there, no lesson having ever derived it.
+- **Three more numbers measured off Noto Music, and one of them is a bearing.**
+  The bass clef is seated on the **midpoint of its two dots** (`0.6445em`) —
+  the dots straddle the F line, and that is the font saying where the clef
+  points; reusing the notehead centre would have put it half a staff out. The
+  brace **fills its em box exactly** (0 to 1 about the baseline), so sizing it
+  by the system's height drops it on both outer staff lines with no fudge. The
+  third is the trap: `BRACE_INK_EM.x0` is the glyph's **left bearing**. Its ink
+  is `0.161em` wide but starts `0.05em` right of the pen, so budgeting the
+  width alone after the pen position put the system rule and the clef straight
+  through the brace. For the same reason the key signature clears
+  `CLEF_INK_EM`, which is **not the same for the two clefs** (`0.661em` treble,
+  `0.742em` bass) — a grand staff's signature, and the gutter behind it, sit a
+  few pixels further right, and `SIG_X0` is now derived rather than the hand-
+  written 58 it reproduces. All of these live in `engine/notation.ts` beside
+  the notehead metrics, where `tests/notation.test.ts` pins them; replace the
+  font and re-measure.
 - **The key signature is derived from the lesson, not authored on it.** An
   imported clip carries no key, and asking the player to name one before they
   can read the staff is a worse trade than reading it off the notes.

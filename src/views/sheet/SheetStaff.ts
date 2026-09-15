@@ -18,7 +18,16 @@
 import {
   ACCIDENTAL,
   ACCIDENTAL_EM_CENTRE,
+  BRACE,
+  BRACE_INK_EM,
+  CLEF_BASS,
+  CLEF_INK_EM,
+  CLEF_REF_EM,
   CLEF_TREBLE,
+  GRAND_STEP_OFFSET,
+  bassSignatureMarks,
+  needsBassStaff,
+  onBassStaff,
   FIGURE_BEAMS,
   GLYPH,
   NOTEHEAD_EM_CENTRE,
@@ -71,15 +80,54 @@ const CLEF_GUTTER = 92;
 const CLEF_RULE_W = 1;
 
 /**
+ * The grand staff: a bass staff under the treble one, drawn only for music
+ * that reaches down into it (`needsBassStaff`).
+ *
+ * The gap is one staff height, which is what engraving uses and what leaves
+ * middle C's ledger floating clear of both staves. The two staves are **not**
+ * diatonically continuous across it — E4 and A3 are four steps apart but sit
+ * a whole staff height apart on the page — so every note is placed against
+ * its own staff's bottom line and never on one long ladder.
+ */
+const GRAND_GAP = SPACE * 4;
+
+/**
+ * Which line each clef names, as a **step** above its own staff's bottom line
+ * — G4 is the treble's second line, F3 the bass's fourth. Steps, not spaces:
+ * a step is half a space, like every other position in this file.
+ */
+const CLEF_LINE = { treble: 2, bass: 6 } as const;
+
+/** The brace's column: where its ink starts, and the tail after it. */
+const BRACE_X = 6;
+const BRACE_TAIL = 6;
+/** Its span is fixed, so its drawn width is a constant. */
+const BRACE_SPAN = STAFF_H * 2 + GRAND_GAP;
+const BRACE_W = BRACE_X + BRACE_SPAN * (BRACE_INK_EM.x1 - BRACE_INK_EM.x0);
+/** The rule down the system's left edge, this far clear of the brace. */
+const BRACE_RULE_GAP = 4;
+
+/**
  * Where the signature starts, and the gap it leaves before the metre.
  *
- * The clef is drawn at x=10 and its ink runs to 0.661em of the staff size —
- * 54.6px — so the first accidental starts clear of that, not on top of it.
- * Both numbers are measured off the font rather than guessed; change the staff
- * size and they want re-deriving.
+ * The clef is drawn at `CLEF_X` and the first accidental has to start clear of
+ * its ink (`CLEF_INK_EM`, measured off the font) — which is **not the same for
+ * the two clefs**. One staff or two, the signature clears whichever clefs are
+ * actually drawn, so a grand staff pushes it, and the gutter behind it, a few
+ * pixels right. Change the staff size and these re-derive themselves.
  */
-const SIG_X0 = 58;
+const CLEF_X = 10;
+const SIG_GAP = 3.4;
 const SIG_TAIL = 8;
+/** The signature's offset within the clef column, with and without the bass clef. */
+const sigStart = (grand: boolean): number =>
+  CLEF_X +
+  (grand ? Math.max(CLEF_INK_EM.treble, CLEF_INK_EM.bass) : CLEF_INK_EM.treble) *
+    (SPACE / NOTEHEAD_EM_HEIGHT) +
+  SIG_GAP;
+/** 58px, which is the number this file carried by hand before it was derived. */
+const SIG_X0 = sigStart(false);
+const SIG_X0_GRAND = sigStart(true);
 /** Accidentals are drawn smaller than a notehead, in the signature and before a note. */
 const ACCIDENTAL_SCALE = 0.62;
 
@@ -163,6 +211,8 @@ interface Placed {
   /** Centre of the notehead. */
   y: number;
   step: number;
+  /** The same position in its *own* staff's coordinates, for ledger lines. */
+  local: number;
   /** What the key leaves to be drawn before this note, if anything. */
   accidental: "sharp" | "flat" | "natural" | null;
   fig: Engraved;
@@ -173,11 +223,57 @@ interface Placed {
   visible: boolean;
 }
 
+/**
+ * Notes struck together, gathered into columns of one shared stem.
+ *
+ * Keyed on the written beat rather than a pixel distance, so a chord is a
+ * chord at any zoom and never half-splits as the staff scrolls. Takes an
+ * already-sorted list: `notes` sorts once and slices it per staff.
+ */
+function columnsOf(placed: readonly Placed[]): Placed[][] {
+  const columns: Placed[][] = [];
+  for (const n of placed) {
+    const last = columns[columns.length - 1];
+    const same =
+      last && last[0].inst.loopIndex === n.inst.loopIndex && last[0].inst.beat === n.inst.beat;
+    if (same) last.push(n);
+    else columns.push([n]);
+  }
+  return columns;
+}
+
+/**
+ * The staves this frame is drawing, and how a spelled step lands on them.
+ *
+ * One object so the drawing code never has to ask "grand or not" again: it
+ * asks where a step goes and gets an answer either way.
+ */
+interface System {
+  grand: boolean;
+  /** Top line of the treble staff, and its bottom. */
+  trebleTop: number;
+  trebleBottom: number;
+  /** The bass staff's, equal to the treble's when there is no bass staff. */
+  bassTop: number;
+  bassBottom: number;
+  /** The whole system's extent, for the grid, the barlines and the playhead. */
+  top: number;
+  bottom: number;
+  /** Canvas y of a step spelled against the treble staff's bottom line. */
+  yOf(step: number): number;
+  /** That step in its own staff's coordinates — what ledger lines count in. */
+  localOf(step: number): number;
+}
+
 export class SheetStaff implements LaneRenderer {
   private ctx: CanvasRenderingContext2D;
   private window: VisibleWindow = { behind: 0, ahead: 0 };
-  /** Left column's width this frame: clef, key signature and metre. */
+  /** Left column's width this frame: brace, clef, key signature and metre. */
   private gutter = CLEF_GUTTER;
+  /** The brace's own column in front of the clef, or 0 with one staff. */
+  private braceW = 0;
+  /** Where the signature starts inside the clef column, this frame. */
+  private sigX0 = SIG_X0;
 
   constructor(private readonly el: HTMLCanvasElement) {
     const ctx = el.getContext("2d");
@@ -216,7 +312,15 @@ export class SheetStaff implements LaneRenderer {
 
     // The key signature lives in the gutter, so it sets the track's origin.
     const marks = signatureMarks(f.keyFifths);
-    this.gutter = CLEF_GUTTER + this.signatureWidth(marks);
+    const grand = needsBassStaff(f.hueOrder);
+    // The brace takes a column of its own in front of the clef rather than
+    // sitting on top of it, so the gutter grows by exactly its width — and by
+    // the few pixels the wider bass clef pushes the signature, so the metre
+    // keeps the clearance the design's 92 gave it.
+    this.braceW = grand ? BRACE_W + BRACE_TAIL : 0;
+    this.sigX0 = grand ? SIG_X0_GRAND : SIG_X0;
+    this.gutter =
+      CLEF_GUTTER + (this.sigX0 - SIG_X0) + this.braceW + this.signatureWidth(marks);
     const trackX = this.gutter;
     const trackW = Math.max(1, W - trackX);
 
@@ -225,8 +329,7 @@ export class SheetStaff implements LaneRenderer {
     // ribbon takes a band off the bottom before that centring happens.
     const ribbon = f.chords.length > 0 ? RIBBON_H : 0;
     const fieldH = H - ribbon;
-    const topLineY = Math.round((fieldH - STAFF_H) / 2);
-    const bottomLineY = topLineY + STAFF_H;
+    const sys = this.system(f, fieldH);
 
     // Zoom: the roll's five bars unless the lesson's closest pair would
     // collide at that scale, in which case zoom in until it clears (§1.7).
@@ -243,12 +346,14 @@ export class SheetStaff implements LaneRenderer {
     };
 
     const p = f.palette;
-    // Staff position of a pitch, as a y on the canvas.
-    const yOfStep = (step: number) => bottomLineY - step * HALF_SPACE;
+    // Staff position of a pitch, as a y on the canvas — on whichever staff it
+    // belongs to, which is the only thing that changes about any of this.
+    const yOfStep = (step: number) => sys.yOf(step);
 
-    this.grid(f, trackX, W, topLineY, xOfBeat);
-    this.staffLines(ctx, trackX, W - trackX, topLineY, p.txt3);
-    this.notes(f, xOfBeat, yOfStep, bottomLineY);
+    this.grid(f, trackX, W, sys, xOfBeat);
+    this.staffLines(ctx, trackX, W - trackX, sys.trebleTop, p.txt3);
+    if (sys.grand) this.staffLines(ctx, trackX, W - trackX, sys.bassTop, p.txt3);
+    this.notes(f, xOfBeat, sys);
 
     // A wrong strike, on the staff line of the note actually played. Notation
     // has a place for every pitch, so this one is never homeless the way a
@@ -261,7 +366,7 @@ export class SheetStaff implements LaneRenderer {
 
     this.historyFade(f, trackX, hitX, fieldH);
 
-    this.clefGutter(f, marks, topLineY, bottomLineY);
+    this.clefGutter(f, marks, sys);
 
     if (ribbon > 0) {
       this.ribbon = paintRibbon(ctx, {
@@ -289,13 +394,13 @@ export class SheetStaff implements LaneRenderer {
     ctx.fillStyle = p.head;
     ctx.fillRect(
       Math.round(hitX) - PLAYHEAD_W / 2,
-      topLineY - PLAYHEAD_OVERHANG,
+      sys.top - PLAYHEAD_OVERHANG,
       PLAYHEAD_W,
       // Carried down through the ribbon when there is one, so the strip and
       // the staff can never look like they disagree about where you are.
       ribbon > 0
-        ? H - (topLineY - PLAYHEAD_OVERHANG)
-        : STAFF_H + PLAYHEAD_OVERHANG * 2,
+        ? H - (sys.top - PLAYHEAD_OVERHANG)
+        : sys.bottom - sys.top + PLAYHEAD_OVERHANG * 2,
     );
 
     if (f.countIn) {
@@ -333,6 +438,39 @@ export class SheetStaff implements LaneRenderer {
     ctx.fillRect(trackX, 0, hitX - trackX, H);
   }
 
+  /**
+   * Lay out the staves for this frame.
+   *
+   * A grand staff only when the lesson reaches below two ledger lines; a
+   * melody that merely dips keeps the single treble staff it has always had,
+   * because splitting one line of music across two staves reads far worse
+   * than a couple of ledgers. The whole system is centred in the field, so
+   * adding the bass staff lifts the treble rather than pushing the music off
+   * the bottom.
+   */
+  private system(f: LaneFrame, fieldH: number): System {
+    const grand = needsBassStaff(f.hueOrder);
+    const height = grand ? STAFF_H * 2 + GRAND_GAP : STAFF_H;
+    const trebleTop = Math.round((fieldH - height) / 2);
+    const trebleBottom = trebleTop + STAFF_H;
+    const bassTop = grand ? trebleBottom + GRAND_GAP : trebleTop;
+    const bassBottom = bassTop + STAFF_H;
+    return {
+      grand,
+      trebleTop,
+      trebleBottom,
+      bassTop,
+      bassBottom,
+      top: trebleTop,
+      bottom: grand ? bassBottom : trebleBottom,
+      yOf: (step) =>
+        grand && onBassStaff(step)
+          ? bassBottom - (step + GRAND_STEP_OFFSET) * HALF_SPACE
+          : trebleBottom - step * HALF_SPACE,
+      localOf: (step) => (grand && onBassStaff(step) ? step + GRAND_STEP_OFFSET : step),
+    };
+  }
+
   private staffLines(
     ctx: CanvasRenderingContext2D,
     x: number,
@@ -351,7 +489,7 @@ export class SheetStaff implements LaneRenderer {
     f: LaneFrame,
     trackX: number,
     W: number,
-    topLineY: number,
+    sys: System,
     xOfBeat: (b: number) => number,
   ): void {
     const ctx = this.ctx;
@@ -366,15 +504,22 @@ export class SheetStaff implements LaneRenderer {
       if (x < trackX - 2 || x > W + 2) continue;
       const onBar = ((b % f.beatsPerBar) + f.beatsPerBar) % f.beatsPerBar === 0;
       if (onBar) {
+        // A barline runs the whole system, joining the two staves — which is
+        // what says they are one instrument and not two parts.
         ctx.fillStyle = f.palette.txt3;
-        ctx.fillRect(Math.round(x) - BARLINE_W / 2, topLineY, BARLINE_W, STAFF_H + LINE_W / 2);
+        ctx.fillRect(
+          Math.round(x) - BARLINE_W / 2,
+          sys.top,
+          BARLINE_W,
+          sys.bottom - sys.top + LINE_W / 2,
+        );
       } else {
         ctx.fillStyle = f.palette.grid;
         ctx.fillRect(
           Math.round(x),
-          topLineY - GRID_OVERHANG,
+          sys.top - GRID_OVERHANG,
           1,
-          STAFF_H + GRID_OVERHANG * 2,
+          sys.bottom - sys.top + GRID_OVERHANG * 2,
         );
       }
     }
@@ -395,12 +540,7 @@ export class SheetStaff implements LaneRenderer {
   }
 
   /** The clef's column: its own staff lines, the clef, the key, 4/4, a rule. */
-  private clefGutter(
-    f: LaneFrame,
-    marks: readonly SignatureMark[],
-    topLineY: number,
-    bottomLineY: number,
-  ): void {
+  private clefGutter(f: LaneFrame, marks: readonly SignatureMark[], sys: System): void {
     const ctx = this.ctx;
     const p = f.palette;
     const gutter = this.gutter;
@@ -408,21 +548,94 @@ export class SheetStaff implements LaneRenderer {
     // Opaque, so notation scrolling off the left disappears behind it.
     ctx.fillStyle = p.lane;
     ctx.fillRect(0, 0, gutter, this.el.clientHeight);
-    this.staffLines(ctx, 0, gutter, topLineY, p.txt3);
+    this.staffLines(ctx, 0, gutter, sys.trebleTop, p.txt3);
+    if (sys.grand) this.staffLines(ctx, 0, gutter, sys.bassTop, p.txt3);
 
     const size = SPACE / NOTEHEAD_EM_HEIGHT;
     ctx.fillStyle = p.txt;
-    ctx.font = `${size}px ${MUSIC}`;
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-    // The treble clef curls around G4 — the second line up.
-    ctx.fillText(CLEF_TREBLE, 10, bottomLineY - 2 * HALF_SPACE + NOTEHEAD_EM_CENTRE * size);
+
+    if (sys.grand) {
+      // The brace, and the rule down the system's left edge. Both say the two
+      // staves are one instrument; the brace is what says it is a keyboard.
+      // The glyph fills its em box top to bottom, so at font size `span` on a
+      // baseline of `sys.bottom` it lands on both staves' outer lines exactly;
+      // the pen goes back by the left bearing so the ink starts at BRACE_X.
+      const span = sys.bottom - sys.top;
+      ctx.font = `${span}px ${MUSIC}`;
+      ctx.fillText(BRACE, BRACE_X - span * BRACE_INK_EM.x0, sys.bottom);
+      ctx.fillRect(BRACE_W + BRACE_RULE_GAP, sys.top, LINE_W, span);
+    }
+
+    const clefX = this.braceW + CLEF_X;
+    // The treble clef curls around G4 and the bass clef's dots straddle F3 —
+    // each seated on its own line, by its own measured reference.
+    this.clef(CLEF_TREBLE, "treble", clefX, sys.trebleBottom, size, p.txt);
+    if (sys.grand) this.clef(CLEF_BASS, "bass", clefX, sys.bassBottom, size, p.txt);
 
     // The key signature, between clef and metre — where a reader looks for it,
-    // and the reason a note in the key needs no accidental of its own.
+    // and the reason a note in the key needs no accidental of its own. Both
+    // staves carry it, the bass clef's written a third lower.
     const accSize = size * ACCIDENTAL_SCALE;
     ctx.font = `${accSize}px ${MUSIC}`;
-    let x = SIG_X0;
+    this.signature(marks, this.braceW + this.sigX0, sys.trebleBottom, accSize);
+    if (sys.grand) {
+      this.signature(
+        bassSignatureMarks(f.keyFifths),
+        this.braceW + this.sigX0,
+        sys.bassBottom,
+        accSize,
+      );
+    }
+
+    // Time signature, stacked in the two halves of each staff.
+    ctx.font = `600 ${SPACE * 1.5}px ${SANS}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const sigX = gutter - 24;
+    const metre = (top: number) => {
+      ctx.fillText(String(f.beatsPerBar), sigX, top + SPACE);
+      ctx.fillText("4", sigX, top + SPACE * 3);
+    };
+    metre(sys.trebleTop);
+    if (sys.grand) metre(sys.bassTop);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+
+    ctx.fillStyle = p.hair;
+    ctx.fillRect(gutter - CLEF_RULE_W, 0, CLEF_RULE_W, this.el.clientHeight);
+  }
+
+  /** A clef, seated on the line it names by its own measured reference. */
+  private clef(
+    glyph: string,
+    which: "treble" | "bass",
+    x: number,
+    bottomLineY: number,
+    size: number,
+    ink: string,
+  ): void {
+    const ctx = this.ctx;
+    ctx.fillStyle = ink;
+    ctx.font = `${size}px ${MUSIC}`;
+    // A step is *half* a space — the same unit every other position here uses.
+    ctx.fillText(
+      glyph,
+      x,
+      bottomLineY - CLEF_LINE[which] * HALF_SPACE + CLEF_REF_EM[which] * size,
+    );
+  }
+
+  /** A run of signature accidentals, in a staff's own coordinates. */
+  private signature(
+    marks: readonly SignatureMark[],
+    x0: number,
+    bottomLineY: number,
+    accSize: number,
+  ): void {
+    const ctx = this.ctx;
+    let x = x0;
     for (const m of marks) {
       const glyph = ACCIDENTAL[m.accidental];
       ctx.fillText(
@@ -432,29 +645,11 @@ export class SheetStaff implements LaneRenderer {
       );
       x += ctx.measureText(glyph).width;
     }
-
-    // Time signature, stacked in the two halves of the staff.
-    ctx.font = `600 ${SPACE * 1.5}px ${SANS}`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    const sigX = gutter - 24;
-    ctx.fillText(String(f.beatsPerBar), sigX, topLineY + SPACE);
-    ctx.fillText("4", sigX, topLineY + SPACE * 3);
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-
-    ctx.fillStyle = p.hair;
-    ctx.fillRect(gutter - CLEF_RULE_W, 0, CLEF_RULE_W, this.el.clientHeight);
   }
 
   // ------------------------------------------------------------ the notes
 
-  private notes(
-    f: LaneFrame,
-    xOfBeat: (b: number) => number,
-    yOfStep: (s: number) => number,
-    bottomLineY: number,
-  ): void {
+  private notes(f: LaneFrame, xOfBeat: (b: number) => number, sys: System): void {
     const ctx = this.ctx;
     const size = SPACE / NOTEHEAD_EM_HEIGHT;
     const W = this.el.clientWidth;
@@ -475,8 +670,12 @@ export class SheetStaff implements LaneRenderer {
       placed.push({
         inst,
         x,
-        y: yOfStep(step),
+        y: sys.yOf(step),
         step,
+        // Ledger lines count from the note's *own* staff, so a low left-hand
+        // note gets them off the bass staff and not off the treble one it is
+        // nowhere near.
+        local: sys.localOf(step),
         accidental,
         fig: f.noteValues.get(inst.beat) ?? figureFor(inst.duration),
         ink: noteInk(f, inst, laneIndex),
@@ -491,19 +690,32 @@ export class SheetStaff implements LaneRenderer {
         a.inst.loopIndex - b.inst.loopIndex || a.inst.beat - b.inst.beat || a.step - b.step,
     );
 
-    // Notes struck together are one column with one stem, not neighbours.
-    // Keyed on the written beat rather than a pixel distance, so a chord is a
-    // chord at any zoom and never half-splits as the staff scrolls.
-    const columns: Placed[][] = [];
-    for (const n of placed) {
-      const last = columns[columns.length - 1];
-      const same =
-        last &&
-        last[0].inst.loopIndex === n.inst.loopIndex &&
-        last[0].inst.beat === n.inst.beat;
-      if (same) last.push(n);
-      else columns.push([n]);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+
+    // **A stem belongs to one staff.** On a grand staff the two hands strike
+    // together constantly, and keying a column on the beat alone made those
+    // notes one chord: a single stem ran from the right hand's head down
+    // through the gap into the left hand's, and a beam joined them across it.
+    // A hand is engraved on its own staff, so the heads, stems and beams are
+    // built per staff and only the degree row — which names what is *sounding*,
+    // not what is written where — spans both.
+    if (sys.grand) {
+      for (const bass of [true, false]) {
+        this.engrave(f, columnsOf(placed.filter((n) => onBassStaff(n.step) === bass)), size);
+      }
+    } else {
+      this.engrave(f, columnsOf(placed), size);
     }
+
+    if (f.labelMode === "degree") {
+      this.degreeRow(f, columnsOf(placed), this.degreeRowY(f, sys));
+    }
+  }
+
+  /** Heads, stems and beams for one staff's worth of columns. */
+  private engrave(f: LaneFrame, columns: Placed[][], size: number): void {
+    const ctx = this.ctx;
 
     // Beaming runs over columns, not notes: a chord of eighths beams once.
     const groups = beamGroups(
@@ -516,9 +728,6 @@ export class SheetStaff implements LaneRenderer {
     );
     const beamed = new Set<number>();
     for (const g of groups) for (const m of g.members) beamed.add(m);
-
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
 
     for (let i = 0; i < columns.length; i++) {
       const col = columns[i];
@@ -556,8 +765,6 @@ export class SheetStaff implements LaneRenderer {
       if (!cols.some((c) => c.some((n) => n.visible))) continue;
       this.beamGroup(cols, g.beams, size);
     }
-
-    if (f.labelMode === "degree") this.degreeRow(f, columns, this.degreeRowY(f, bottomLineY));
   }
 
   /**
@@ -616,13 +823,17 @@ export class SheetStaff implements LaneRenderer {
    * hold still while the music scrolls past it, and a row that jumped whenever
    * a low note came into view would be worse than one sitting on a notehead.
    */
-  private degreeRowY(f: LaneFrame, bottomLineY: number): number {
+  private degreeRowY(f: LaneFrame, sys: System): number {
+    const base = sys.grand ? sys.bassBottom : sys.trebleBottom;
     const lowest = f.hueOrder[0];
-    if (lowest === undefined) return bottomLineY + DEGREE_DROP;
+    if (lowest === undefined) return base + DEGREE_DROP;
+    // In the staff the lowest note actually sits on — on a grand staff that is
+    // the bass one, where the same note needs far fewer ledgers, so the row
+    // barely has to give at all.
     return (
-      bottomLineY +
+      base +
       degreeRowDrop(
-        spell(lowest, f.keyFifths).step,
+        sys.localOf(spell(lowest, f.keyFifths).step),
         HALF_SPACE,
         DEGREE_DROP,
         DEGREE_CLEAR,
@@ -771,8 +982,8 @@ export class SheetStaff implements LaneRenderer {
   private ledgers(n: Placed): void {
     const ctx = this.ctx;
     ctx.fillStyle = n.ink;
-    for (const s of ledgerSteps(n.step)) {
-      const y = n.y + (n.step - s) * HALF_SPACE;
+    for (const s of ledgerSteps(n.local)) {
+      const y = n.y + (n.local - s) * HALF_SPACE;
       ctx.fillRect(n.x - LEDGER_LEN / 2, y - LEDGER_W / 2, LEDGER_LEN, LEDGER_W);
     }
   }

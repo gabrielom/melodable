@@ -122,7 +122,44 @@ export const REST_GLYPH: Record<Figure, string> = {
 };
 
 export const CLEF_TREBLE = "\u{1D11E}";
+/** The F clef, for the bass staff of a grand staff. Its dots straddle F3. */
+export const CLEF_BASS = "\u{1D122}";
+/** The brace that joins the two staves of a grand staff at the left. */
+export const BRACE = "\u{1D114}";
 export const ACCIDENTAL = { sharp: "♯", flat: "♭", natural: "♮" } as const;
+
+/**
+ * Where each clef's own reference line sits above its baseline, in em.
+ *
+ * The treble's is the notehead centre, which is what the font seats every
+ * glyph by. The bass clef's is **measured off its two dots**: they straddle
+ * the F line, their centres sit at `0.7545` and `0.5345em`, and the line is
+ * the midpoint. Guessing the notehead centre for it too would have put the
+ * clef half a staff out.
+ */
+export const CLEF_REF_EM = { treble: NOTEHEAD_EM_CENTRE, bass: 0.6445 } as const;
+
+/**
+ * How far each clef's ink reaches right of the pen, in em. The key signature
+ * starts clear of whichever clefs are drawn, so these are what decide it —
+ * and the two are **not** the same, which is why a grand staff's signature
+ * sits a few pixels further right than a lone treble's.
+ */
+export const CLEF_INK_EM = { treble: 0.661, bass: 0.742 } as const;
+
+/**
+ * The brace's ink, in em about its pen. Both numbers earn their keep.
+ *
+ * Vertically it fills the em box exactly — `0.0` to `1.0` about the baseline —
+ * so drawn at font size `span` on a baseline at the system's bottom it lands
+ * on both staves' outer lines with no fudge at either end.
+ *
+ * Horizontally, `x0` is the **left bearing**, and it is the easy one to drop:
+ * the ink is `0.161em` wide but sits `0.05em` right of the pen, so budgeting
+ * the width alone after the pen position puts whatever comes next — the
+ * system rule, then the clef — straight through the brace.
+ */
+export const BRACE_INK_EM = { x0: 0.05, x1: 0.211, top: 1, bottom: 0 } as const;
 
 export interface Engraved {
   figure: Figure;
@@ -246,6 +283,65 @@ export function staffStep(pitch: number): number {
   const octave = Math.floor(pitch / 12) - 1;
   const [index] = PITCH_CLASS[((pitch % 12) + 12) % 12];
   return octave * 7 + index - BOTTOM_LINE_DIATONIC;
+}
+
+/**
+ * The grand staff: a bass staff under the treble one, for music that needs it.
+ *
+ * Positions everywhere in this module are diatonic steps above the **treble**
+ * staff's bottom line, E4. The bass staff's own bottom line is G2, which is
+ * twelve steps below that — so one `spell` still answers for both staves and
+ * a note on the bass staff is drawn from its own bottom line at `step + 12`.
+ * The two staves are *not* diatonically continuous on the page, and must not
+ * be: real engraving separates them by far more than the four steps between
+ * E4 and A3, which is why each note is placed against its own staff rather
+ * than on one long ladder.
+ */
+export const GRAND_STEP_OFFSET = 12;
+
+/**
+ * Middle C is the line between the hands: C4 and up on the treble staff,
+ * below it on the bass.
+ *
+ * C4 is `step -2`, one ledger under the treble staff, and that is where the
+ * convention puts it — the ledger belongs to the treble staff, not to the gap.
+ */
+export function onBassStaff(step: number): boolean {
+  return step < -2;
+}
+
+/**
+ * How far below the treble staff a note may sit before a bass staff is worth
+ * drawing: two ledger lines, which is A3.
+ *
+ * Any lower and the reader is counting lines instead of reading them. Any
+ * *higher* a threshold and a melody that merely dips — the imported No One
+ * bottoms out on exactly A3 — would be split across two staves, which is far
+ * worse than a couple of ledgers: a single line of music belongs on a single
+ * staff.
+ */
+const LEDGERS_BEFORE_BASS = -4;
+
+/**
+ * Whether a lesson's pitches need the bass staff at all.
+ *
+ * Derived, like the key signature and the harmony: nothing authors it, and a
+ * clip that stays in one register keeps the single treble staff it has always
+ * had. Only music that actually reaches down gets the second one.
+ */
+export function needsBassStaff(pitches: readonly number[]): boolean {
+  return pitches.some((p) => staffStep(p) < LEDGERS_BEFORE_BASS);
+}
+
+/**
+ * A signature's accidentals as the bass clef writes them.
+ *
+ * Two steps lower than the treble's, which is the whole of the difference:
+ * the F♯ that sits on the treble's top line sits on the bass's fourth line,
+ * and every other accidental follows it down by the same third.
+ */
+export function bassSignatureMarks(fifths: number): SignatureMark[] {
+  return signatureMarks(fifths).map((m) => ({ ...m, step: m.step - 2 }));
 }
 
 /**
