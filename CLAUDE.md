@@ -712,6 +712,58 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   rasterising: the whole lands on steps 6→5, the half on 4→5, the rest on 4.
   A rest takes `palette.txt` and never a timing colour: a silence is notation,
   not a result, so it stays outside both colour languages.
+- **An imported clip is put back on a grid, and `lessonTargets` is where.**
+  `engine/quantize.ts` finds the grid (`gridFor`) and snaps onsets and note
+  ends onto it; `lessonTargets` applies it, and `lesson.notes` keeps the raw
+  timing — the chord ribbon still reads that, for the reason it gives.
+  **That seam is the whole of the design**: it is the single funnel the
+  scorer, the transport and all four renderers come through, so the beat a
+  note is drawn on and the beat it is graded on are the same number.
+  Quantising further downstream would separate them, and the playhead is the
+  grading line.
+  **What it fixes is not cosmetic.** A clip that was played rather than drawn
+  — the imported Ave Maria arpeggiates at 0, 0.5, 0.99, 1.469, 1.979 — has no
+  grid at all, and `sheetPxPerBeat` scales the staff so the *closest* pair of
+  onsets clears `MIN_NOTE_GAP_PX`. Its closest pair is a melody note landing
+  0.031 beats before the chord under it, which asks for **1090 pixels a
+  beat**: the sheet drew an empty staff and nothing else. `restsFor` and
+  `beamGroups` were wrong on the same clip for the same reason. The chord
+  ribbon's own `BEAT_TOLERANCE` is this problem solved once, locally, for one
+  reader; this is it solved upstream for all of them, and the ribbon's
+  workaround stays because it reads the raw notes.
+  **The grid is found by fit and paid for by fineness**, and both halves are
+  needed. Fit alone: each candidate in `GRIDS` is scored by the mean distance
+  from a moment to its nearest grid point *as a share of that grid's
+  spacing* — normalised, or a fine grid wins by being near everything. On the
+  Ave that runs 21.2% at the beat, **8.7% at the quaver**, 23.2% at the
+  triplet, 15.2% at the semiquaver: a real trough at the value the piece is
+  in, which is why this is a search for the best fit and not the coarsest fit
+  inside a tolerance. A *maximum* offset cannot do it — that clip sits at ~50%
+  against every grid, because a sung line genuinely is off-grid in places.
+  But a finer grid is **never a worse fit**, so an outlier buys one: a clip of
+  plain crotchets with one expressive note at 6.37 is exactly on every grid
+  but that note, and 6.37 is a hair off 6.375, so the semiquaver grid scores
+  0.4% against the beat's 3.1% on the strength of the one note that is not in
+  time. `FINENESS_COST` (0.03 a step) is the charge that stops it. Its window
+  was measured from both ends: under 0.125 keeps the Ave's quaver, over 0.009
+  keeps the expressive clip on the beat.
+  **A clip already exactly on a grid is taken at its word** and never scored
+  at all — that is the first loop in `gridFor`, and it is the whole library.
+  It is a separate question from the one above, not a shortcut past it: an
+  authored dotted quaver sits *on* a sixteenth grid where an expressive note
+  merely lands near one, and only exactness tells them apart. Without it the
+  fineness charge rounds a 0.75 hold up to a full beat, which is a different
+  exercise. `tests/quantize.test.ts` pins every built-in as unmoved.
+  **Both ends of a note are moments** (`momentsOf`), because a length can be
+  finer than the onsets around it — whole notes on the beat with one dotted
+  quaver among them read as a one-beat grid from the onsets alone. And a
+  length is snapped by moving the note's **end** onto the grid, not by
+  rounding the length: a note struck early and released late is wrong at both
+  ends, and rounding the length leaves the release off the beat it was aimed
+  at.
+  The cost is that a clip played with swing or rubato is graded as though it
+  were even. For a trainer that is the right way round — the exercise is to
+  play in time, not to reproduce someone else's wobble.
 - **`MIN_NOTE_GAP_PX` is two staff spaces, and it was measured.** Taking every
   adjacent pair of note columns across the three pages of a printed piano
   transcription and normalising by its own staff space (23.7px at 300dpi):

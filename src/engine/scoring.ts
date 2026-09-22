@@ -11,6 +11,7 @@
  * timestamp mapped onto it) — never Date.now().
  */
 
+import { gridFor, momentsOf, snapLength, snapTo } from "./quantize";
 import type { HoldResult, Lesson, Rating } from "./types";
 import { HOLD_MIN_BEATS, HOLD_WINDOWS, RATING_SCORE, TIMING_WINDOWS, WRONG_GRACE } from "./types";
 
@@ -144,21 +145,39 @@ export function classify(dtSeconds: number): Exclude<Rating, "miss"> | null {
 }
 
 /**
- * Route a lesson's notes into lanes. Notes whose pitch has no lane (an
- * unmapped drum note, say) are dropped — better than grading a lane the
- * player can't see.
+ * Route a lesson's notes into lanes, on the grid the clip is written on.
+ *
+ * Notes whose pitch has no lane (an unmapped drum note, say) are dropped —
+ * better than grading a lane the player can't see.
+ *
+ * **This is the one place an imported clip's timing is straightened**, and it
+ * is here because it is the single funnel every reader comes through: the
+ * scorer grades these beats, the transport schedules them, and all four
+ * renderers draw them. Quantising anywhere further downstream would put a
+ * note's drawn position and its graded position on different beats, and the
+ * playhead is the grading line — they have to be the same number.
+ *
+ * `lesson.notes` keeps the raw timing. The chord ribbon still reads it, for
+ * the reason it gives: it needs lengths before the hold floor flattens them.
+ *
+ * A lesson that was authored on the grid — every built-in — snaps to itself,
+ * so this is a no-op for the library and only bites on imports. What it costs
+ * is that a clip played with swing or rubato is graded as though it were
+ * even, which for a trainer is the right way round: the exercise is to play
+ * in time, not to reproduce someone else's wobble.
  */
 export function lessonTargets(lesson: Lesson, laneOf: (pitch: number) => number | null): TargetNote[] {
+  const grid = gridFor(momentsOf(lesson.notes));
   const out: TargetNote[] = [];
   for (const n of lesson.notes) {
     const lane = laneOf(n.pitch);
     // A length under the floor is an ornament, not a hold — normalised away
     // here so nothing downstream has to keep re-deciding.
     if (lane !== null) {
-      const written = n.duration ?? 0;
+      const written = snapLength(n.time, n.duration ?? 0, grid);
       out.push({
         lane,
-        beat: n.time,
+        beat: snapTo(n.time, grid),
         duration: written >= HOLD_MIN_BEATS ? written : 0,
         written,
       });
