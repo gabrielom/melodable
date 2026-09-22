@@ -23,6 +23,7 @@ import type { MidiMessage, InstrumentType } from "@/engine/types";
 import DeviceMenu from "@/components/DeviceMenu.vue";
 import MidiMonitor from "@/components/MidiMonitor.vue";
 import HomeScreen from "@/components/HomeScreen.vue";
+import { useCourses } from "@/stores/courses";
 import ImportDialog from "@/components/ImportDialog.vue";
 import CalibrationDialog from "@/components/CalibrationDialog.vue";
 import { useCalibration } from "@/composables/useCalibration";
@@ -48,6 +49,36 @@ function openLesson(index: number) {
   lessons.selectIndex(index);
   view.value = "trainer";
 }
+
+const courses = useCourses();
+
+/** A song's card opens the step it is on — straight in, like any card. */
+function openStep(lessonId: string) {
+  lessons.selectId(lessonId);
+  view.value = "trainer";
+}
+
+/**
+ * From the summary: another step of the song, played straight away. The
+ * lesson-change watcher resets the trainer for it first, so the run starts
+ * only after that has happened.
+ */
+async function playStep(lessonId: string) {
+  if (lessonId === lessons.current.id) return onPlay();
+  lessons.selectId(lessonId);
+  await nextTick();
+  await onPlay();
+}
+
+function combineSong(name: string, lessonIds: string[]) {
+  courses.combine(name, lessonIds);
+}
+
+/** What the home grid shows: a song counts once, and its steps not at all. */
+const cardCount = computed(() => {
+  const inSong = courses.members();
+  return lessons.lessons.filter((l) => !inSong.has(l.id)).length + courses.courses.length;
+});
 
 function goHome() {
   if (playing.value) stop();
@@ -1134,7 +1165,7 @@ watch(
       <div class="spacer" />
 
       <span v-if="view === 'home'" class="count num">
-        {{ lessons.lessons.length }}<i>LESSONS</i>
+        {{ cardCount }}<i>LESSONS</i>
       </span>
 
       <span v-if="view === 'trainer'" class="scores">
@@ -1451,7 +1482,11 @@ watch(
         v-if="view === 'home'"
         :lessons="lessons.lessons"
         :current-index="lessons.currentIndex"
+        :courses="courses.courses"
+        :progress="courses.progress"
         @open="openLesson"
+        @open-step="openStep"
+        @combine="combineSong"
         @import="openImport"
       />
 
@@ -1546,7 +1581,10 @@ watch(
       :holds="runResult.holds"
       :wrong="runResult.wrong"
       :attempts="runResult.attempts"
+      :step="runResult.step"
+      :base-bpm="lesson.bpm"
       @again="onPlay"
+      @step="playStep"
       @lessons="goHome"
     />
 

@@ -12,6 +12,8 @@ import { useSettings } from "@/stores/settings";
 import { useLessons } from "@/stores/lessons";
 import { useHistory } from "@/stores/history";
 import { useChords } from "@/stores/chords";
+import { useCourses } from "@/stores/courses";
+import { qualifies, stepReport, type StepReport } from "@/engine/course";
 import type { HoldResult, LinkState, Rating } from "@/engine/types";
 import {
   Transport,
@@ -99,6 +101,7 @@ export function useTrainer(
   const settings = useSettings();
   const lessons = useLessons();
   const history = useHistory();
+  const courses = useCourses();
   const chords_ = useChords();
   /** The active lesson comes from the library store — one source of truth. */
   const lesson = computed(() => lessons.current);
@@ -144,6 +147,8 @@ export function useTrainer(
      * the summary's history chart draws.
      */
     attempts: readonly number[];
+    /** Where this run left its song, when the lesson is a step of one. */
+    step: StepReport | null;
   } | null>(null);
   const accuracy = ref(100);
   const combo = ref(0);
@@ -1153,6 +1158,23 @@ export function useTrainer(
     // predecessor and nothing could ever be a new best.
     const previousBest = history.best(lesson.value.id);
     history.record(lesson.value.id, acc);
+
+    // A step of a song counts towards it — at the lesson's own tempo only.
+    // Progress is read on either side of the record so the summary can say
+    // what this run changed, not just where things stand.
+    const course = courses.courseOf(lesson.value.id);
+    let step: StepReport | null = null;
+    if (course) {
+      const before = courses.progressOf(course.id);
+      courses.record(course.id, lesson.value.id, acc, transport.bpm, lesson.value.bpm);
+      step = stepReport(
+        course,
+        before,
+        courses.progressOf(course.id),
+        lesson.value.id,
+        qualifies(transport.bpm, lesson.value.bpm),
+      );
+    }
     runResult.value = {
       accuracy: acc,
       bestCombo: scorer.bestCombo,
@@ -1161,6 +1183,7 @@ export function useTrainer(
       holds: { ...scorer.holdTally },
       wrong: scorer.wrongCount,
       attempts: [...history.attempts(lesson.value.id)],
+      step,
     };
 
     transport.stop();
@@ -1168,10 +1191,15 @@ export function useTrainer(
     audio.cancelScheduled("metronome", "guide");
     runComplete.value = true;
 
-    if (advanceTracker.update(acc, transport.bpm, lesson.value.bpm)) {
+    // Inside a song the summary's NEXT is the way forward, and it goes to the
+    // song's next step — the library's own order means nothing there.
+    if (course) {
+      showToast(`Run complete — ${Math.round(acc * 100)}%`);
+    } else if (advanceTracker.update(acc, transport.bpm, lesson.value.bpm)) {
       // Clearing the lesson advances the library; the lesson-change watcher
       // resets the transport and HUD for the new lesson (stopped, ready).
-      const next = lessons.advance();
+      const inSong = courses.members();
+      const next = lessons.advance((l) => inSong.has(l.id));
       showToast(
         next
           ? `Lesson cleared at ${Math.round(acc * 100)}% → ${next.name}`

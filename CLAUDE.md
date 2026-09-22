@@ -101,6 +101,51 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   worth knowing: in a lane whose notes are closer together than twice the
   grace, no strike can ever be wrong, which is right — "completely out of time"
   has to mean completely.
+- **A song is lessons combined into steps, and the steps stay lessons.**
+  `COMBINE INTO SONG` on the home head puts the grid into a picking mode: the
+  order cards are picked in is the order they are learned, and the **last
+  one picked is the full song** — which is why the chips relabel live, the
+  newest pick reading `FULL SONG` until something is picked after it. Labels
+  are positional (`stepLabel`), never read off the lessons' names, because
+  imported clips' names say nothing reliable about which part they are. One
+  song is one instrument, so the other kind greys out after the first pick;
+  a lesson belongs to one song at most. The name follows the last pick until
+  it is typed in. **Not designed** — built in the bar's control language, like
+  the calibration dialog, and it wants drawing.
+  The rules are pure in `engine/course.ts`, kept in `stores/courses.ts`
+  (`courses` and `courseProgress`, two keys because one is what the player
+  built and the other what they did with it). **The trainer, the scorer and
+  the run history never learn a lesson is a step** — `finishRun` records
+  progress beside history and the summary is handed a `StepReport`; nothing
+  else changes.
+  **A pass is stored, never re-derived from history.** History keeps the last
+  `MAX_ATTEMPTS` runs, so a passing run would eventually fall out of it and
+  the step would quietly re-lock. `courseProgress` keeps the best
+  *qualifying* run per step, and it only goes up.
+  **Qualifying means the lesson's own tempo or faster** (`qualifies`, the same
+  rule `AdvanceTracker` uses) — the user's decision. A slower run is recorded
+  in history like any other and says `PASSES COUNT AT <bpm> BPM` rather than
+  a bare "try again", because the fix is different.
+  **The mark is judged on the number shown** (`passes`): the summary rounds, so
+  79.6% reads `80`, and refusing it beside a mark of 80 would have the screen
+  arguing with itself.
+  The order is the rule: a step after the first unpassed one is locked even
+  if it holds a pass — only possible after re-combining, and not bent for it.
+  On home a song stands where its first step would be and its steps are not
+  drawn; the card opens the step up next, straight in like any card (the full
+  song once all are passed); the bar's `LESSONS` figure counts cards, so a
+  song once. In the summary `SONG PROGRESS` **replaces** the run-history
+  chart, and an unlock outranks `NEW BEST` in the header. `NEXT` selects the
+  next step and plays it, after `nextTick` so the lesson-change reset has run
+  first; a passed tile replays its step. Inside a song the library's own
+  auto-advance is off, and outside one `advance` skips over steps, which are
+  reached only through their song.
+  **Neither the step states nor the unlock wear a rating colour**: green and
+  red judge a *run*, and a passed step is not one. Passed inverts to the dark
+  chip, up-next wears the current card's `--led1` ring, locked is the plain
+  hairline; the header's unlock flag is `--led1` too.
+  There is **no un-combine** yet: a song made wrongly stays made. Say so if
+  asked, rather than improvising one.
 - **LOOP is practice, and a region is played as a pattern of its own.**
   Pressing it plants an eight-bar region (`LOOP_BARS`) at the playhead — where
   you are when you press it is where it starts, which is why it needs no

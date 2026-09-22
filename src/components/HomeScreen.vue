@@ -4,18 +4,33 @@
  * top of it and the X in the transport bar comes back here. It gets the whole
  * window, which is what lets the trainer view drop its lesson header entirely.
  */
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import type { Lesson } from "@/engine/types";
 import { noteToPad, PADS } from "@/engine/gm";
 import { noteName } from "@/engine/pitch";
 import { lessonRepeats } from "@/engine/scoring";
+import {
+  type Course,
+  type CourseProgress,
+  openingStep,
+  stepLabel,
+  stepsOf,
+} from "@/engine/course";
 
 const props = defineProps<{
   lessons: Lesson[];
   currentIndex: number;
+  courses: Course[];
+  progress: Readonly<Record<string, CourseProgress>>;
 }>();
 
-const emit = defineEmits<{ (e: "open", index: number): void; (e: "import"): void }>();
+const emit = defineEmits<{
+  (e: "open", index: number): void;
+  (e: "import"): void;
+  /** A song's card: open the step it is on. */
+  (e: "open-step", lessonId: string): void;
+  (e: "combine", name: string, lessonIds: string[]): void;
+}>();
 
 /** What the lesson asks you to play — pads by name, piano by key range. */
 function summary(lesson: Lesson): string {
@@ -44,52 +59,251 @@ function runLength(lesson: Lesson): string {
   return `${bars} bar${bars === 1 ? "" : "s"} · ${secs}s`;
 }
 
-const rows = computed(() =>
-  props.lessons.map((l, i) => ({
-    lesson: l,
-    index: i,
-    current: i === props.currentIndex,
-    summary: summary(l),
-    length: runLength(l),
-  })),
+interface LessonRow {
+  kind: "lesson";
+  key: string;
+  lesson: Lesson;
+  index: number;
+  current: boolean;
+  summary: string;
+  length: string;
+}
+
+interface SongRow {
+  kind: "song";
+  key: string;
+  course: Course;
+  /** The full song — the last step, which is what the card is named after. */
+  lesson: Lesson;
+  current: boolean;
+  steps: ReturnType<typeof stepsOf>;
+  opening: string;
+  passed: number;
+  length: string;
+}
+
+const byId = computed(() => new Map(props.lessons.map((l) => [l.id, l])));
+
+/**
+ * The grid in library order, with a song standing where its first step would.
+ *
+ * A song replaces its steps on the grid — they are reached through it, and a
+ * card per part beside the song's own card would be the same lesson offered
+ * twice.
+ */
+const rows = computed<(LessonRow | SongRow)[]>(() => {
+  const songOf = new Map<string, Course>();
+  for (const c of props.courses) for (const id of c.lessonIds) songOf.set(id, c);
+  const current = props.lessons[props.currentIndex]?.id;
+  const placed = new Set<string>();
+  const out: (LessonRow | SongRow)[] = [];
+  props.lessons.forEach((l, i) => {
+    const c = songOf.get(l.id);
+    if (!c) {
+      out.push({
+        kind: "lesson",
+        key: l.id,
+        lesson: l,
+        index: i,
+        current: l.id === current,
+        summary: summary(l),
+        length: runLength(l),
+      });
+      return;
+    }
+    if (placed.has(c.id)) return;
+    placed.add(c.id);
+    const progress = props.progress[c.id] ?? {};
+    const steps = stepsOf(c, progress);
+    const open = openingStep(c, progress);
+    const song = byId.value.get(c.lessonIds[c.lessonIds.length - 1]);
+    const next = byId.value.get(c.lessonIds[open]);
+    if (!song || !next) return;
+    const passed = steps.filter((s) => s.state === "passed").length;
+    out.push({
+      kind: "song",
+      key: c.id,
+      course: c,
+      lesson: song,
+      current: current !== undefined && c.lessonIds.includes(current),
+      steps,
+      opening: c.lessonIds[open],
+      passed,
+      length:
+        passed === steps.length
+          ? `all ${steps.length} passed · ${runLength(song)}`
+          : `${passed} of ${steps.length} passed · next: ${steps[open].label.toLowerCase()} · ${runLength(next)}`,
+    });
+  });
+  return out;
+});
+
+/** The strip's short name for a step: its letter, or the whole label for the song. */
+const chipText = (label: string) => (label.startsWith("PART ") ? label.slice(5) : label);
+
+// --------------------------------------------------------------- combining
+
+/**
+ * Picking lessons to make a song. The order they are picked in is the order
+ * they are learned, and the last one picked is the full song — which is why
+ * the chips relabel live as the selection grows: whatever was picked last is
+ * shown as FULL SONG until something is picked after it.
+ */
+const combining = ref(false);
+const picked = ref<string[]>([]);
+const name = ref("");
+const nameTouched = ref(false);
+
+const pickedInstrument = computed(
+  () => byId.value.get(picked.value[0] ?? "")?.instrument ?? null,
 );
+
+function startCombining(): void {
+  combining.value = true;
+  picked.value = [];
+  name.value = "";
+  nameTouched.value = false;
+}
+
+function cancelCombining(): void {
+  combining.value = false;
+}
+
+function togglePick(l: Lesson): void {
+  const at = picked.value.indexOf(l.id);
+  if (at >= 0) picked.value = picked.value.filter((id) => id !== l.id);
+  else if (pickedInstrument.value === null || pickedInstrument.value === l.instrument) {
+    picked.value = [...picked.value, l.id];
+  }
+  // The song is named after the full song until the player names it.
+  if (!nameTouched.value) name.value = byId.value.get(picked.value[picked.value.length - 1] ?? "")?.name ?? "";
+}
+
+/** The label a picked card would get if the song were made now. */
+function pickLabel(id: string): string | null {
+  const at = picked.value.indexOf(id);
+  return at < 0 ? null : stepLabel(at, picked.value.length);
+}
+
+/** One song is one instrument: the other kind is out once something is picked. */
+function pickable(l: Lesson): boolean {
+  return pickedInstrument.value === null || pickedInstrument.value === l.instrument;
+}
+
+const canCreate = computed(() => picked.value.length >= 2 && name.value.trim().length > 0);
+
+function create(): void {
+  if (!canCreate.value) return;
+  emit("combine", name.value.trim(), [...picked.value]);
+  combining.value = false;
+}
+
+function onCard(row: LessonRow | SongRow): void {
+  if (row.kind === "song") emit("open-step", row.opening);
+  else if (combining.value) togglePick(row.lesson);
+  else emit("open", row.index);
+}
 </script>
 
 <template>
   <div class="home">
-    <div class="head">
+    <div v-if="!combining" class="head">
       <h1>Choose a lesson</h1>
       <span class="kicker">PICK ONE TO START PRACTISING</span>
+      <button class="hbtn" @click="startCombining">COMBINE INTO SONG</button>
+    </div>
+    <div v-else class="head">
+      <h1>Combine into a song</h1>
+      <span class="kicker">PICK THE PARTS IN ORDER · THE FULL SONG LAST</span>
+      <input
+        v-model="name"
+        class="song-name"
+        type="text"
+        placeholder="Song name"
+        aria-label="Song name"
+        spellcheck="false"
+        @input="nameTouched = true"
+        @keydown.enter="create"
+        @keydown.esc="cancelCombining"
+      />
+      <button class="hbtn primary" :disabled="!canCreate" @click="create">
+        CREATE SONG{{ picked.length ? ` · ${picked.length} STEPS` : "" }}
+      </button>
+      <button class="hbtn ghost" @click="cancelCombining">CANCEL</button>
     </div>
 
     <div class="grid">
-      <button
-        v-for="row in rows"
-        :key="row.lesson.id"
-        class="card"
-        :class="{ current: row.current }"
-        @click="emit('open', row.index)"
-      >
-        <span class="top">
-          <span class="kind"><i class="dot" :class="row.lesson.instrument" />{{
-            row.lesson.instrument === "piano" ? "PIANO" : "PADS"
-          }}</span>
-          <span v-if="row.lesson.source === 'midi-import'" class="flag">IMPORTED</span>
-          <span v-else-if="row.current" class="flag resume">RESUME</span>
-          <span class="bpm num">{{ row.lesson.bpm }}<i>BPM</i></span>
-        </span>
+      <template v-for="row in rows" :key="row.key">
+        <!-- A song. Not pickable while combining: a song is not a part. -->
+        <button
+          v-if="row.kind === 'song' && !combining"
+          class="card"
+          :class="{ current: row.current }"
+          @click="onCard(row)"
+        >
+          <span class="top">
+            <span class="kind"><i class="dot" :class="row.lesson.instrument" />{{
+              row.lesson.instrument === "piano" ? "PIANO" : "PADS"
+            }}</span>
+            <span class="flag">SONG · {{ row.steps.length }} STEPS</span>
+            <span class="bpm num">{{ row.lesson.bpm }}<i>BPM</i></span>
+          </span>
 
-        <span class="name">{{ row.lesson.name }}</span>
-        <span class="hint">{{ row.lesson.hint }}</span>
+          <span class="name">{{ row.course.name }}</span>
+          <span class="hint">
+            {{ row.steps.length - 1 === 1 ? "One part" : `${row.steps.length - 1} parts` }}, then
+            the whole song. 80% on a part unlocks the next.
+          </span>
 
-        <span class="foot">
-          <span class="parts">{{ row.summary }}</span>
-          <span class="len">{{ row.length }}</span>
-        </span>
-      </button>
+          <span class="foot">
+            <span
+              class="strip"
+              :style="{ gridTemplateColumns: `repeat(${row.steps.length - 1}, 1fr) 1.6fr` }"
+            >
+              <span v-for="st in row.steps" :key="st.lessonId" class="chip" :class="st.state">
+                {{ st.state === "passed" ? "✓ " : "" }}{{ chipText(st.label) }}
+              </span>
+            </span>
+            <span class="len">{{ row.length }}</span>
+          </span>
+        </button>
+
+        <button
+          v-else-if="row.kind === 'lesson'"
+          class="card"
+          :class="{
+            current: row.current && !combining,
+            picked: combining && pickLabel(row.lesson.id) !== null,
+            off: combining && !pickable(row.lesson),
+          }"
+          :disabled="combining && !pickable(row.lesson)"
+          :aria-pressed="combining ? pickLabel(row.lesson.id) !== null : undefined"
+          @click="onCard(row)"
+        >
+          <span class="top">
+            <span class="kind"><i class="dot" :class="row.lesson.instrument" />{{
+              row.lesson.instrument === "piano" ? "PIANO" : "PADS"
+            }}</span>
+            <span v-if="combining && pickLabel(row.lesson.id)" class="chip next">
+              {{ pickLabel(row.lesson.id) }}
+            </span>
+            <span v-else-if="row.lesson.source === 'midi-import'" class="flag">IMPORTED</span>
+            <span v-else-if="row.current && !combining" class="flag resume">RESUME</span>
+            <span class="bpm num">{{ row.lesson.bpm }}<i>BPM</i></span>
+          </span>
+
+          <span class="name">{{ row.lesson.name }}</span>
+          <span class="hint">{{ row.lesson.hint }}</span>
+
+          <span class="foot">
+            <span class="parts">{{ row.summary }}</span>
+            <span class="len">{{ row.length }}</span>
+          </span>
+        </button>
+      </template>
 
       <!-- The library's last slot is the way to add to it. -->
-      <button class="card import" @click="emit('import')">
+      <button v-if="!combining" class="card import" @click="emit('import')">
         <span class="imp-glyph" aria-hidden="true">⇪</span>
         <span class="imp-title">Import a MIDI clip</span>
         <span class="imp-sub">.MID FROM YOUR DAW</span>
@@ -109,7 +323,72 @@ const rows = computed(() =>
   background: var(--win);
 }
 
-.head { display: flex; align-items: baseline; gap: 10px; flex: none; }
+.head { display: flex; align-items: baseline; gap: 10px; flex: none; min-height: 22px; }
+
+/* The head's actions, in the bar's control language: 20px, mono, hairline. */
+.hbtn {
+  align-self: center;
+  height: 20px;
+  padding: 0 9px;
+  border: none;
+  border-radius: var(--r-field);
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--hair);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 1.1px;
+  color: var(--txt2);
+  cursor: pointer;
+}
+.hbtn:first-of-type { margin-left: auto; }
+.hbtn:hover { background: var(--hover); color: var(--txt); }
+.hbtn.primary { background: var(--start); color: var(--start-txt); box-shadow: none; }
+.hbtn.primary:disabled { background: none; color: var(--txt3); box-shadow: inset 0 0 0 1px var(--hair); cursor: default; }
+.hbtn.ghost { box-shadow: none; }
+.song-name {
+  align-self: center;
+  margin-left: auto;
+  width: 220px;
+  height: 20px;
+  padding: 0 7px;
+  border: none;
+  border-radius: var(--r-field);
+  background: var(--track);
+  box-shadow: inset 0 0 0 1px var(--hair);
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--txt);
+}
+.song-name + .hbtn { margin-left: 0; }
+
+/* Picking: the amber ring the current card wears, plus the step it would be. */
+.card.picked { box-shadow: inset 0 0 0 1.5px var(--led1); }
+.card.off { opacity: 0.4; cursor: default; }
+.card.off:hover { background: var(--gutter); }
+
+/*
+ * A song's steps. Three states, none a rating colour — green and red judge a
+ * run, and a passed step is not one. On-state inverts to the dark chip, the
+ * step up next wears the current card's amber, locked is the plain hairline.
+ */
+.strip { display: grid; gap: 3px; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 7.5px;
+  font-weight: 500;
+  letter-spacing: 1.1px;
+  white-space: nowrap;
+}
+.chip.passed { background: var(--active); color: var(--active-txt); }
+.chip.next { box-shadow: inset 0 0 0 1.5px var(--led1); color: var(--txt); }
+.chip.locked { box-shadow: inset 0 0 0 1px var(--hair); color: var(--txt3); }
 h1 {
   margin: 0;
   font-size: 17px;

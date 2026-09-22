@@ -28,11 +28,20 @@ export const useLessons = defineStore("lessons", () => {
     if (i >= 0) currentIndex.value = i;
   }
 
-  /** Advance to the next lesson; returns it, or null if already at the last. */
-  function advance(): Lesson | null {
-    if (!hasNext.value) return null;
-    currentIndex.value += 1;
-    return current.value;
+  /**
+   * Advance to the next lesson; returns it, or null if already at the last.
+   *
+   * `skip` passes over lessons that are not on the home grid on their own — a
+   * step of a song is reached through its song, never by falling into it from
+   * the lesson before.
+   */
+  function advance(skip: (l: Lesson) => boolean = () => false): Lesson | null {
+    for (let i = currentIndex.value + 1; i < lessons.value.length; i++) {
+      if (skip(lessons.value[i])) continue;
+      currentIndex.value = i;
+      return current.value;
+    }
+    return null;
   }
 
   /** The imported clips, in the order they were added — what gets persisted. */
@@ -77,6 +86,7 @@ export const useLessons = defineStore("lessons", () => {
 
   return {
     lessons,
+    hydrated,
     currentIndex,
     current,
     hasNext,
