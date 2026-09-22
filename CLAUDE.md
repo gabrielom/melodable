@@ -102,8 +102,13 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   grace, no strike can ever be wrong, which is right — "completely out of time"
   has to mean completely.
 - **A song is lessons combined into steps, and the steps stay lessons.**
-  `COMBINE INTO SONG` on the home head puts the grid into a picking mode: the
-  order cards are picked in is the order they are learned, and the **last
+  **`COMBINE` on the home bar** puts the grid into a picking mode, and
+  **nothing of songs is drawn on home until it is pressed** — the user's rule,
+  after a first version put a button on the home head. The home screen with
+  combine off is pixel-identical to what it was before songs existed (checked
+  against the old build side by side). The on-state is `--led1`, sharing
+  LOOP's rule, since a picked card is ringed in it. In the mode: the order
+  cards are picked in is the order they are learned, and the **last
   one picked is the full song** — which is why the chips relabel live, the
   newest pick reading `FULL SONG` until something is picked after it. Labels
   are positional (`stepLabel`), never read off the lessons' names, because
@@ -132,9 +137,13 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   The order is the rule: a step after the first unpassed one is locked even
   if it holds a pass — only possible after re-combining, and not bent for it.
   On home a song stands where its first step would be and its steps are not
-  drawn; the card opens the step up next, straight in like any card (the full
-  song once all are passed); the bar's `LESSONS` figure counts cards, so a
-  song once. In the summary `SONG PROGRESS` **replaces** the run-history
+  drawn. **A song's card is its full song's card, unchanged** — no strip, no
+  step count, no progress line; that was built and removed at the user's
+  request, and the card was checked pixel-identical to the full song's card
+  before combining. Only where it leads changes: it opens the step up next,
+  straight in like any card (the full song once all are passed). Progress is
+  shown in the end-of-run lightbox and nowhere else. The bar's `LESSONS`
+  figure counts cards, so a song once. In the summary `SONG PROGRESS` **replaces** the run-history
   chart, and an unlock outranks `NEW BEST` in the header. `NEXT` selects the
   next step and plays it, after `nextTick` so the lesson-change reset has run
   first; a passed tile replays its step. Inside a song the library's own

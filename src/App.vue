@@ -70,9 +70,21 @@ async function playStep(lessonId: string) {
   await onPlay();
 }
 
+/**
+ * Picking lessons to combine into a song. Switched from the home bar — the
+ * home screen draws nothing of it until this is on.
+ */
+const combining = ref(false);
+
 function combineSong(name: string, lessonIds: string[]) {
   courses.combine(name, lessonIds);
+  combining.value = false;
 }
+
+// Picking is a home-screen mode; leaving home ends it.
+watch(view, (v) => {
+  if (v !== "home") combining.value = false;
+});
 
 /** What the home grid shows: a song counts once, and its steps not at all. */
 const cardCount = computed(() => {
@@ -1168,6 +1180,21 @@ watch(
         {{ cardCount }}<i>LESSONS</i>
       </span>
 
+      <!-- Home only: combining lessons into a song is a mode of the home grid,
+           and nothing of it is drawn there until this is on. Its on-state is
+           the amber a picked card is ringed with, as LOOP's is the amber of
+           the region it made. -->
+      <button
+        v-if="view === 'home'"
+        class="seg-i solo pick"
+        :class="{ on: combining }"
+        :aria-pressed="combining"
+        data-tip="Combine lessons into a song you learn in steps"
+        @click="combining = !combining"
+      >
+        COMBINE
+      </button>
+
       <span v-if="view === 'trainer'" class="scores">
         <span class="score" :data-tip="runComplete ? 'Accuracy for the last run' : 'Accuracy so far'">
           <i class="k">ACC</i>
@@ -1484,9 +1511,11 @@ watch(
         :current-index="lessons.currentIndex"
         :courses="courses.courses"
         :progress="courses.progress"
+        :combining="combining"
         @open="openLesson"
         @open-step="openStep"
         @combine="combineSong"
+        @cancel-combine="combining = false"
         @import="openImport"
       />
 
@@ -1920,7 +1949,9 @@ watch(
    would otherwise win the tie on source order alone and give this the ordinary
    inverted chip. */
 .seg-i.loop.on,
-.seg-i.loop.on:hover {
+.seg-i.loop.on:hover,
+.seg-i.pick.on,
+.seg-i.pick.on:hover {
   background: var(--led1);
   color: var(--active-txt);
   box-shadow: none;
