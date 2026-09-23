@@ -667,6 +667,26 @@ function spaceIsTransport(e: KeyboardEvent): boolean {
   return el.getAttribute("role") !== "slider";
 }
 
+/**
+ * Whether a keystroke is being typed into a field that takes text.
+ *
+ * The computer keyboard is a piano here — `a` through `l` on the home row,
+ * the black keys above — and that mapping listens on the whole window. A text
+ * field has to win: a name has letters in it, and a letter the piano claims is
+ * swallowed by its `preventDefault` and plays a note instead of landing in the
+ * field. That is how the song-name box came to accept Backspace, which is no
+ * note, and almost nothing else — and the import dialog's name field had the
+ * same fault, unnoticed, because its default name is usually kept.
+ */
+function typingInto(e: KeyboardEvent): boolean {
+  const el = e.target as HTMLElement | null;
+  if (!el) return false;
+  if (el.isContentEditable || el.tagName === "TEXTAREA") return true;
+  if (el.tagName !== "INPUT") return false;
+  const type = (el as HTMLInputElement).type;
+  return !["button", "checkbox", "radio", "range", "submit", "reset", "file"].includes(type);
+}
+
 function onKeyDown(e: KeyboardEvent) {
   // Escape closes whichever menu is open, then stops the run.
   if (e.key === "Escape" && chordMenu.value) {
@@ -702,6 +722,8 @@ function onKeyDown(e: KeyboardEvent) {
   }
 
   if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+  // A field taking text keeps its keys; the piano only plays when nothing is.
+  if (typingInto(e)) return;
   const key = e.key.toLowerCase();
   if (heldKeys.has(key)) return;
 
@@ -724,7 +746,9 @@ function onKeyDown(e: KeyboardEvent) {
 
 function onKeyUp(e: KeyboardEvent) {
   const key = e.key.toLowerCase();
-  heldKeys.delete(key);
+  // Only a key that played something has anything to release — a letter typed
+  // into a field never did.
+  if (!heldKeys.delete(key)) return;
   const midiNote = PIANO_KEY_MAP[key];
   if (settings.instrument === "piano" && midiNote !== undefined) noteOff(midiNote);
 }

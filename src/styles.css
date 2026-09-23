@@ -231,6 +231,16 @@ body {
   user-select: none;
 }
 
+/* The one exception: a field you type into. It inherits `none` from the body
+   like everything else, and a text box whose contents cannot be selected
+   cannot have a word double-clicked out of it or be select-all'd and
+   replaced. */
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 button { font-family: inherit; color: inherit; }
 
 /* Every numeral in the UI is tabular so values don't jitter as they count. */
