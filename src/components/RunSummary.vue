@@ -26,7 +26,8 @@ import {
   historyChart,
   tipAt,
 } from "@/components/run-history";
-import { pointsToGo, type Step, type StepReport } from "@/engine/course";
+import type { StepReport } from "@/engine/course";
+import SongProgress from "@/components/SongProgress.vue";
 
 const props = defineProps<{
   lessonName: string;
@@ -64,7 +65,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "again"): void;
   (e: "lessons"): void;
-  /** Open another step of the song — the next one, or a passed one again. */
+  /** Open another section of the song — any of them; none is locked. */
   (e: "step", lessonId: string): void;
 }>();
 
@@ -189,44 +190,29 @@ const heading = computed(() =>
 );
 
 /**
- * The flag in the header. Inside a song what this run *opened* is the news,
- * so it outranks a new best — and says so in the amber that marks what is up
- * next everywhere else, not in a rating's green.
+ * The flag in the header. Inside a song, completing a section is the news, so
+ * it outranks a new best — and says so in the amber the song's suggestion
+ * wears, not in a rating's green.
  */
-const flag = computed<{ text: string; unlock: boolean } | null>(() => {
+const flag = computed<{ text: string; song: boolean } | null>(() => {
   const s = song.value;
-  if (s?.justPassed && s.complete) return { text: "SONG COMPLETE", unlock: true };
-  if (s?.unlocked) return { text: `${s.unlocked.label} UNLOCKED`, unlock: true };
-  return isNewBest.value ? { text: "NEW BEST", unlock: false } : null;
+  if (s?.justPassed) return { text: s.complete ? "SONG COMPLETE" : `${s.label} COMPLETE`, song: true };
+  return isNewBest.value ? { text: "NEW BEST", song: false } : null;
 });
 
-/** Under a tile: what state it is in, and for the step up next how far off. */
-function tileNote(t: Step, i: number): string {
-  const s = song.value!;
-  if (t.state === "locked") return "LOCKED";
-  if (t.state === "passed") return i === s.index && s.justPassed ? "PASSED · THIS RUN" : "PASSED";
-  return t.best === null ? "UP NEXT" : `${pointsToGo(t.best)} TO GO`;
-}
+/** This section, once the run is in. */
+const thisPassed = computed(() => song.value?.steps[song.value.index].state === "passed");
 
 /**
- * What the main button does. Once this step is passed and the next one is
- * open, moving on is the obvious thing; otherwise it is another go at this one.
+ * The run slower than the lesson counts for nothing towards completing it,
+ * however well it went — saying so is the difference between "try again" and
+ * "try again faster".
  */
-const nextStep = computed(() => {
-  const s = song.value;
-  if (!s || !s.following || s.following.state === "locked") return null;
-  return s.steps[s.index].state === "passed" ? s.following : null;
-});
-
-/** Why the next step is still shut, in one line beside the button. */
-const lockedNote = computed(() => {
-  const s = song.value;
-  if (!s || nextStep.value || s.steps[s.index].state === "passed") return null;
-  // A run played slower than the lesson never counts, however well it went —
-  // saying so is the difference between "try again" and "try again faster".
-  if (!s.qualified) return `PASSES COUNT AT ${props.baseBpm} BPM`;
-  return s.following ? `${s.following.label} UNLOCKS AT 80%` : "80% FINISHES THE SONG";
-});
+const slowNote = computed(() =>
+  song.value && !song.value.qualified && !thisPassed.value
+    ? `PASSES COUNT AT ${props.baseBpm} BPM`
+    : null,
+);
 
 /** The chart is a picture; a screen reader gets the same facts as a sentence. */
 const chartLabel = computed(() => {
@@ -241,7 +227,7 @@ const chartLabel = computed(() => {
     <div class="sheet">
       <div class="head">
         <span class="ttl">{{ title }}</span>
-        <span v-if="flag" class="best-flag" :class="{ unlock: flag.unlock }">{{ flag.text }}</span>
+        <span v-if="flag" class="best-flag" :class="{ song: flag.song }">{{ flag.text }}</span>
       </div>
 
       <div class="score-row">
@@ -283,39 +269,16 @@ const chartLabel = computed(() => {
         </div>
       </div>
 
-      <!-- A step of a song: where the song stands replaces the history. -->
-      <div v-if="song" class="song">
-        <div class="hhead">
-          <span class="ttl">SONG PROGRESS</span>
-          <b class="hscore num">{{ song.passedCount }} / {{ song.steps.length }}</b>
-        </div>
-        <div class="tiles">
-          <component
-            :is="t.state === 'locked' ? 'div' : 'button'"
-            v-for="(t, i) in song.steps"
-            :key="t.lessonId"
-            class="tile"
-            :class="t.state"
-            :aria-label="t.state === 'locked' ? undefined : `Play ${sentence(t.label)}`"
-            @click="t.state !== 'locked' && emit('step', t.lessonId)"
-          >
-            <span class="chip" :class="t.state">{{ t.state === "passed" ? "✓ " : "" }}{{ t.label }}</span>
-            <b class="pct num">
-              <template v-if="t.best === null">—</template>
-              <template v-else>{{ Math.round(t.best * 100) }}<i>%</i></template>
-            </b>
-            <span class="meter">
-              <i v-if="t.best !== null" :style="{ width: `${t.best * 100}%` }" />
-              <em />
-            </span>
-            <span class="note">{{ tileNote(t, i) }}</span>
-          </component>
-        </div>
-        <div class="sfoot">
-          <span class="mark"><i />80% ON A PART UNLOCKS THE NEXT</span>
-          <span>BEST RUN AT FULL TEMPO</span>
-        </div>
-      </div>
+      <!-- A section of a song: where the song stands replaces the history. -->
+      <SongProgress
+        v-if="song"
+        :steps="song.steps"
+        :passed-count="song.passedCount"
+        :suggested="song.suggested"
+        :played="song.index"
+        :just-passed="song.justPassed"
+        @step="(id) => emit('step', id)"
+      />
 
       <!-- Handoff 09: run history replaces weakest lanes. -->
       <div v-else class="history">
@@ -425,18 +388,28 @@ const chartLabel = computed(() => {
       </div>
 
       <div class="actions">
-        <template v-if="song && nextStep">
-          <button class="act primary" @click="emit('step', nextStep.lessonId)">
-            <i class="tri" aria-hidden="true" /><span>NEXT · {{ nextStep.label }}</span>
+        <!-- In a song, moving on is always on offer — nothing is locked. It is
+             the main button once this section is complete, and beside another
+             go at it until then. -->
+        <template v-if="song && song.following && thisPassed">
+          <button class="act primary" @click="emit('step', song.following.lessonId)">
+            <i class="tri" aria-hidden="true" /><span>NEXT · {{ song.following.label }}</span>
           </button>
           <button class="act plain" @click="emit('again')">RUN {{ song.label }} AGAIN</button>
         </template>
         <template v-else>
           <button class="act primary" @click="emit('again')">
             <i class="tri" aria-hidden="true" />
-            <span>{{ song && !song.complete ? `RUN ${song.label} AGAIN` : "RUN AGAIN" }}</span>
+            <span>{{ song ? `RUN ${song.label} AGAIN` : "RUN AGAIN" }}</span>
           </button>
-          <span v-if="lockedNote" class="locked-note">{{ lockedNote }}</span>
+          <button
+            v-if="song && song.following"
+            class="act plain"
+            @click="emit('step', song.following.lessonId)"
+          >
+            NEXT · {{ song.following.label }}
+          </button>
+          <span v-if="slowNote" class="side-note">{{ slowNote }}</span>
         </template>
         <button class="act ghost" @click="emit('lessons')">✕ LESSONS</button>
       </div>
@@ -481,86 +454,9 @@ const chartLabel = computed(() => {
   letter-spacing: 1.1px;
   color: var(--rate-perfect);
 }
-/* An opened step is news about the song, not a rating of the run, so it
-   wears the amber that marks what is up next — never the green. */
-.best-flag.unlock { color: var(--led1); }
-
-/*
- * Song progress. Three states, and none of them is a rating colour: green,
- * blue and red judge a *run*, and a passed step wearing green would read as
- * one. So the states borrow the app's own conventions instead — an on-state
- * inverts to the dark chip, the amber ring is what the home screen puts on the
- * card you are on, and locked is the plain hairline, dimmed.
- */
-.song { display: flex; flex-direction: column; gap: 8px; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 6px; }
-.tile {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  min-width: 0;
-  padding: 8px 8px 9px;
-  border: none;
-  border-radius: var(--r-field);
-  background: none;
-  box-shadow: inset 0 0 0 1px var(--hair);
-  text-align: left;
-  font: inherit;
-  color: inherit;
-}
-button.tile { cursor: pointer; }
-button.tile:hover { background: var(--hover); }
-.tile.next { box-shadow: inset 0 0 0 1.5px var(--led1); }
-.tile.locked { opacity: 0.5; }
-.chip {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  height: 16px;
-  padding: 0 6px;
-  border-radius: 2px;
-  font-family: var(--mono);
-  font-size: 7.5px;
-  font-weight: 500;
-  letter-spacing: 1.1px;
-  white-space: nowrap;
-}
-.chip.passed { background: var(--active); color: var(--active-txt); }
-.chip.next { box-shadow: inset 0 0 0 1.5px var(--led1); color: var(--txt); }
-.chip.locked { box-shadow: inset 0 0 0 1px var(--hair); color: var(--txt3); }
-.pct { font-size: 20px; font-weight: 400; line-height: 1; color: var(--txt); }
-.pct i { margin-left: 1px; font-style: normal; font-size: 10px; color: var(--txt3); }
-/* The bar is the step's best; the amber tick is the mark it has to reach. */
-.meter { position: relative; height: 4px; border-radius: 1px; background: var(--hair); }
-.meter i {
-  position: absolute;
-  inset: 0 auto 0 0;
-  max-width: 100%;
-  border-radius: 1px;
-  background: var(--txt2);
-}
-.tile.passed .meter i { background: var(--txt); }
-.meter em { position: absolute; left: 80%; top: -3px; bottom: -3px; width: 1.5px; background: var(--led1); }
-.note {
-  font-family: var(--mono);
-  font-size: 7.5px;
-  letter-spacing: 1.2px;
-  color: var(--txt3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.tile.next .note { color: var(--led1); }
-.sfoot {
-  display: flex;
-  justify-content: space-between;
-  font-family: var(--mono);
-  font-size: 7.5px;
-  letter-spacing: 1.2px;
-  color: var(--txt3);
-}
-.sfoot .mark { display: inline-flex; align-items: center; gap: 5px; }
-.sfoot .mark i { width: 1.5px; height: 9px; background: var(--led1); }
+/* Completing a section is news about the song, not a rating of the run, so
+   it wears the amber the song's suggestion does — never the green. */
+.best-flag.song { color: var(--led1); }
 
 .score-row { display: flex; align-items: flex-end; gap: 26px; }
 .score { font-size: 54px; line-height: 0.9; color: var(--txt); }
@@ -716,7 +612,7 @@ button.tile:hover { background: var(--hover); }
 .act.primary { background: var(--start); color: var(--start-txt); }
 .act.plain { background: none; color: var(--txt); box-shadow: inset 0 0 0 1px var(--hair); }
 .act.plain:hover { background: var(--hover); }
-.locked-note {
+.side-note {
   font-family: var(--mono);
   font-size: 7.5px;
   letter-spacing: 1.2px;

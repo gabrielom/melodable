@@ -9,13 +9,12 @@ import type { Lesson } from "@/engine/types";
 import { noteToPad, PADS } from "@/engine/gm";
 import { noteName } from "@/engine/pitch";
 import { lessonRepeats } from "@/engine/scoring";
-import { type Course, type CourseProgress, openingStep, stepLabel } from "@/engine/course";
+import { type Course, stepLabel } from "@/engine/course";
 
 const props = defineProps<{
   lessons: Lesson[];
   currentIndex: number;
   courses: Course[];
-  progress: Readonly<Record<string, CourseProgress>>;
   /** Picking lessons to combine into a song — switched from the top bar. */
   combining: boolean;
 }>();
@@ -23,8 +22,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "open", index: number): void;
   (e: "import"): void;
-  /** A song's card: open the step it is on. */
-  (e: "open-step", lessonId: string): void;
+  /** A song's card: open the song, which puts its section picker up. */
+  (e: "open-song", courseId: string): void;
   (e: "combine", name: string, lessonIds: string[]): void;
   (e: "cancel-combine"): void;
 }>();
@@ -64,8 +63,8 @@ interface Row {
   lesson: Lesson;
   /** Index into the library, for a plain lesson. */
   index: number;
-  /** For a song, the step its card opens. */
-  opening: string | null;
+  /** For a song, its id — the card opens the song, not a lesson. */
+  course: string | null;
   current: boolean;
   summary: string;
   length: string;
@@ -78,8 +77,8 @@ const byId = computed(() => new Map(props.lessons.map((l) => [l.id, l])));
  *
  * A song replaces its steps on the grid — they are reached through it — and
  * it is drawn as exactly the card its full song had before it was combined.
- * Nothing about the card changes; only where it leads does: it opens the step
- * up next, straight in like any card.
+ * Nothing about the card changes; only where it leads does: it opens the song,
+ * whose section picker comes up first.
  */
 const rows = computed<Row[]>(() => {
   const songOf = new Map<string, Course>();
@@ -95,7 +94,7 @@ const rows = computed<Row[]>(() => {
         key: l.id,
         lesson: l,
         index: i,
-        opening: null,
+        course: null,
         current: l.id === current,
         summary: summary(l),
         length: runLength(l),
@@ -111,7 +110,7 @@ const rows = computed<Row[]>(() => {
       key: c.id,
       lesson: song,
       index: props.lessons.indexOf(song),
-      opening: c.lessonIds[openingStep(c, props.progress[c.id] ?? {})],
+      course: c.id,
       current: current !== undefined && c.lessonIds.includes(current),
       summary: summary(song),
       length: runLength(song),
@@ -177,7 +176,7 @@ function create(): void {
 function onCard(row: Row): void {
   if (props.combining) {
     if (row.kind === "lesson") togglePick(row.lesson);
-  } else if (row.opening) emit("open-step", row.opening);
+  } else if (row.course) emit("open-song", row.course);
   else emit("open", row.index);
 }
 </script>

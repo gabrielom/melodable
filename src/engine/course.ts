@@ -2,8 +2,10 @@
  * A song learned in steps.
  *
  * Several lessons combined into one: the parts of a song in order, the whole
- * song last. Each part has to be passed before the next one opens, and the
- * last step is the song itself.
+ * song last. **Every step is open from the start** — the player moves between
+ * them freely — and 80% at the lesson's own tempo marks one complete. The
+ * order is only a suggestion: what is offered next is the first step not yet
+ * complete.
  *
  * **The parts stay ordinary lessons.** The trainer, the scorer and the run
  * history never learn that a lesson belongs to a song. What a song adds is an
@@ -44,7 +46,8 @@ export interface Course {
 /** Best qualifying accuracy per lesson id, 0..1. Absent = never qualified. */
 export type CourseProgress = Readonly<Record<string, number>>;
 
-export type StepState = "passed" | "next" | "locked";
+/** Complete, or still to do. There is no locked state: any step can be played. */
+export type StepState = "passed" | "todo";
 
 export interface Step {
   lessonId: string;
@@ -67,33 +70,61 @@ export function stepLabel(index: number, count: number): string {
 }
 
 /**
- * Every step with its state. Passed steps are the ones whose best qualifying
- * run reached the mark; the first step that has not is next; everything after
- * it is locked.
+ * Every step with its state: complete once its best qualifying run reached the
+ * mark, still to do until then.
  *
- * A step past the first unpassed one stays locked **even if it was passed
- * before** — which can only happen if the song was re-combined in a different
- * order. The order is the rule, and it is not bent for history.
+ * **Nothing is locked.** An earlier version opened the steps one at a time,
+ * each behind the one before; the user asked to move between them freely,
+ * with the mark saying only what is done. So the order decides one thing —
+ * which step is *suggested* — and nothing about which may be played.
  */
 export function stepsOf(course: Course, progress: CourseProgress): Step[] {
-  let open = true;
   return course.lessonIds.map((lessonId, i) => {
     const best = progress[lessonId] ?? null;
     const label = stepLabel(i, course.lessonIds.length);
-    if (!open) return { lessonId, label, state: "locked" as const, best };
-    if (best !== null && passes(best)) return { lessonId, label, state: "passed" as const, best };
-    open = false;
-    return { lessonId, label, state: "next" as const, best };
+    const state: StepState = best !== null && passes(best) ? "passed" : "todo";
+    return { lessonId, label, state, best };
   });
 }
 
 /**
- * The step the song's card opens: the one up next, or the full song once
- * everything is passed — which is the thing worth playing again.
+ * The step to offer: the first not yet complete, in the song's order. Null
+ * once every step is — there is nothing left to suggest.
+ */
+export function suggestedStep(steps: readonly Step[]): number | null {
+  const i = steps.findIndex((s) => s.state !== "passed");
+  return i >= 0 ? i : null;
+}
+
+/**
+ * The step the song opens on: the suggested one, or the full song once
+ * everything is complete — which is the thing worth playing again.
  */
 export function openingStep(course: Course, progress: CourseProgress): number {
-  const i = stepsOf(course, progress).findIndex((s) => s.state === "next");
-  return i >= 0 ? i : course.lessonIds.length - 1;
+  return suggestedStep(stepsOf(course, progress)) ?? course.lessonIds.length - 1;
+}
+
+/** Where a song stands, as the section picker and the run summary show it. */
+export interface SongState {
+  courseName: string;
+  steps: Step[];
+  passedCount: number;
+  /** The first step not yet complete; null once they all are. */
+  suggested: number | null;
+  /** Every step is complete. */
+  complete: boolean;
+}
+
+export function songState(course: Course, progress: CourseProgress): SongState {
+  const steps = stepsOf(course, progress);
+  const passedCount = steps.filter((s) => s.state === "passed").length;
+  return {
+    courseName: course.name,
+    steps,
+    passedCount,
+    suggested: suggestedStep(steps),
+    complete: passedCount === steps.length,
+  };
 }
 
 /**
@@ -124,22 +155,15 @@ export function withRun(
 }
 
 /** What the end-of-run lightbox says about the song, given a finished step. */
-export interface StepReport {
-  courseName: string;
+export interface StepReport extends SongState {
   /** The step just played. */
   index: number;
   label: string;
-  steps: Step[];
-  passedCount: number;
-  /** The run counted towards passing — false when it was played slower. */
+  /** The run counted towards completing — false when it was played slower. */
   qualified: boolean;
-  /** This run is what passed the step. */
+  /** This run is what completed the step. */
   justPassed: boolean;
-  /** The step this run opened, if it opened one. */
-  unlocked: Step | null;
-  /** Every step is passed. */
-  complete: boolean;
-  /** The step after this one, whatever its state; null on the last. */
+  /** The step after this one in the song's order; null on the last. */
   following: Step | null;
 }
 
@@ -153,22 +177,14 @@ export function stepReport(
   const index = course.lessonIds.indexOf(lessonId);
   if (index < 0) return null;
   const was = stepsOf(course, before);
-  const steps = stepsOf(course, after);
-  const passedCount = steps.filter((s) => s.state === "passed").length;
-  const justPassed = was[index].state !== "passed" && steps[index].state === "passed";
-  const unlocked =
-    steps.find((s, i) => s.state === "next" && was[i].state === "locked") ?? null;
+  const now = songState(course, after);
   return {
-    courseName: course.name,
+    ...now,
     index,
-    label: steps[index].label,
-    steps,
-    passedCount,
+    label: now.steps[index].label,
     qualified,
-    justPassed,
-    unlocked,
-    complete: passedCount === steps.length,
-    following: steps[index + 1] ?? null,
+    justPassed: was[index].state !== "passed" && now.steps[index].state === "passed",
+    following: now.steps[index + 1] ?? null,
   };
 }
 

@@ -31,6 +31,8 @@ import { clampLatency } from "@/engine/calibration";
 import { keyName } from "@/engine/notation";
 import { chordName, diatonicTriad, romanOf } from "@/engine/harmony";
 import RunSummary from "@/components/RunSummary.vue";
+import SongLightbox from "@/components/SongLightbox.vue";
+import { openingStep, songState } from "@/engine/course";
 import type { LogRow } from "@/components/midi-log";
 import PianoKeyboard from "@/views/piano/PianoKeyboard.vue";
 import BarTooltip from "@/components/BarTooltip.vue";
@@ -52,18 +54,33 @@ function openLesson(index: number) {
 
 const courses = useCourses();
 
-/** A song's card opens the step it is on — straight in, like any card. */
-function openStep(lessonId: string) {
-  lessons.selectId(lessonId);
+/**
+ * The song whose section picker is up, if any. Opening a song puts it up
+ * first (the user's rule): the trainer loads the suggested section behind it,
+ * and the picker is where any section is chosen from.
+ */
+const songMenu = ref<string | null>(null);
+
+const songMenuState = computed(() => {
+  const c = courses.courses.find((x) => x.id === songMenu.value);
+  return c ? songState(c, courses.progressOf(c.id)) : null;
+});
+
+function openSong(courseId: string) {
+  const c = courses.courses.find((x) => x.id === courseId);
+  if (!c) return;
+  lessons.selectId(c.lessonIds[openingStep(c, courses.progressOf(c.id))]);
   view.value = "trainer";
+  songMenu.value = courseId;
 }
 
 /**
- * From the summary: another step of the song, played straight away. The
- * lesson-change watcher resets the trainer for it first, so the run starts
- * only after that has happened.
+ * A section of the song, played straight away — from the picker or from the
+ * summary. The lesson-change watcher resets the trainer for it first, so the
+ * run starts only after that has happened.
  */
 async function playStep(lessonId: string) {
+  songMenu.value = null;
   if (lessonId === lessons.current.id) return onPlay();
   lessons.selectId(lessonId);
   await nextTick();
@@ -81,9 +98,11 @@ function combineSong(name: string, lessonIds: string[]) {
   combining.value = false;
 }
 
-// Picking is a home-screen mode; leaving home ends it.
+// Picking is a home-screen mode; leaving home ends it — and leaving the
+// trainer takes a song's section picker with it.
 watch(view, (v) => {
   if (v !== "home") combining.value = false;
+  if (v !== "trainer") songMenu.value = null;
 });
 
 /** What the home grid shows: a song counts once, and its steps not at all. */
@@ -213,6 +232,12 @@ const {
   hardwareHitTime,
   rawHitTime,
 } = useTrainer(audio, laneCanvas, overviewCanvas);
+
+// A run started any other way — Space, or START behind the picker — plays the
+// section that is loaded, and the picker has nothing left to offer over it.
+watch(playing, (on) => {
+  if (on) songMenu.value = null;
+});
 
 // ------------------------------------------------------------- calibration
 // A before-a-run decision, like the instrument switch and Link, so it lives on
@@ -1534,10 +1559,9 @@ watch(
         :lessons="lessons.lessons"
         :current-index="lessons.currentIndex"
         :courses="courses.courses"
-        :progress="courses.progress"
         :combining="combining"
         @open="openLesson"
-        @open-step="openStep"
+        @open-song="openSong"
         @combine="combineSong"
         @cancel-combine="combining = false"
         @import="openImport"
@@ -1618,6 +1642,14 @@ watch(
         <MidiMonitor :rows="log" @clear="log = []" @collapse="settings.monitorOpen = false" />
       </aside>
     </main>
+
+    <SongLightbox
+      v-if="songMenuState && view === 'trainer' && !runComplete"
+      :song="songMenuState"
+      :instrument="lesson.instrument"
+      @step="playStep"
+      @lessons="goHome"
+    />
 
     <RunSummary
       v-if="runComplete && runResult && view === 'trainer'"

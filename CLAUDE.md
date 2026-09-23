@@ -134,25 +134,40 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   **The mark is judged on the number shown** (`passes`): the summary rounds, so
   79.6% reads `80`, and refusing it beside a mark of 80 would have the screen
   arguing with itself.
-  The order is the rule: a step after the first unpassed one is locked even
-  if it holds a pass — only possible after re-combining, and not bent for it.
+  **Nothing is locked; 80% only marks a section complete** — the user's
+  rule. The first version opened steps one at a time behind the one before;
+  they asked to move between sections freely, so `StepState` is `passed |
+  todo` and there is no locked state anywhere. The song's order decides one
+  thing only: the **suggestion** (`suggestedStep`), the first section not yet
+  complete — ringed in amber, and what the main buttons offer. Don't bring
+  gating back without asking.
+  **Opening a song puts its section picker up first** (`SongLightbox`, the
+  user's rule): the trainer loads the suggested section behind it, a tile
+  plays any section, `PLAY <suggestion>` plays that one, `✕ LESSONS` goes
+  home. It comes down when a run starts any way at all — a tile, Space, START
+  behind it — because `watch(playing)` clears `songMenu`; and when the view
+  leaves the trainer. The tiles are one component, `SongProgress`, shared
+  with the run summary, and the picker copies the summary's shell value for
+  value so the two read as one family.
   On home a song stands where its first step would be and its steps are not
   drawn. **A song's card is its full song's card, unchanged** — no strip, no
   step count, no progress line; that was built and removed at the user's
   request, and the card was checked pixel-identical to the full song's card
-  before combining. Only where it leads changes: it opens the step up next,
-  straight in like any card (the full song once all are passed). Progress is
-  shown in the end-of-run lightbox and nowhere else. The bar's `LESSONS`
-  figure counts cards, so a song once. In the summary `SONG PROGRESS` **replaces** the run-history
-  chart, and an unlock outranks `NEW BEST` in the header. `NEXT` selects the
-  next step and plays it, after `nextTick` so the lesson-change reset has run
-  first; a passed tile replays its step. Inside a song the library's own
-  auto-advance is off, and outside one `advance` skips over steps, which are
-  reached only through their song.
-  **Neither the step states nor the unlock wear a rating colour**: green and
-  red judge a *run*, and a passed step is not one. Passed inverts to the dark
-  chip, up-next wears the current card's `--led1` ring, locked is the plain
-  hairline; the header's unlock flag is `--led1` too.
+  before combining. Only where it leads changes: it opens the song's picker.
+  Progress is shown in the two lightboxes and nowhere else. The bar's
+  `LESSONS` figure counts cards, so a song once. In the summary `SONG
+  PROGRESS` **replaces** the run-history chart, and completing a section
+  (`PART C COMPLETE`, or `SONG COMPLETE` for the last one, whichever that is)
+  outranks `NEW BEST` in the header. **`NEXT` is always on offer**: the main
+  button once this section is complete, and beside `RUN … AGAIN` until then.
+  It selects the next section and plays it, after `nextTick` so the
+  lesson-change reset has run first; any tile plays its section. Inside a song
+  the library's own auto-advance is off, and outside one `advance` skips over
+  steps, which are reached only through their song.
+  **Neither the section states nor the flags wear a rating colour**: green
+  and red judge a *run*, and a complete section is not one. Complete inverts
+  to the dark chip, the suggestion wears the current card's `--led1` ring,
+  the rest are the plain hairline; the header's song flags are `--led1` too.
   There is **no un-combine** yet: a song made wrongly stays made. Say so if
   asked, rather than improvising one.
 - **LOOP is practice, and a region is played as a pattern of its own.**

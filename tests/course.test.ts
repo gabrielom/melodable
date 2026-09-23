@@ -6,6 +6,7 @@ import {
   passes,
   pointsToGo,
   qualifies,
+  songState,
   stepLabel,
   stepReport,
   stepsOf,
@@ -54,37 +55,47 @@ describe("passes", () => {
 });
 
 describe("stepsOf", () => {
-  it("opens the first step and locks the rest on a fresh song", () => {
-    expect(states({})).toEqual(["next", "locked", "locked", "locked", "locked"]);
+  it("leaves every section open on a fresh song", () => {
+    // Nothing is locked — the user moves between sections freely.
+    expect(states({})).toEqual(Array(5).fill("todo"));
   });
 
-  it("opens the step after each one passed", () => {
-    expect(states({ a: 0.91, b: 0.86 })).toEqual(["passed", "passed", "next", "locked", "locked"]);
+  it("marks a section complete at the mark, and only that", () => {
+    expect(states({ a: 0.91, b: 0.86 })).toEqual(["passed", "passed", "todo", "todo", "todo"]);
   });
 
-  it("keeps a step open, with its best, until it reaches the mark", () => {
-    const steps = stepsOf(SONG, { a: 0.91, b: 0.86, c: 0.72 });
-    expect(steps[2]).toMatchObject({ state: "next", best: 0.72 });
-    expect(steps[3].state).toBe("locked");
+  it("keeps a section to do, with its best, until it reaches the mark", () => {
+    expect(stepsOf(SONG, { c: 0.72 })[2]).toMatchObject({ state: "todo", best: 0.72 });
   });
 
-  it("holds the order even against a later step passed out of turn", () => {
-    // Only possible if the song were re-combined; the order is still the rule.
-    expect(states({ a: 0.9, c: 0.95 })).toEqual(["passed", "next", "locked", "locked", "locked"]);
+  it("completes a section played out of order", () => {
+    expect(states({ c: 0.95 })).toEqual(["todo", "todo", "passed", "todo", "todo"]);
+    expect(states({ full: 0.9 })[4]).toBe("passed");
   });
 
-  it("passes everything once the full song lands", () => {
+  it("completes everything once every section lands", () => {
     expect(states({ a: 0.9, b: 0.9, c: 0.9, d: 0.9, full: 0.83 })).toEqual(Array(5).fill("passed"));
   });
 });
 
-describe("openingStep", () => {
-  it("opens the step up next", () => {
-    expect(openingStep(SONG, {})).toBe(0);
-    expect(openingStep(SONG, { a: 0.9, b: 0.9 })).toBe(2);
+describe("what is suggested", () => {
+  it("suggests the first section not yet complete, in the song's order", () => {
+    expect(songState(SONG, {}).suggested).toBe(0);
+    expect(songState(SONG, { a: 0.9, b: 0.9 }).suggested).toBe(2);
+    // Skipping ahead does not move the suggestion past what is still to do.
+    expect(songState(SONG, { a: 0.9, c: 0.9 }).suggested).toBe(1);
   });
 
-  it("opens the full song once everything is passed", () => {
+  it("suggests nothing once the song is complete", () => {
+    const s = songState(SONG, { a: 0.9, b: 0.9, c: 0.9, d: 0.9, full: 0.9 });
+    expect(s.suggested).toBeNull();
+    expect(s.complete).toBe(true);
+    expect(s.passedCount).toBe(5);
+  });
+
+  it("opens the song on the suggestion, or the full song when all is done", () => {
+    expect(openingStep(SONG, {})).toBe(0);
+    expect(openingStep(SONG, { a: 0.9, b: 0.9 })).toBe(2);
     expect(openingStep(SONG, { a: 0.9, b: 0.9, c: 0.9, d: 0.9, full: 0.9 })).toBe(4);
   });
 });
@@ -111,21 +122,20 @@ describe("what a run counts for", () => {
 });
 
 describe("stepReport", () => {
-  it("says a pass opened the next step", () => {
+  it("says a run completed its section, and points on to the next", () => {
     const r = stepReport(SONG, { a: 0.91 }, { a: 0.91, b: 0.86 }, "b", true)!;
     expect(r.label).toBe("PART B");
     expect(r.justPassed).toBe(true);
-    expect(r.unlocked?.label).toBe("PART C");
     expect(r.passedCount).toBe(2);
     expect(r.complete).toBe(false);
-    expect(r.following?.state).toBe("next");
+    expect(r.suggested).toBe(2);
+    expect(r.following?.label).toBe("PART C");
   });
 
-  it("opens nothing on a run short of the mark", () => {
+  it("still points on after a run short of the mark — nothing is locked", () => {
     const r = stepReport(SONG, { a: 0.9, b: 0.9 }, { a: 0.9, b: 0.9, c: 0.72 }, "c", true)!;
     expect(r.justPassed).toBe(false);
-    expect(r.unlocked).toBeNull();
-    expect(r.following?.state).toBe("locked");
+    expect(r.following).toMatchObject({ label: "PART D", state: "todo" });
   });
 
   it("carries that a run did not qualify, so the screen can say why", () => {
@@ -135,20 +145,24 @@ describe("stepReport", () => {
     expect(r.justPassed).toBe(false);
   });
 
-  it("calls the song complete when the full song is passed", () => {
-    const before = { a: 0.9, b: 0.9, c: 0.9, d: 0.9 };
-    const r = stepReport(SONG, before, { ...before, full: 0.83 }, "full", true)!;
+  it("calls the song complete when its last section lands, whichever that is", () => {
+    const before = { a: 0.9, b: 0.9, d: 0.9, full: 0.9 };
+    const r = stepReport(SONG, before, { ...before, c: 0.83 }, "c", true)!;
     expect(r.complete).toBe(true);
     expect(r.justPassed).toBe(true);
-    expect(r.unlocked).toBeNull();
-    expect(r.following).toBeNull();
+    expect(r.suggested).toBeNull();
   });
 
-  it("does not re-announce a step already passed", () => {
+  it("has nothing after the full song", () => {
+    const r = stepReport(SONG, {}, { full: 0.83 }, "full", true)!;
+    expect(r.following).toBeNull();
+    expect(r.complete).toBe(false);
+  });
+
+  it("does not re-announce a section already complete", () => {
     const p = { a: 0.9, b: 0.9 };
     const r = stepReport(SONG, p, { a: 0.95, b: 0.9 }, "a", true)!;
     expect(r.justPassed).toBe(false);
-    expect(r.unlocked).toBeNull();
   });
 
   it("has nothing to say about a lesson outside the song", () => {
