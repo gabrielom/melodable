@@ -81,6 +81,37 @@ export const useCourses = defineStore("courses", () => {
     return course;
   }
 
+  /**
+   * Rename a song or rewrite its description (edit mode). A blank name keeps
+   * the old one, for the reason `applyEdit` gives: a card with no name cannot
+   * be told apart. Its tempo and key are its sections', so they are edited
+   * there, not here.
+   */
+  function editCourse(courseId: string, edit: { name?: string; hint?: string }): void {
+    courses.value = courses.value.map((c) => {
+      if (c.id !== courseId) return c;
+      const next: Course = { ...c };
+      if (typeof edit.name === "string" && edit.name.trim()) next.name = edit.name.trim();
+      if (typeof edit.hint === "string") next.hint = edit.hint.trim();
+      return next;
+    });
+    void persistSet("courses", courses.value);
+  }
+
+  /**
+   * Take a song apart: its sections go back to being lessons of their own on
+   * the home grid. Its progress goes with it — a record of which sections of a
+   * song were complete means nothing once there is no song, and a song made
+   * again from the same lessons starts fresh.
+   */
+  function split(courseId: string): void {
+    courses.value = courses.value.filter((c) => c.id !== courseId);
+    const { [courseId]: _gone, ...rest } = progress.value;
+    progress.value = rest;
+    void persistSet("courses", courses.value);
+    void persistSet("courseProgress", progress.value);
+  }
+
   /** Count a finished run towards its song. See `withRun` for what counts. */
   function record(
     courseId: string,
@@ -96,5 +127,16 @@ export const useCourses = defineStore("courses", () => {
     void persistSet("courseProgress", progress.value);
   }
 
-  return { courses, progress, hydrated, courseOf, progressOf, members, combine, record };
+  return {
+    courses,
+    progress,
+    hydrated,
+    courseOf,
+    progressOf,
+    members,
+    combine,
+    editCourse,
+    split,
+    record,
+  };
 });

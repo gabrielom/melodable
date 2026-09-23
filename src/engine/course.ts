@@ -39,6 +39,11 @@ export function pointsToGo(accuracy: number): number {
 export interface Course {
   id: string;
   name: string;
+  /**
+   * The song's description, when one has been written in edit mode. Absent,
+   * the card shows the full song's own — the song wears that card.
+   */
+  hint?: string;
   /** Lesson ids in the order they are learned. The last is the whole song. */
   lessonIds: string[];
 }
@@ -204,7 +209,7 @@ export function usableCourses(saved: unknown, lessonIds: readonly string[]): Cou
   const out: Course[] = [];
   for (const c of saved) {
     if (!c || typeof c !== "object") continue;
-    const { id, name, lessonIds: ids } = c as Record<string, unknown>;
+    const { id, name, hint, lessonIds: ids } = c as Record<string, unknown>;
     if (typeof id !== "string" || typeof name !== "string" || !Array.isArray(ids)) continue;
     // A lesson belongs to at most one song, and the first to claim it keeps it.
     const steps = ids.filter(
@@ -212,7 +217,7 @@ export function usableCourses(saved: unknown, lessonIds: readonly string[]): Cou
     );
     if (steps.length < 2) continue;
     for (const s of steps) claimed.add(s);
-    out.push({ id, name, lessonIds: steps });
+    out.push(typeof hint === "string" ? { id, name, hint, lessonIds: steps } : { id, name, lessonIds: steps });
   }
   return out;
 }

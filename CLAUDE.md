@@ -102,13 +102,17 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   grace, no strike can ever be wrong, which is right — "completely out of time"
   has to mean completely.
 - **A song is lessons combined into steps, and the steps stay lessons.**
-  **`COMBINE` on the home bar** puts the grid into a picking mode, and
-  **nothing of songs is drawn on home until it is pressed** — the user's rule,
-  after a first version put a button on the home head. The home screen with
-  combine off is pixel-identical to what it was before songs existed (checked
-  against the old build side by side). The on-state is `--led1`, sharing
-  LOOP's rule, since a picked card is ringed in it. In the mode: the order
-  cards are picked in is the order they are learned, and the **last
+  **Edit mode — the pencil on the home bar — is where songs are made and
+  unmade**, and **nothing of it is drawn on home until it is on** (the user's
+  rule, first for a `COMBINE` text button, which then became this icon at
+  their request: a symbol, not a word). The pencil is ours, drawn in the bar
+  icons' own terms (16-unit box, 1.5 stroke, round ends), and takes the
+  standard `.ico.on` chip. With it off, home is pixel-identical to what it was
+  before songs existed (checked against the old build side by side). In the
+  mode every card becomes a form — see the next entry — and a lesson card's
+  `+ SONG` chip picks it; once something is picked the head offers a song name
+  and `COMBINE · N`. The order cards are picked in is the order they are
+  learned, and the **last
   one picked is the full song** — which is why the chips relabel live, the
   newest pick reading `FULL SONG` until something is picked after it. Labels
   are positional (`stepLabel`), never read off the lessons' names, because
@@ -153,7 +157,9 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   drawn. **A song's card is its full song's card, unchanged** — no strip, no
   step count, no progress line; that was built and removed at the user's
   request, and the card was checked pixel-identical to the full song's card
-  before combining. Only where it leads changes: it opens the song's picker.
+  before combining, **except that it carries the song's own name, and its
+  description once one is written** in edit mode. Where it leads changes too:
+  it opens the song's picker.
   Progress is shown in the two lightboxes and nowhere else. The bar's
   `LESSONS` figure counts cards, so a song once. In the summary `SONG
   PROGRESS` **replaces** the run-history chart, and completing a section
@@ -168,8 +174,40 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   and red judge a *run*, and a complete section is not one. Complete inverts
   to the dark chip, the suggestion wears the current card's `--led1` ring,
   the rest are the plain hairline; the header's song flags are `--led1` too.
-  There is **no un-combine** yet: a song made wrongly stays made. Say so if
-  asked, rather than improvising one.
+  **`SPLIT`** on a song's card in edit mode takes it apart: its sections
+  return to the grid as lessons of their own, and **its progress is dropped**
+  — which sections of a song were complete means nothing once there is no
+  song, and a song made again from the same lessons starts fresh.
+- **Edit mode edits a card's name, description, tempo and key** (the user's
+  list), in place: the card turns into fields where its text sits, at its
+  size, so it keeps its shape. It is a `div` while editing, since a `button`
+  cannot hold fields. **Every field commits when it is left, or on Enter** —
+  not per keystroke, which would rebuild the trainer on every letter. The
+  rules are pure in `engine/lesson-edit.ts`: a name cannot be emptied (a
+  nameless card cannot be told apart), a description can; tempo is rounded
+  and clamped to `TEMPO_MIN`..`TEMPO_MAX`; key is fifths -7..7, or `AUTO`,
+  which hands it back to the notes and names what it would read them as.
+  The notes, bars and instrument are the material and are **not** editable.
+  **An edit replaces the lesson object**, and the trainer now resets on the
+  lesson's identity rather than its id — a new tempo only reaches the
+  transport through `resetForLesson`, so resetting on the id alone left an
+  edited lesson playing at its old tempo. Edits happen only on home, where
+  nothing is playing, so the reset costs nothing.
+  **A built-in is edited by overlay** (`builtinEdits`, laid over the code's
+  lesson on every launch, since built-ins do not live in the store); an
+  import is simply saved as edited.
+  **A song's name and description are its own** (`Course.name`, `.hint`), and
+  its card shows them — the full song's card otherwise, as before. Its
+  **tempo and key are its sections'**: the trainer plays and grades each
+  section by its own lesson, so setting either on the song sets it on every
+  section. Tempo is also what a pass is judged at, so lowering it makes a
+  section easier to complete; that is the player's call.
+  **The key a lesson is read in**: the trainer's `KEY` chip override if one
+  is set, else the key set in edit mode (`authoredKey`), else the one read off
+  the notes. The chip stays a global reading preference; the edited key is a
+  fact about the material, so it lives on the lesson.
+  **Not designed** — built in the bar's control language, like the
+  calibration dialog, and it wants drawing.
 - **LOOP is practice, and a region is played as a pattern of its own.**
   Pressing it plants an eight-bar region (`LOOP_BARS`) at the playhead — where
   you are when you press it is where it starts, which is why it needs no

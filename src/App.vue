@@ -33,6 +33,7 @@ import { chordName, diatonicTriad, romanOf } from "@/engine/harmony";
 import RunSummary from "@/components/RunSummary.vue";
 import SongLightbox from "@/components/SongLightbox.vue";
 import { openingStep, songState } from "@/engine/course";
+import type { LessonEdit } from "@/engine/lesson-edit";
 import type { LogRow } from "@/components/midi-log";
 import PianoKeyboard from "@/views/piano/PianoKeyboard.vue";
 import BarTooltip from "@/components/BarTooltip.vue";
@@ -88,20 +89,45 @@ async function playStep(lessonId: string) {
 }
 
 /**
- * Picking lessons to combine into a song. Switched from the home bar — the
- * home screen draws nothing of it until this is on.
+ * Edit mode on home: switched from the pencil in the home bar, and nothing of
+ * it is drawn until it is on. Every card becomes a form for its own name,
+ * description, tempo and key; lessons can be picked to combine into a song;
+ * a song can be split back apart.
  */
-const combining = ref(false);
+const editing = ref(false);
 
 function combineSong(name: string, lessonIds: string[]) {
   courses.combine(name, lessonIds);
-  combining.value = false;
 }
 
-// Picking is a home-screen mode; leaving home ends it — and leaving the
+function editLesson(lessonId: string, edit: LessonEdit) {
+  lessons.editLesson(lessonId, edit);
+}
+
+/**
+ * A song's name and description are its own. Its tempo and key belong to its
+ * sections — the trainer plays and grades each section by its own lesson — so
+ * setting them on the song sets them on every section, which is what a song
+ * being one piece means.
+ */
+function editSong(courseId: string, edit: LessonEdit) {
+  const c = courses.courses.find((x) => x.id === courseId);
+  if (!c) return;
+  if (edit.name !== undefined || edit.hint !== undefined) {
+    courses.editCourse(courseId, { name: edit.name, hint: edit.hint });
+  }
+  if (edit.bpm !== undefined || edit.key !== undefined) {
+    const shared: LessonEdit = {};
+    if (edit.bpm !== undefined) shared.bpm = edit.bpm;
+    if (edit.key !== undefined) shared.key = edit.key;
+    for (const id of c.lessonIds) lessons.editLesson(id, shared);
+  }
+}
+
+// Editing is a home-screen mode; leaving home ends it — and leaving the
 // trainer takes a song's section picker with it.
 watch(view, (v) => {
-  if (v !== "home") combining.value = false;
+  if (v !== "home") editing.value = false;
   if (v !== "trainer") songMenu.value = null;
 });
 
@@ -693,7 +719,8 @@ function spaceIsTransport(e: KeyboardEvent): boolean {
 }
 
 /**
- * Whether a keystroke is being typed into a field that takes text.
+ * Whether a keystroke is being typed into a field — one that takes text, or a
+ * list that jumps to an option by its first letter.
  *
  * The computer keyboard is a piano here — `a` through `l` on the home row,
  * the black keys above — and that mapping listens on the whole window. A text
@@ -706,7 +733,7 @@ function spaceIsTransport(e: KeyboardEvent): boolean {
 function typingInto(e: KeyboardEvent): boolean {
   const el = e.target as HTMLElement | null;
   if (!el) return false;
-  if (el.isContentEditable || el.tagName === "TEXTAREA") return true;
+  if (el.isContentEditable || el.tagName === "TEXTAREA" || el.tagName === "SELECT") return true;
   if (el.tagName !== "INPUT") return false;
   const type = (el as HTMLInputElement).type;
   return !["button", "checkbox", "radio", "range", "submit", "reset", "file"].includes(type);
@@ -1229,19 +1256,33 @@ watch(
         {{ cardCount }}<i>LESSONS</i>
       </span>
 
-      <!-- Home only: combining lessons into a song is a mode of the home grid,
-           and nothing of it is drawn there until this is on. Its on-state is
-           the amber a picked card is ringed with, as LOOP's is the amber of
-           the region it made. -->
+      <!-- Home only: edit mode — names, descriptions, tempo, key, combining
+           lessons into a song and splitting one apart. Nothing of it is drawn
+           on home until this is on. A pencil in the icons' own terms (16-unit
+           box, 1.5 stroke, round ends); it is ours, not from a handoff. -->
       <button
         v-if="view === 'home'"
-        class="seg-i solo pick"
-        :class="{ on: combining }"
-        :aria-pressed="combining"
-        data-tip="Combine lessons into a song you learn in steps"
-        @click="combining = !combining"
+        class="ico"
+        :class="{ on: editing }"
+        :aria-pressed="editing"
+        aria-label="Edit lessons"
+        data-tip="Edit lessons: names, tempo, key — combine into songs, or split them"
+        @click="editing = !editing"
       >
-        COMBINE
+        <svg
+          viewBox="0 0 16 16"
+          width="11"
+          height="11"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M10.7 2.3 13.7 5.3 5.4 13.6H2.4V10.6Z" />
+          <path d="M9 4 12 7" />
+        </svg>
       </button>
 
       <span v-if="view === 'trainer'" class="scores">
@@ -1559,11 +1600,14 @@ watch(
         :lessons="lessons.lessons"
         :current-index="lessons.currentIndex"
         :courses="courses.courses"
-        :combining="combining"
+        :editing="editing"
         @open="openLesson"
         @open-song="openSong"
         @combine="combineSong"
-        @cancel-combine="combining = false"
+        @edit-lesson="editLesson"
+        @edit-song="editSong"
+        @split="courses.split"
+        @done="editing = false"
         @import="openImport"
       />
 
@@ -2005,9 +2049,7 @@ watch(
    would otherwise win the tie on source order alone and give this the ordinary
    inverted chip. */
 .seg-i.loop.on,
-.seg-i.loop.on:hover,
-.seg-i.pick.on,
-.seg-i.pick.on:hover {
+.seg-i.loop.on:hover {
   background: var(--led1);
   color: var(--active-txt);
   box-shadow: none;

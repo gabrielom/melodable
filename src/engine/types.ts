@@ -63,6 +63,13 @@ export interface Lesson {
   notes: NoteEvent[];
   source: "builtin" | "midi-import";
   hint?: string;
+  /**
+   * The key, as fifths (-7..7), when the player has set one in edit mode.
+   * Absent means it is read off the notes (`keySignatureFor`), which is right
+   * nearly always — this is for the clip that uses only part of its scale.
+   * Read it through `authoredKey`, which checks it.
+   */
+  key?: number;
 }
 
 /** Raw MIDI event coming up from Rust via the `midi://message` event. */

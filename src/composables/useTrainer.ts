@@ -14,6 +14,7 @@ import { useHistory } from "@/stores/history";
 import { useChords } from "@/stores/chords";
 import { useCourses } from "@/stores/courses";
 import { qualifies, stepReport, type StepReport } from "@/engine/course";
+import { authoredKey } from "@/engine/lesson-edit";
 import type { HoldResult, LinkState, Rating } from "@/engine/types";
 import {
   Transport,
@@ -305,9 +306,14 @@ export function useTrainer(
       bass: pick(patternTargets.value.filter(onBass)),
     };
   });
-  const derivedKey = computed(() =>
-    isPiano.value ? keySignatureFor(targets.value.map((t) => t.lane)) : 0,
-  );
+  /**
+   * The key the lesson is in when nothing is overridden: the one set in edit
+   * mode if there is one, otherwise read off the notes.
+   */
+  const derivedKey = computed(() => {
+    if (!isPiano.value) return 0;
+    return authoredKey(lesson.value) ?? keySignatureFor(targets.value.map((t) => t.lane));
+  });
   /**
    * The key everything reads from: the staff's signature, the degree labels
    * and the chord ribbon. Hand-set when the player has said otherwise —
@@ -1261,9 +1267,11 @@ export function useTrainer(
   // ------------------------------------------------------------- lifecycle
 
   // Switching lessons (library pick or a cleared-lesson advance) returns the
-  // trainer to a ready state for the new lesson.
+  // trainer to a ready state for the new lesson — and so does editing one,
+  // which replaces the lesson object: a new tempo has to reach the transport,
+  // and the transport is only built here.
   watch(
-    () => lesson.value.id,
+    () => lesson.value,
     () => resetForLesson(),
   );
 
