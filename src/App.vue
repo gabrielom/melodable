@@ -1711,6 +1711,7 @@ watch(
       :wrong="runResult.wrong"
       :attempts="runResult.attempts"
       :step="runResult.step"
+      :lanes="runResult.lanes"
       :base-bpm="lesson.bpm"
       @again="onPlay"
       @step="playStep"

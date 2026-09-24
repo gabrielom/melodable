@@ -186,6 +186,49 @@ export function lessonTargets(lesson: Lesson, laneOf: (pitch: number) => number 
   return out.sort((a, b) => a.beat - b.beat);
 }
 
+/** How one lane went over a run. `accuracy` is 0..1, score-weighted like the run's. */
+export interface LaneStat {
+  lane: number;
+  accuracy: number;
+  /** Notes struck early and late — which way the lane drifted. */
+  early: number;
+  late: number;
+  /** Notes of this lane resolved in the run. */
+  total: number;
+}
+
+/** A weakest lane, ready to draw: which way it leant, when it clearly did. */
+export interface WeakLane extends LaneStat {
+  drift: "early" | "late" | null;
+}
+
+/** How many weakest lanes the summary names. */
+export const WEAKEST_LANES = 3;
+
+/**
+ * The lanes that need work most: the lowest first, at most `WEAKEST_LANES`.
+ *
+ * A lane is left out once it reads 100 — judged on the number shown, the
+ * same stance `passes` takes, so a lane is never listed beside a score of
+ * 100. A clean run has nothing to show. Ties go to the lane with more notes,
+ * where the same accuracy is the steadier reading, then to the lower lane so
+ * the order holds still between identical runs.
+ *
+ * Drift is the reason `early` and `late` are split at all — "you rush E4" is
+ * something to act on in a way "E4 is 64%" is not. It names the side a lane
+ * leant to, and nothing when it leant to neither.
+ */
+export function weakestLanes(stats: readonly LaneStat[], limit = WEAKEST_LANES): WeakLane[] {
+  return stats
+    .filter((l) => Math.round(l.accuracy * 100) < 100)
+    .sort((a, b) => a.accuracy - b.accuracy || b.total - a.total || a.lane - b.lane)
+    .slice(0, limit)
+    .map((l) => ({
+      ...l,
+      drift: l.early === l.late ? null : l.early > l.late ? "early" : "late",
+    }));
+}
+
 export class Scorer {
   private targets: TargetNote[];
   private all: NoteInstance[] = [];
@@ -212,6 +255,14 @@ export class Scorer {
     late: 0,
     miss: 0,
   };
+
+  /**
+   * `counts`, per lane — the same notes, filed by the lane they were written
+   * on. Kept as the run goes, beside `counts`, so it covers every repeat:
+   * the version this replaces read the surviving instances at the end, and
+   * those are only the last few repeats, `prune` having dropped the rest.
+   */
+  private laneCounts = new Map<number, Record<Rating, number>>();
 
   /**
    * The sustain tally, kept apart from `counts` on purpose: a hold is a second
@@ -242,6 +293,33 @@ export class Scorer {
     return this.holdCounts;
   }
 
+
+  /**
+   * How each lane went over the whole run, for the summary's weakest lanes.
+   * Only the lesson's notes: a wrong note is outside every lane's figure for
+   * the reason it is outside `tally`. A lane with nothing resolved is absent.
+   */
+  laneStats(): LaneStat[] {
+    const out: LaneStat[] = [];
+    for (const [lane, c] of this.laneCounts) {
+      const total = c.perfect + c.great + c.early + c.late + c.miss;
+      if (total === 0) continue;
+      let points = 0;
+      for (const r of Object.keys(c) as Rating[]) points += (RATING_SCORE[r] / 100) * c[r];
+      out.push({ lane, accuracy: points / total, early: c.early, late: c.late, total });
+    }
+    return out;
+  }
+
+  /** File a resolved note under its lane, beside `counts`. */
+  private countLane(lane: number, rating: Rating): void {
+    let c = this.laneCounts.get(lane);
+    if (!c) {
+      c = { perfect: 0, great: 0, early: 0, late: 0, miss: 0 };
+      this.laneCounts.set(lane, c);
+    }
+    c[rating] += 1;
+  }
 
   /** Score-weighted accuracy 0..1 over everything resolved so far. */
   get accuracy(): number {
@@ -327,6 +405,7 @@ export class Scorer {
     best.rating = rating;
     const pts = RATING_SCORE[rating] / 100;
     this.counts[rating] += 1;
+    this.countLane(best.lane, rating);
     this.hitPoints += pts;
     this.total += 1;
     this.loopHitPoints += pts;
@@ -424,6 +503,7 @@ export class Scorer {
         inst.resolved = true;
         inst.rating = "miss";
         this.counts.miss += 1;
+        this.countLane(inst.lane, "miss");
         this.total += 1;
         this.loopTotal += 1;
         missed.push(inst);

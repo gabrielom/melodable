@@ -3,15 +3,16 @@
  * End of run. A lesson is a finite piece, so it earns a result screen rather
  * than a toast that disappears before you have read it.
  *
- * The run-history chart is the point of the screen. It replaced a ranked list
- * of your worst lanes (handoff 09): that told you something you already knew
- * — you felt the snare drag — in the most discouraging frame available, and
- * duplicated the judgement breakdown directly above it. The question worth
- * answering here is whether you are getting better, and it takes more than
- * one run to answer.
+ * The run-history chart answers whether you are getting better, which takes
+ * more than one run. Handoff 09 put it in place of a ranked list of your worst
+ * lanes; the user missed the list, so both are here now — the lanes beside the
+ * chart, where you look next, and only when a lane was short of 100.
  */
 import { computed, ref } from "vue";
-import { PALETTE } from "@/engine/theme";
+import { PALETTE, hueOf } from "@/engine/theme";
+import { PADS } from "@/engine/gm";
+import { noteName } from "@/engine/pitch";
+import type { WeakLane } from "@/engine/scoring";
 import { useSettings } from "@/stores/settings";
 import type { HoldResult, InstrumentType, Rating } from "@/engine/types";
 import {
@@ -52,6 +53,12 @@ const props = defineProps<{
   wrong: number;
   /** Every attempt at this lesson, oldest first, this run last. */
   attempts: readonly number[];
+  /**
+   * The lanes that need work most, weakest first — empty on a clean run. Each
+   * carries its place in the lane order, so it wears the colour it has on the
+   * lane stack and reads as that lane without needing to be read.
+   */
+  lanes: readonly (WeakLane & { hue: number })[];
   /**
    * Where the run left its song, when the lesson is a step of one. Present,
    * the song's progress is shown under the run-history chart — which a section
@@ -214,6 +221,18 @@ const slowNote = computed(() =>
     : null,
 );
 
+// ------------------------------------------------------------ weakest lanes
+
+/**
+ * Weakest lanes, beside the history chart (the user's pick of three layouts).
+ * Back after handoff 09 took them out: the user missed them. The chart says
+ * whether you are getting better; this says where to look next time.
+ */
+const laneName = (lane: number) =>
+  props.instrument === "piano" ? noteName(lane) : (PADS[lane]?.name ?? `PAD ${lane + 1}`).toUpperCase();
+/** The lane's own dimmed hue — the swatch it wears on the lane stack and the strip. */
+const laneColour = (hue: number) => hueOf(palette.value, props.instrument, hue).dim;
+
 /** The chart is a picture; a screen reader gets the same facts as a sentence. */
 const chartLabel = computed(() => {
   const n = props.attempts.length;
@@ -269,112 +288,133 @@ const chartLabel = computed(() => {
         </div>
       </div>
 
-      <!-- Handoff 09: run history replaces weakest lanes. A section of a song
-           keeps it too: every section is a lesson with a history of its own,
-           and "am I getting better at this part" is still the question. -->
-      <div class="history">
-        <div class="hhead">
-          <span class="ttl">RUN HISTORY</span>
-          <b class="hscore num">{{ score }}%</b>
+      <!-- The history, with the weakest lanes beside it when there are any.
+           A clean run has none, and the chart keeps the whole width. -->
+      <div class="pair">
+        <!-- Handoff 09: run history replaces weakest lanes. A section of a song
+             keeps it too: every section is a lesson with a history of its own,
+             and "am I getting better at this part" is still the question. -->
+        <div class="history">
+          <div class="hhead">
+            <span class="ttl">RUN HISTORY</span>
+            <b class="hscore num">{{ score }}%</b>
+          </div>
+
+          <svg
+            class="chart"
+            :viewBox="`0 0 ${VIEW.w} ${VIEW.h}`"
+            role="img"
+            :aria-label="chartLabel"
+          >
+            <!-- Two rules only. This is a shape to read, not a table. -->
+            <g class="grid">
+              <line v-for="g in chart.gridlines" :key="g.value" x1="26" x2="614" :y1="g.y" :y2="g.y" />
+              <text v-for="g in chart.gridlines" :key="`t${g.value}`" x="20" :y="g.y + 3">
+                {{ g.value }}
+              </text>
+            </g>
+
+            <line class="axis" x1="26" x2="614" :y1="AXIS_Y" :y2="AXIS_Y" />
+            <circle class="axis-cap" cx="26" :cy="AXIS_Y" :r="AXIS_DOT_R" />
+            <circle class="axis-cap" cx="614" :cy="AXIS_Y" :r="AXIS_DOT_R" />
+
+            <polyline v-if="chart.path" class="line" :points="chart.path" />
+            <circle
+              v-for="(pt, i) in chart.points"
+              :key="i"
+              class="dot"
+              :cx="pt.x"
+              :cy="pt.y"
+              :r="DOT_R"
+            />
+            <circle
+              v-if="chart.current"
+              class="now"
+              :cx="chart.current.x"
+              :cy="chart.current.y"
+              :r="CURRENT_DOT_R"
+            />
+
+            <!-- The flag names the best run, and only while that dot is hovered:
+                 a badge that always shows is decoration, and the header already
+                 says NEW BEST when this run earned one. -->
+            <g v-if="hoverBadge">
+              <rect
+                class="badge"
+                :x="hoverBadge.x"
+                :y="hoverBadge.y"
+                :width="BADGE.w"
+                :height="BADGE.h"
+                rx="2"
+              />
+              <text
+                class="badge-t"
+                :x="hoverBadge.x + BADGE.w / 2"
+                :y="hoverBadge.y + BADGE.h / 2 + 3.6"
+              >
+                BEST
+              </text>
+            </g>
+
+            <!-- The score, in the flag's box but not its colour: green is a
+                 rating here (`--rate-perfect`), and a 62% run wearing it would
+                 be saying "perfect" about a poor one. -->
+            <g v-if="tipBox && hoveredPoint">
+              <rect
+                class="tipbox"
+                :x="tipBox.x"
+                :y="tipBox.y"
+                :width="TIP.w"
+                :height="TIP.h"
+                rx="2"
+              />
+              <text class="tip-t" :x="tipBox.x + TIP.w / 2" :y="tipBox.y + TIP.h / 2 + 3.6">
+                {{ Math.round(hoveredPoint.value * 100) }}%
+              </text>
+            </g>
+
+            <!-- Invisible targets, wider than the dots: a 3px circle is not
+                 something a pointer should have to find. -->
+            <circle
+              v-for="(pt, i) in chart.points"
+              :key="`hit${i}`"
+              class="hit"
+              :cx="pt.x"
+              :cy="pt.y"
+              r="12"
+              @mouseenter="hovered = i"
+              @mouseleave="hovered = null"
+            />
+          </svg>
+
+          <!-- Each label sits where the thing it describes sits: the two ends
+               track their own dots, the count is centred under the axis. -->
+          <div class="hfoot">
+            <span v-if="chart.first" class="hfirst" :style="{ left: firstLeft }">
+              FIRST {{ Math.round(chart.first.value * 100) }}%
+            </span>
+            <span class="hcount" :class="{ aside: countAside }">
+              {{ attempts.length }} {{ attempts.length === 1 ? "ATTEMPT" : "ATTEMPTS" }}
+            </span>
+            <span class="hnow" :style="{ left: nowLeft }">THIS RUN</span>
+          </div>
         </div>
 
-        <svg
-          class="chart"
-          :viewBox="`0 0 ${VIEW.w} ${VIEW.h}`"
-          role="img"
-          :aria-label="chartLabel"
-        >
-          <!-- Two rules only. This is a shape to read, not a table. -->
-          <g class="grid">
-            <line v-for="g in chart.gridlines" :key="g.value" x1="26" x2="614" :y1="g.y" :y2="g.y" />
-            <text v-for="g in chart.gridlines" :key="`t${g.value}`" x="20" :y="g.y + 3">
-              {{ g.value }}
-            </text>
-          </g>
-
-          <line class="axis" x1="26" x2="614" :y1="AXIS_Y" :y2="AXIS_Y" />
-          <circle class="axis-cap" cx="26" :cy="AXIS_Y" :r="AXIS_DOT_R" />
-          <circle class="axis-cap" cx="614" :cy="AXIS_Y" :r="AXIS_DOT_R" />
-
-          <polyline v-if="chart.path" class="line" :points="chart.path" />
-          <circle
-            v-for="(pt, i) in chart.points"
-            :key="i"
-            class="dot"
-            :cx="pt.x"
-            :cy="pt.y"
-            :r="DOT_R"
-          />
-          <circle
-            v-if="chart.current"
-            class="now"
-            :cx="chart.current.x"
-            :cy="chart.current.y"
-            :r="CURRENT_DOT_R"
-          />
-
-          <!-- The flag names the best run, and only while that dot is hovered:
-               a badge that always shows is decoration, and the header already
-               says NEW BEST when this run earned one. -->
-          <g v-if="hoverBadge">
-            <rect
-              class="badge"
-              :x="hoverBadge.x"
-              :y="hoverBadge.y"
-              :width="BADGE.w"
-              :height="BADGE.h"
-              rx="2"
-            />
-            <text
-              class="badge-t"
-              :x="hoverBadge.x + BADGE.w / 2"
-              :y="hoverBadge.y + BADGE.h / 2 + 3.6"
-            >
-              BEST
-            </text>
-          </g>
-
-          <!-- The score, in the flag's box but not its colour: green is a
-               rating here (`--rate-perfect`), and a 62% run wearing it would
-               be saying "perfect" about a poor one. -->
-          <g v-if="tipBox && hoveredPoint">
-            <rect
-              class="tipbox"
-              :x="tipBox.x"
-              :y="tipBox.y"
-              :width="TIP.w"
-              :height="TIP.h"
-              rx="2"
-            />
-            <text class="tip-t" :x="tipBox.x + TIP.w / 2" :y="tipBox.y + TIP.h / 2 + 3.6">
-              {{ Math.round(hoveredPoint.value * 100) }}%
-            </text>
-          </g>
-
-          <!-- Invisible targets, wider than the dots: a 3px circle is not
-               something a pointer should have to find. -->
-          <circle
-            v-for="(pt, i) in chart.points"
-            :key="`hit${i}`"
-            class="hit"
-            :cx="pt.x"
-            :cy="pt.y"
-            r="12"
-            @mouseenter="hovered = i"
-            @mouseleave="hovered = null"
-          />
-        </svg>
-
-        <!-- Each label sits where the thing it describes sits: the two ends
-             track their own dots, the count is centred under the axis. -->
-        <div class="hfoot">
-          <span v-if="chart.first" class="hfirst" :style="{ left: firstLeft }">
-            FIRST {{ Math.round(chart.first.value * 100) }}%
-          </span>
-          <span class="hcount" :class="{ aside: countAside }">
-            {{ attempts.length }} {{ attempts.length === 1 ? "ATTEMPT" : "ATTEMPTS" }}
-          </span>
-          <span class="hnow" :style="{ left: nowLeft }">THIS RUN</span>
+        <div v-if="lanes.length" class="weak">
+          <span class="ttl">WEAKEST LANES</span>
+          <div v-for="l in lanes" :key="l.lane" class="wrow">
+            <i class="wchip" :style="{ background: laneColour(l.hue) }" />
+            <span class="wname">{{ laneName(l.lane) }}</span>
+            <!-- Which way it leant: a result, so the rating's own colour. -->
+            <span
+              class="wdrift"
+              :style="{ color: l.drift ? palette.rating[l.drift] : undefined }"
+            >{{ l.drift ? LABEL[l.drift] : "—" }}</span>
+            <span class="wpct num">{{ Math.round(l.accuracy * 100) }}</span>
+            <span class="wtrack">
+              <i :style="{ width: `${l.accuracy * 100}%`, background: laneColour(l.hue) }" />
+            </span>
+          </div>
         </div>
       </div>
 
@@ -508,6 +548,56 @@ const chartLabel = computed(() => {
    box even on a full-marks run, so nothing depends on `overflow` any more;
    it stays visible only so a stroke on the edge is not clipped. */
 .history { display: flex; flex-direction: column; gap: 6px; }
+
+/* The chart and the weakest lanes share a row. Without lanes the chart has
+   it to itself, exactly as before; with them it gives up about a third, and
+   its type shrinks with it — the trade the user chose over a taller sheet. */
+.pair { display: flex; gap: 20px; align-items: stretch; }
+.pair > .history { flex: 1.7; min-width: 0; }
+.weak {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-left: 18px;
+  box-shadow: inset 1px 0 0 var(--hair);
+}
+.wrow { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 9px; }
+.wchip { width: 6px; height: 6px; flex: none; border-radius: 1px; }
+.wname {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 1.1px;
+  color: var(--txt);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wdrift {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 7.5px;
+  letter-spacing: 1.2px;
+  color: var(--txt3);
+}
+.wpct { width: 26px; flex: none; text-align: right; font-size: 11px; color: var(--txt2); }
+/* A full-width bar under the name, since the row is narrow beside the chart.
+   The hairline is what makes the empty part read in light, where the track
+   fill is the panel's own grey. */
+.wtrack {
+  order: 3;
+  flex: 0 0 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--track);
+  box-shadow: inset 0 0 0 1px var(--hair);
+  overflow: hidden;
+}
+.wtrack i { display: block; height: 100%; }
 .hhead { display: flex; align-items: baseline; justify-content: space-between; }
 /* The headline figure of the block, so the largest thing in it. */
 .hscore { font-size: 15px; color: var(--txt); }

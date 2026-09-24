@@ -7,6 +7,9 @@ import {
   lessonRepeats,
   visibleLoopSpan,
   previewInstances,
+  weakestLanes,
+  WEAKEST_LANES,
+  type LaneStat,
   type TargetNote,
 } from "../src/engine/scoring";
 import { TIMING_WINDOWS } from "../src/engine/types";
@@ -489,5 +492,89 @@ describe("previewInstances", () => {
 
   it("is empty for a lesson with no notes", () => {
     expect(previewInstances([], 4, 8, SPB, 100, 10)).toEqual([]);
+  });
+});
+
+describe("per-lane figures", () => {
+  /**
+   * The bug the first version had: it read the surviving instances at the end
+   * of the run, and `pruneBefore` had long since dropped every earlier repeat —
+   * so it described the last few repeats, not the run.
+   */
+  it("covers the whole run, including repeats that were pruned away", () => {
+    const s = new Scorer(targets);
+    s.spawnLoop(0, timeOf);
+    s.hit(12, 10);
+    s.hit(12, 10.5);
+    s.sweepMisses(11.5); // lane 13's note in loop 0 goes by unplayed
+    s.spawnLoop(1, timeOf);
+    s.hit(12, 12);
+    s.hit(12, 12.5);
+    s.hit(13, 13);
+    s.pruneBefore(1);
+
+    const byLane = new Map(s.laneStats().map((l) => [l.lane, l]));
+    expect(byLane.get(12)).toMatchObject({ accuracy: 1, total: 4 });
+    // One miss and one perfect across the run — not the perfect alone.
+    expect(byLane.get(13)).toMatchObject({ accuracy: 0.5, total: 2 });
+  });
+
+  it("weights a lane the way the run is weighted", () => {
+    const s = new Scorer(targets);
+    s.spawnLoop(0, timeOf);
+    s.hit(12, 10.045); // great
+    s.hit(12, 10.58); // late
+    const l12 = s.laneStats().find((l) => l.lane === 12)!;
+    expect(l12.accuracy).toBeCloseTo((0.75 + 0.4) / 2);
+    expect(l12.late).toBe(1);
+    expect(l12.early).toBe(0);
+  });
+
+  it("leaves wrong notes out of every lane, as they are left out of the tally", () => {
+    const s = new Scorer(targets);
+    s.spawnLoop(0, timeOf);
+    s.hit(12, 10);
+    expect(s.hit(40, 10.2).kind).toBe("wrong");
+    const lanes = s.laneStats().map((l) => l.lane);
+    expect(lanes).toEqual([12]);
+    expect(s.laneStats()[0].accuracy).toBe(1);
+  });
+});
+
+describe("weakestLanes", () => {
+  const stat = (lane: number, accuracy: number, early = 0, late = 0, total = 10): LaneStat => ({
+    lane,
+    accuracy,
+    early,
+    late,
+    total,
+  });
+
+  it("names the weakest three, lowest first, with the side each leant to", () => {
+    const got = weakestLanes([
+      stat(3, 0.83, 2, 2),
+      stat(1, 0.64, 1, 5),
+      stat(4, 0.9),
+      stat(2, 0.76, 4, 1),
+    ]);
+    expect(WEAKEST_LANES).toBe(3);
+    expect(got.map((l) => [l.lane, l.drift])).toEqual([
+      [1, "late"],
+      [2, "early"],
+      [3, null],
+    ]);
+  });
+
+  it("has nothing to show for a clean run", () => {
+    expect(weakestLanes([stat(1, 1), stat(2, 1)])).toEqual([]);
+  });
+
+  it("leaves out a lane that reads 100, judged on the number shown", () => {
+    expect(weakestLanes([stat(1, 0.996), stat(2, 0.994)]).map((l) => l.lane)).toEqual([2]);
+  });
+
+  it("breaks a tie toward the lane with more notes, then the lower lane", () => {
+    const got = weakestLanes([stat(5, 0.7, 0, 0, 4), stat(2, 0.7, 0, 0, 12), stat(1, 0.7, 0, 0, 4)]);
+    expect(got.map((l) => l.lane)).toEqual([2, 1, 5]);
   });
 });

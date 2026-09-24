@@ -167,7 +167,8 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   whether you are getting better at *this part* is still the question. (It
   replaced the chart at first.) Both together make the sheet 558px, measured
   inside the 1050×620 window floor with 31px to spare — the smallest room it
-  gets — so anything added to it has to be measured there again. A tile is
+  gets — so anything added to it has to be measured there again (the weakest
+  lanes were: 512px with them, since they sit beside the chart). A tile is
   about a fifth of the sheet, which is why the just-played one reads
   `JUST PASSED`: `PASSED · THIS RUN` was cut off. Completing a section
   (`PART C COMPLETE`, or `SONG COMPLETE` for the last one, whichever that is)
@@ -328,6 +329,26 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   run lands — and that is accepted, not overlooked. It also retires the
   label-collision rule: `THIS RUN` is now always hard right, so the centred
   attempt count can never be pushed aside.
+- **Weakest lanes are back, beside the history chart** — the user missed
+  them after handoff 09 took them out, and chose this layout from three drawn
+  (as it was, above the chart; beside it; one line under the legend). Up to
+  `WEAKEST_LANES` (3), lowest first, each with the lane's own dimmed hue
+  (`hueOf` at its place in `hueOrder`, so it reads as that lane), its name,
+  its accuracy as a bar and a number, and which way it leant — `EARLY`/`LATE`
+  in the rating's colour, `—` when neither. A lane reading 100 is left out,
+  judged on the number shown like `passes`; a clean run has none, and then
+  the chart keeps the **whole width, exactly as before**.
+  **The figures are the whole run's.** `Scorer.laneStats` is counted as notes
+  resolve (`countLane`, beside `counts`, in `hit` and `sweepMisses`). The
+  first version read the surviving instances at the end, and `pruneBefore`
+  had dropped every earlier repeat — it described the last few repeats, not
+  the run; `tests/scoring.test.ts` pins the pruned case. Wrong notes are in no
+  lane's figure, for the reason they are outside `tally`.
+  **The trade the user accepted**: beside the lanes the chart has about 336px
+  instead of 572 and its type shrinks with it. What it buys is height — the
+  pair is *shorter* than the chart alone — so a song part's summary with
+  lanes is 512px, inside the 1050×620 floor with 54px spare. Option A, the
+  old block above the chart, measured 669px there and did not fit.
 - **The chart's numbers are on hover, not stamped on it.** Every dot has a
   transparent 12px target — a 3px circle is not a pointer target — and hovering
   one names its score below the dot. The **BEST flag is hover-only too**, over

@@ -30,7 +30,9 @@ import {
   lessonRepeats,
   visibleLoopSpan,
   previewInstances,
+  weakestLanes,
   type NoteInstance,
+  type WeakLane,
 } from "@/engine/scoring";
 import { AdvanceTracker } from "@/engine/adaptive";
 import { HostClock } from "@/engine/host-clock";
@@ -150,6 +152,11 @@ export function useTrainer(
     attempts: readonly number[];
     /** Where this run left its song, when the lesson is a step of one. */
     step: StepReport | null;
+    /**
+     * The lanes that need work most, over the whole run, each with its place
+     * in `hueOrder` so the summary paints it the colour it wears on the lane.
+     */
+    lanes: (WeakLane & { hue: number })[];
   } | null>(null);
   const accuracy = ref(100);
   const combo = ref(0);
@@ -1190,6 +1197,10 @@ export function useTrainer(
       wrong: scorer.wrongCount,
       attempts: [...history.attempts(lesson.value.id)],
       step,
+      lanes: weakestLanes(scorer.laneStats()).map((l) => ({
+        ...l,
+        hue: Math.max(0, (isPiano.value ? lessonPitches.value : lanes.value).indexOf(l.lane)),
+      })),
     };
 
     transport.stop();
