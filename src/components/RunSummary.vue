@@ -53,9 +53,9 @@ const props = defineProps<{
   /** Every attempt at this lesson, oldest first, this run last. */
   attempts: readonly number[];
   /**
-   * Where the run left its song, when the lesson is a step of one. Present, it
-   * takes the run-history chart's place: inside a song the question is not
-   * "am I getting better" but "can I move on".
+   * Where the run left its song, when the lesson is a step of one. Present,
+   * the song's progress is shown under the run-history chart — which a section
+   * keeps, being a lesson with a history of its own.
    */
   step?: StepReport | null;
   /** The lesson's own tempo — the one a step has to be passed at. */
@@ -269,19 +269,10 @@ const chartLabel = computed(() => {
         </div>
       </div>
 
-      <!-- A section of a song: where the song stands replaces the history. -->
-      <SongProgress
-        v-if="song"
-        :steps="song.steps"
-        :passed-count="song.passedCount"
-        :suggested="song.suggested"
-        :played="song.index"
-        :just-passed="song.justPassed"
-        @step="(id) => emit('step', id)"
-      />
-
-      <!-- Handoff 09: run history replaces weakest lanes. -->
-      <div v-else class="history">
+      <!-- Handoff 09: run history replaces weakest lanes. A section of a song
+           keeps it too: every section is a lesson with a history of its own,
+           and "am I getting better at this part" is still the question. -->
+      <div class="history">
         <div class="hhead">
           <span class="ttl">RUN HISTORY</span>
           <b class="hscore num">{{ score }}%</b>
@@ -386,6 +377,17 @@ const chartLabel = computed(() => {
           <span class="hnow" :style="{ left: nowLeft }">THIS RUN</span>
         </div>
       </div>
+
+      <!-- A section of a song: where the song stands, under the history. -->
+      <SongProgress
+        v-if="song"
+        :steps="song.steps"
+        :passed-count="song.passedCount"
+        :suggested="song.suggested"
+        :played="song.index"
+        :just-passed="song.justPassed"
+        @step="(id) => emit('step', id)"
+      />
 
       <div class="actions">
         <!-- In a song, moving on is always on offer — nothing is locked. It is

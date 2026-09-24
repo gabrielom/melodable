@@ -30,9 +30,13 @@ const sentence = (label: string) =>
     .map((w, i) => (w.length === 1 ? w : i === 0 ? w[0] + w.slice(1).toLowerCase() : w.toLowerCase()))
     .join(" ");
 
-/** Under a tile: complete or not, and how far off the mark if it was tried. */
+/**
+ * Under a tile: complete or not, and how far off the mark if it was tried.
+ * `JUST PASSED` rather than "PASSED · THIS RUN": a tile is a fifth of the
+ * sheet, and the longer one was cut off — the ✓ chip already says passed.
+ */
 function note(t: Step, i: number): string {
-  if (t.state === "passed") return i === props.played && props.justPassed ? "PASSED · THIS RUN" : "PASSED";
+  if (t.state === "passed") return i === props.played && props.justPassed ? "JUST PASSED" : "PASSED";
   if (t.best !== null) return `${pointsToGo(t.best)} TO GO`;
   return i === props.suggested ? "UP NEXT" : "NOT PLAYED";
 }

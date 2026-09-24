@@ -162,7 +162,14 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   it opens the song's picker.
   Progress is shown in the two lightboxes and nowhere else. The bar's
   `LESSONS` figure counts cards, so a song once. In the summary `SONG
-  PROGRESS` **replaces** the run-history chart, and completing a section
+  PROGRESS` sits **under** the run-history chart, never in place of it — the
+  user's rule: every section is a lesson with a history of its own, and
+  whether you are getting better at *this part* is still the question. (It
+  replaced the chart at first.) Both together make the sheet 558px, measured
+  inside the 1050×620 window floor with 31px to spare — the smallest room it
+  gets — so anything added to it has to be measured there again. A tile is
+  about a fifth of the sheet, which is why the just-played one reads
+  `JUST PASSED`: `PASSED · THIS RUN` was cut off. Completing a section
   (`PART C COMPLETE`, or `SONG COMPLETE` for the last one, whichever that is)
   outranks `NEW BEST` in the header. **`NEXT` is always on offer**: the main
   button once this section is complete, and beside `RUN … AGAIN` until then.
