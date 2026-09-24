@@ -954,6 +954,21 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   always. That costs a returning player a guide level they never actually
   used, which is the price of not surprising them with sound.
 - **Home-bar-only controls**: the instrument switch, the Ableton Link toggle, the import button and the **MIDI device chip**. All four are decisions made *before* a run — what to play, what is plugged in, what is in the library — and the trainer bar is the one that is tight for width. Link stays joined once you start; there is simply no toggle mid-run, and the device is the same. The chip was the last one still drawn in both bars, which the Link toggle's own comment had already argued against. The connection is untouched by the move: it lives in Tauri state (invariant 5) and the port stays open across the screen change. Its LED goes with it, so **the trainer no longer reports whether a device is connected** — a run you can hear is the same fact, and the monitor is there for the detail. `openMenu` is cleared on any view change, because half the bar's menus belong to one screen and the flag also lifts the bar and suppresses every tooltip while it is set.
+- **The MIDI device is remembered by name and reopened at launch.**
+  `settings.midiDevice` holds the port picked from the menu — by name, since
+  an index is only a position in today's list. `portToOpen`
+  (`engine/midi-port.ts`) is the rule: the remembered name if it is present;
+  nothing at all after Disconnect (`null`), which is a request and must not be
+  undone behind the player's back; otherwise, and on first run, the first port
+  that is not a controller's **DAW port**. A Launchkey lists two — MIDI (keys,
+  pads, wheels) and DAW (the control-surface conversation with Live or Logic)
+  — and only the first is playing. An automatic pick is never written back, so
+  a remembered device that is unplugged today still wins when it returns.
+  While nothing is open, `autoConnect` rescans quietly every 3s, which is what
+  catches a controller plugged in after launch; it stops once a port is open.
+  **Not handled**: a device unplugged *while* open — midir reports nothing,
+  the connection stays in `MidiState` looking alive, and re-plugging needs a
+  pick from the menu.
 - **The computer keyboard is a piano, and a text field outranks it.**
   `PIANO_KEY_MAP` claims fifteen letters (`a`-`l` on the home row, the black
   keys above) on a **window-wide** listener, and its `preventDefault` swallows

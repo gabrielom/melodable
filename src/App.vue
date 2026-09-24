@@ -34,6 +34,8 @@ import RunSummary from "@/components/RunSummary.vue";
 import SongLightbox from "@/components/SongLightbox.vue";
 import { openingStep, songState } from "@/engine/course";
 import type { LessonEdit } from "@/engine/lesson-edit";
+import { portToOpen } from "@/engine/midi-port";
+import { isTauri } from "@/composables/useMidi";
 import type { LogRow } from "@/components/midi-log";
 import PianoKeyboard from "@/views/piano/PianoKeyboard.vue";
 import BarTooltip from "@/components/BarTooltip.vue";
@@ -700,6 +702,55 @@ const {
   disconnect,
 } = useMidi(onMidiMessage);
 
+/**
+ * Pick a device from the menu: open it and remember it by name, so the next
+ * launch reopens it — `tauri dev` rebuilds leave the Tauri store alone, so
+ * this survives every rebuild as well.
+ */
+async function pickDevice(i: number): Promise<void> {
+  await connect(i);
+  if (connectedIndex.value === i) settings.midiDevice = connectedName.value;
+}
+
+/** Disconnect by hand, and stop reopening anything until a device is picked. */
+async function dropDevice(): Promise<void> {
+  await disconnect();
+  settings.midiDevice = null;
+}
+
+/**
+ * Reopen the remembered device, or on first run take the controller that is
+ * plugged in (`portToOpen`). Runs once the settings are in and then every few
+ * seconds while nothing is open, which is what catches a controller plugged
+ * in after launch. It stops asking the moment a port is open.
+ */
+let autoConnecting = false;
+async function autoConnect(): Promise<void> {
+  // Its own guard rather than `midiBusy`: the menu's scan on mount sets that,
+  // and backing off for it made launch wait a whole scan interval.
+  if (autoConnecting || !settings.hydrated || connectedIndex.value !== null) return;
+  if (settings.midiDevice === null) return;
+  autoConnecting = true;
+  try {
+    await refreshPorts(true);
+    const i = portToOpen(ports.value, settings.midiDevice);
+    if (i !== null && connectedIndex.value === null) await connect(i);
+  } finally {
+    autoConnecting = false;
+  }
+}
+const DEVICE_SCAN_MS = 3000;
+let deviceScan: ReturnType<typeof setInterval> | null = null;
+watch(
+  () => settings.hydrated,
+  (ready) => {
+    if (!ready || !isTauri() || deviceScan) return;
+    void autoConnect();
+    deviceScan = setInterval(() => void autoConnect(), DEVICE_SCAN_MS);
+  },
+  { immediate: true },
+);
+
 // ------------------------------------------------------- computer keyboard
 
 const heldKeys = new Set<string>();
@@ -885,6 +936,7 @@ onUnmounted(() => {
   window.removeEventListener("keydown", onKeyDown);
   window.removeEventListener("keyup", onKeyUp);
   document.removeEventListener("pointerdown", onPadMenuPointer);
+  if (deviceScan) clearInterval(deviceScan);
 });
 
 // -------------------------------------------------------------------- misc
@@ -1406,8 +1458,8 @@ watch(
         :busy="midiBusy"
         :error="midiError"
         @refresh="refreshPorts()"
-        @connect="(i: number) => connect(i)"
-        @disconnect="disconnect()"
+        @connect="(i: number) => pickDevice(i)"
+        @disconnect="dropDevice()"
         @toggle="toggleMenu('device')"
         @close="openMenu = null"
       />

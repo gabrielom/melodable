@@ -92,6 +92,8 @@ interface SettingsSnapshot {
   pianoLow: number;
   pianoHigh: number;
   latencyMs: number;
+  /** The MIDI input picked by hand, by name; null after Disconnect. */
+  midiDevice?: string | null;
 }
 
 /** The OS preference, used until the player picks a side themselves. */
@@ -200,6 +202,14 @@ export const useSettings = defineStore("settings", () => {
    */
   const latencyMs = ref(0);
 
+  /**
+   * The MIDI input the player last picked, remembered by name so launch can
+   * reopen it (`engine/midi-port.ts` has the rule). `undefined` is "never
+   * chosen", `null` is "pressed Disconnect" — two different answers to
+   * whether to open anything by ourselves.
+   */
+  const midiDevice = ref<string | null | undefined>(undefined);
+
   /** True once persisted values have been loaded (or confirmed absent). */
   const hydrated = ref(false);
 
@@ -245,6 +255,7 @@ export const useSettings = defineStore("settings", () => {
       if (typeof saved.pianoLow === "number") pianoLow.value = saved.pianoLow;
       if (typeof saved.pianoHigh === "number") pianoHigh.value = saved.pianoHigh;
       if (typeof saved.latencyMs === "number") latencyMs.value = clampLatency(saved.latencyMs);
+      if (typeof saved.midiDevice === "string" || saved.midiDevice === null) midiDevice.value = saved.midiDevice;
     }
     hydrated.value = true;
   });
@@ -252,7 +263,7 @@ export const useSettings = defineStore("settings", () => {
   // Persist on change. Guarded so the async hydrate above doesn't get
   // clobbered by an initial write before it lands.
   watch(
-    [theme, volNotes, volGuide, volMetronome, soundOutput, monitorOpen, padLayout, laneOrientation, laneMode, colourMode, noteLabel, keyOverride, pianoLow, pianoHigh, latencyMs],
+    [theme, volNotes, volGuide, volMetronome, soundOutput, monitorOpen, padLayout, laneOrientation, laneMode, colourMode, noteLabel, keyOverride, pianoLow, pianoHigh, latencyMs, midiDevice],
     () => {
     if (!hydrated.value) return;
     void persistSet("settings", {
@@ -271,6 +282,7 @@ export const useSettings = defineStore("settings", () => {
       pianoLow: pianoLow.value,
       pianoHigh: pianoHigh.value,
       latencyMs: latencyMs.value,
+      midiDevice: midiDevice.value,
     } satisfies SettingsSnapshot);
     },
   );
@@ -292,6 +304,7 @@ export const useSettings = defineStore("settings", () => {
     pianoLow,
     pianoHigh,
     latencyMs,
+    midiDevice,
     hydrated,
     setInstrument,
   };

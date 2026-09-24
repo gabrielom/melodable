@@ -31,21 +31,31 @@ export function useMidi(onMessage: (m: MidiMessage) => void) {
     return { invoke, listen };
   }
 
-  async function refreshPorts(): Promise<void> {
-    error.value = "";
+  /**
+   * `quiet` is the background scan that waits for a device to be plugged in:
+   * it leaves `busy` and `error` alone, so an open menu doesn't flicker to
+   * "scanning…" every few seconds or lose an error the player is reading.
+   */
+  async function refreshPorts(quiet = false): Promise<void> {
+    if (!quiet) error.value = "";
     if (!isTauri()) {
       ports.value = [];
-      error.value = "Run inside Tauri (npm run tauri dev) to see MIDI devices.";
+      if (!quiet) error.value = "Run inside Tauri (npm run tauri dev) to see MIDI devices.";
       return;
     }
     try {
-      busy.value = true;
+      if (!quiet) busy.value = true;
       const { invoke } = await api();
-      ports.value = await invoke<string[]>("list_midi_ports");
+      const next = await invoke<string[]>("list_midi_ports");
+      // Same list, same array: nothing downstream re-renders for a scan
+      // that found what was already there.
+      if (next.length !== ports.value.length || next.some((p, i) => p !== ports.value[i])) {
+        ports.value = next;
+      }
     } catch (e) {
-      error.value = String(e);
+      if (!quiet) error.value = String(e);
     } finally {
-      busy.value = false;
+      if (!quiet) busy.value = false;
     }
   }
 
