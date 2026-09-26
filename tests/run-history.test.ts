@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   AXIS_Y,
   BADGE,
+  FOOT_Y,
+  LANES,
+  PLOT_END,
   TIP,
   VIEW,
   badgeAt,
+  chipRight,
   historyChart,
+  laneBars,
   stepFor,
   tipAt,
   xOf,
@@ -17,19 +22,33 @@ import {
 const CAP = 40;
 
 describe("run-history geometry", () => {
-  it("maps accuracy onto the design's plot band", () => {
-    expect(yOf(0)).toBe(142);
-    expect(yOf(1)).toBe(32);
-    expect(yOf(0.5)).toBeCloseTo(87, 9);
+  it("maps accuracy onto the design's plot band: y = 132 − 1.1v", () => {
+    expect(yOf(0)).toBe(132);
+    expect(yOf(1)).toBe(22);
+    expect(yOf(0.5)).toBeCloseTo(77, 9);
   });
 
   it("clamps a value outside 0..1 rather than drawing off the chart", () => {
-    expect(yOf(-1)).toBe(142);
-    expect(yOf(3)).toBe(32);
+    expect(yOf(-1)).toBe(132);
+    expect(yOf(3)).toBe(22);
   });
 
-  it("keeps the plot clear of the axis rule", () => {
+  it("keeps the plot clear of the axis rule, and the rule clear of the footer", () => {
     expect(yOf(0)).toBeLessThan(AXIS_Y);
+    expect(AXIS_Y).toBeLessThan(FOOT_Y);
+    expect(FOOT_Y).toBeLessThan(VIEW.h);
+  });
+
+  it("stops the plot short of the lanes, and only its end moves", () => {
+    for (const n of [2, 7, 28]) {
+      expect(xOf(0, n, PLOT_END.withLanes)).toBe(26);
+      expect(xOf(n - 1, n, PLOT_END.withLanes)).toBeCloseTo(424, 9);
+    }
+    const c = historyChart([0.5, 0.6, 0.72], PLOT_END.withLanes);
+    expect(c.current!.x).toBeCloseTo(424, 9);
+    expect(c.x1).toBe(424);
+    // The scale is the same either way: a score sits at one height.
+    expect(c.current!.y).toBe(historyChart([0.5, 0.6, 0.72]).current!.y);
   });
 
   it("spans the gutter to the right edge, whatever the count", () => {
@@ -225,8 +244,53 @@ describe("the hovered score's chip", () => {
     }
   });
 
+  it("keeps both chips out of the lanes' column when the lanes are shown", () => {
+    const right = chipRight(PLOT_END.withLanes);
+    expect(right).toBeLessThan(LANES.divider);
+    const c = historyChart([0.4, 0.5, 0.6], PLOT_END.withLanes);
+    for (const point of c.points) {
+      expect(tipAt(point, right).x + TIP.w).toBeLessThanOrEqual(right);
+      expect(badgeAt(point, right).x + BADGE.w).toBeLessThanOrEqual(right);
+    }
+    // Without lanes the whole figure is theirs.
+    expect(chipRight(PLOT_END.full)).toBe(VIEW.w);
+  });
+
+  it("flips above the footer rather than covering it", () => {
+    for (let pct = 0; pct <= 100; pct++) {
+      const tip = tipAt(historyChart([0, pct / 100]).points[1]);
+      if (!tip.flipped) expect(tip.y + TIP.h).toBeLessThan(FOOT_Y - 7.5);
+    }
+  });
+
   it("centres on the dot when there is room", () => {
     const point = historyChart([0.4, 0.5, 0.6]).points[1];
     expect(tipAt(point).x + TIP.w / 2).toBeCloseTo(point.x);
+  });
+});
+
+describe("the weakest lanes on the history's axis", () => {
+  it("stands a lane exactly as high as a run of the same score", () => {
+    // Handoff 14's own frame: E4 at 64, G4 at 76, C5 at 83.
+    const bars = laneBars([{ accuracy: 0.64 }, { accuracy: 0.76 }, { accuracy: 0.83 }]);
+    expect(bars.map((b) => b.x)).toEqual([468, 522, 576]);
+    expect(bars[0].y).toBeCloseTo(61.6, 9);
+    expect(bars[0].h).toBeCloseTo(70.4, 9);
+    expect(bars[2].y).toBeCloseTo(40.7, 9);
+    for (const [i, a] of [0.64, 0.76, 0.83].entries()) {
+      expect(bars[i].y).toBeCloseTo(yOf(a), 9);
+      expect(bars[i].y + bars[i].h).toBeCloseTo(yOf(0), 9);
+    }
+  });
+
+  it("keeps three bars inside the lanes' column", () => {
+    const bars = laneBars([{ accuracy: 0.1 }, { accuracy: 0.5 }, { accuracy: 0.99 }]);
+    for (const b of bars) {
+      expect(b.x).toBeGreaterThanOrEqual(LANES.x0);
+      expect(b.x + LANES.barW).toBeLessThanOrEqual(LANES.x1);
+      expect(b.cx).toBeCloseTo(b.x + LANES.barW / 2, 9);
+    }
+    expect(LANES.divider).toBeGreaterThan(PLOT_END.withLanes);
+    expect(LANES.divider).toBeLessThan(LANES.x0);
   });
 });

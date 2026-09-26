@@ -32,7 +32,9 @@ import { keyName } from "@/engine/notation";
 import { chordName, diatonicTriad, romanOf } from "@/engine/harmony";
 import RunSummary from "@/components/RunSummary.vue";
 import SongLightbox from "@/components/SongLightbox.vue";
+import KeyMenu from "@/components/KeyMenu.vue";
 import { openingStep, songState } from "@/engine/course";
+import { lessonRepeats } from "@/engine/scoring";
 import type { LessonEdit } from "@/engine/lesson-edit";
 import { portToOpen } from "@/engine/midi-port";
 import { isTauri } from "@/composables/useMidi";
@@ -67,6 +69,22 @@ const songMenu = ref<string | null>(null);
 const songMenuState = computed(() => {
   const c = courses.courses.find((x) => x.id === songMenu.value);
   return c ? songState(c, courses.progressOf(c.id)) : null;
+});
+/** How many sections of each song are complete — edit mode names it on the card. */
+const songsComplete = computed<Record<string, number>>(() =>
+  Object.fromEntries(
+    courses.courses.map((c) => [c.id, songState(c, courses.progressOf(c.id)).passedCount]),
+  ),
+);
+
+/** Each section's run length and tempo, for the picker's rows and meta line. */
+const songMenuSections = computed(() => {
+  const c = courses.courses.find((x) => x.id === songMenu.value);
+  if (!c) return [];
+  return c.lessonIds.map((id) => {
+    const l = lessons.lessons.find((x) => x.id === id);
+    return l ? { bars: l.bars * lessonRepeats(l), bpm: l.bpm } : { bars: 0, bpm: 0 };
+  });
 });
 
 function openSong(courseId: string) {
@@ -858,7 +876,8 @@ function onKeyUp(e: KeyboardEvent) {
 
 // ------------------------------------------------------------------- theme
 /**
- * The key the trainer is reading in, and the list the chip offers.
+ * The key the trainer is reading in. The list the chip offers is `KeyMenu`,
+ * shared with the piano cards in edit mode.
  *
  * "Auto" is first and is the resting state: the key is read off the lesson's
  * own notes, which is right nearly always. The override exists because a clip
@@ -869,7 +888,6 @@ function onKeyUp(e: KeyboardEvent) {
  * which of the two a lesson is in is a teaching decision the frames do not
  * make — handoff 11 leaves it open.
  */
-const KEY_CHOICES = Array.from({ length: 15 }, (_, i) => i - 7);
 const keyLabel = computed(() => keyName(keyFifths.value));
 /**
  * The three states, and the icon each one samples (handoff 12 §2).
@@ -1169,29 +1187,12 @@ watch(
             <b>{{ keyLabel }}</b>
             <i class="caret">{{ openMenu === "key" ? "\u25b4" : "\u25be" }}</i>
           </button>
-          <div v-if="openMenu === 'key'" class="menu key-menu" role="menu" data-tauri-drag-region="false">
-            <div class="menu-head">KEY</div>
-            <button
-              class="menu-row"
-              :class="{ on: settings.keyOverride === null }"
-              role="menuitemradio"
-              :aria-checked="settings.keyOverride === null"
-              @click="pickKey(null)"
-            >
-              AUTO<i>{{ keyName(keyFifths) }}</i>
-            </button>
-            <button
-              v-for="f in KEY_CHOICES"
-              :key="f"
-              class="menu-row"
-              :class="{ on: settings.keyOverride === f }"
-              role="menuitemradio"
-              :aria-checked="settings.keyOverride === f"
-              @click="pickKey(f)"
-            >
-              {{ keyName(f) }}<i>{{ f === 0 ? "\u2014" : `${Math.abs(f)} ${f > 0 ? "\u266f" : "\u266d"}` }}</i>
-            </button>
-          </div>
+          <KeyMenu
+            v-if="openMenu === 'key'"
+            :value="settings.keyOverride"
+            :auto="keyFifths"
+            @pick="pickKey"
+          />
         </span>
 
         <!-- `DEGREE` in full, not `DEG` (handoff 12 §5): it was the one
@@ -1652,6 +1653,7 @@ watch(
         :lessons="lessons.lessons"
         :current-index="lessons.currentIndex"
         :courses="courses.courses"
+        :complete="songsComplete"
         :editing="editing"
         @open="openLesson"
         @open-song="openSong"
@@ -1743,6 +1745,7 @@ watch(
       v-if="songMenuState && view === 'trainer' && !runComplete"
       :song="songMenuState"
       :instrument="lesson.instrument"
+      :sections="songMenuSections"
       @step="playStep"
       @lessons="goHome"
     />

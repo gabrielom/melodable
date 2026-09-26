@@ -146,6 +146,27 @@
   /* Overview strip's viewport rectangle — neutral, never the accent. */
   --view-fill: #1b1b1d;
   --view-edge: #4a4a4e;
+  /* Handoff 14's song and summary chrome. DOM-only, like `--led*`, so not
+     mirrored in theme.ts — no canvas draws any of these. */
+  --scrim: #000000cc;
+  /* Best-bar tracks and row separators: the elapsed lane's own dark. */
+  --bed: var(--elapsed);
+  /* Ink on an --led1 fill (the pick stamps). */
+  --on-led1: #2a1a02;
+  /* A complete section's mark — stepper dots, stepper fill, passed best-bars.
+     Light grey in dark, not the on-chip: a 2px line in #2e2e30 vanishes into
+     the sheet. */
+  --mark: #b4b5b9;
+  --mark-ink: #141415;
+  /* To-do rings, dashed pick slots, chart axes and the lanes' zero line. */
+  --todo: #4a4c51;
+  --chart-line: #5c5e64;
+  --chart-grid: #ffffff10;
+  /* The NEW BEST flag: the indigo from the fourteen hues, so it is neither a
+     rating nor a song flag. Same value as the dark `indigo` in theme.ts's `HUE_FULL`. */
+  --flag-best: #7079e0;
+  /* The one filled field on home: edit mode's song-name box. */
+  --field-fill: #141415;
 
   --hover: #232324;
 
@@ -198,6 +219,16 @@
   --swatch-off: #74757a;
   --view-fill: #d4d4d4;
   --view-edge: #8f8f8f;
+  --scrim: #9a9a9acc;
+  --bed: var(--elapsed);
+  --on-led1: #f7f2e8;
+  --mark: #2c2d2e;
+  --mark-ink: #e9e9ea;
+  --todo: #9a9ca1;
+  --chart-line: #8f9196;
+  --chart-grid: #00000014;
+  --flag-best: #43489c;
+  --field-fill: #d4d4d4;
 
   --hover: #c4c4c4;
 

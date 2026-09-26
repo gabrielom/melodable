@@ -1,13 +1,16 @@
 <script setup lang="ts">
 /**
- * A song's sections as a row of tiles: each one's best qualifying run against
- * the 80% mark, and a way into it. Shared by the section picker a song opens
- * on and by the run summary, which shows it in place of the history chart —
- * so both say the same thing about the song in the same shapes.
+ * A song's sections as a stepper, under the run summary's history chart
+ * (handoff 14, 11i). One node per section in the song's order — a dot, its
+ * positional label, its best qualifying run — on a track filled as far as the
+ * section the song suggests next.
  *
- * **Every tile is a way in.** Nothing is locked; a section is complete once a
- * run at its own tempo reaches the mark, and still to do until then.
+ * **Every node is a way in.** Nothing is locked; a section is complete once a
+ * run at its own tempo reaches the mark, and still to do until then. The
+ * section picker says the same things as a list (`SongLightbox`), in the same
+ * three states.
  */
+import { computed } from "vue";
 import { pointsToGo, type Step } from "@/engine/course";
 
 const props = defineProps<{
@@ -15,7 +18,7 @@ const props = defineProps<{
   passedCount: number;
   /** The section offered next — ringed. Null once every section is complete. */
   suggested: number | null;
-  /** The section just played, when this follows a run. */
+  /** The section just played. */
   played?: number | null;
   /** That run is what completed it. */
   justPassed?: boolean;
@@ -31,49 +34,53 @@ const sentence = (label: string) =>
     .join(" ");
 
 /**
- * Under a tile: complete or not, and how far off the mark if it was tried.
- * `JUST PASSED` rather than "PASSED · THIS RUN": a tile is a fifth of the
- * sheet, and the longer one was cut off — the ✓ chip already says passed.
+ * The track runs centre to centre; the fill from the first centre to the
+ * suggested section's, or to the last once there is nothing left to suggest.
  */
-function note(t: Step, i: number): string {
-  if (t.state === "passed") return i === props.played && props.justPassed ? "JUST PASSED" : "PASSED";
-  if (t.best !== null) return `${pointsToGo(t.best)} TO GO`;
-  return i === props.suggested ? "UP NEXT" : "NOT PLAYED";
+const n = computed(() => props.steps.length);
+const track = computed(() => {
+  const edge = 50 / n.value;
+  const to = props.suggested ?? n.value - 1;
+  return { edge: `${edge}%`, fill: `${(to * 100) / n.value}%` };
+});
+
+type Status = { text: string; tone: "quiet" | "ink" | "mark" };
+function status(t: Step, i: number): Status {
+  if (t.state === "passed") {
+    return i === props.played && props.justPassed
+      ? { text: "JUST PASSED", tone: "ink" }
+      : { text: "PASSED", tone: "quiet" };
+  }
+  if (t.best !== null) return { text: `${pointsToGo(t.best)} TO GO`, tone: "mark" };
+  return { text: "NOT PLAYED", tone: "quiet" };
 }
 </script>
 
 <template>
   <div class="song">
-    <div class="hhead">
+    <div class="shead">
       <span class="ttl">SONG PROGRESS</span>
-      <b class="hscore num">{{ passedCount }} / {{ steps.length }}</b>
+      <span class="key"><i />80% AT FULL TEMPO COMPLETES A PART</span>
+      <b class="count num">{{ passedCount }} / {{ steps.length }}</b>
     </div>
-    <div class="tiles">
+    <div class="stepper" :style="{ gridTemplateColumns: `repeat(${steps.length}, 1fr)` }">
+      <i class="track" :style="{ left: track.edge, right: track.edge }" />
+      <i class="fill" :style="{ left: track.edge, width: track.fill }" />
       <button
         v-for="(t, i) in steps"
         :key="t.lessonId"
-        class="tile"
+        class="node"
         :class="[t.state, { next: i === suggested }]"
         :aria-label="`Play ${sentence(t.label)}`"
         @click="emit('step', t.lessonId)"
       >
-        <span class="chip" :class="[t.state, { next: i === suggested }]">
-          {{ t.state === "passed" ? "✓ " : "" }}{{ t.label }}
+        <span class="dot">{{ t.state === "passed" ? "✓" : "" }}</span>
+        <span class="label">{{ t.label }}</span>
+        <span class="result">
+          <b class="pct num" :class="{ none: t.best === null }">{{ t.best === null ? "—" : `${Math.round(t.best * 100)}%` }}</b>
+          <span class="status" :class="status(t, i).tone">{{ status(t, i).text }}</span>
         </span>
-        <b class="pct num">
-          <template v-if="t.best === null">—</template>
-          <template v-else>{{ Math.round(t.best * 100) }}<i>%</i></template>
-        </b>
-        <span class="meter">
-          <i v-if="t.best !== null" :style="{ width: `${t.best * 100}%` }" />
-          <em />
-        </span>
-        <span class="note">{{ note(t, i) }}</span>
       </button>
-    </div>
-    <div class="sfoot">
-      <span class="mark"><i />80% MARKS A PART COMPLETE</span>
-      <span>BEST RUN AT FULL TEMPO</span>
     </div>
   </div>
 </template>
@@ -82,12 +89,11 @@ function note(t: Step, i: number): string {
 /*
  * Two states and a suggestion, and none of them is a rating colour: green,
  * blue and red judge a *run*, and a complete section wearing green would read
- * as one. So they borrow the app's own conventions — complete inverts to the
- * dark chip, the suggested section wears the amber ring the home screen puts
- * on the card you are on, and the rest are the plain hairline.
+ * as one. Complete is the solid mark, the suggestion the amber ring the home
+ * screen puts on the card you are on, the rest the to-do hairline.
  */
-.song { display: flex; flex-direction: column; gap: 8px; }
-.hhead { display: flex; align-items: baseline; justify-content: space-between; }
+.song { display: flex; flex-direction: column; gap: 10px; }
+.shead { display: flex; align-items: center; gap: 10px; }
 .ttl {
   font-family: var(--mono);
   font-size: 8.5px;
@@ -95,74 +101,78 @@ function note(t: Step, i: number): string {
   letter-spacing: 1.1px;
   color: var(--txt3);
 }
-.hscore { font-size: 15px; color: var(--txt); }
+.key {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 7.5px;
+  font-weight: 500;
+  letter-spacing: 0.9px;
+  color: var(--txt3);
+}
+.key i { width: 2px; height: 9px; background: var(--led1); }
+.count { margin-left: auto; font-size: 13px; font-weight: 400; color: var(--txt); }
 
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 6px; }
-.tile {
+.stepper { position: relative; display: grid; }
+.track { position: absolute; top: 7px; height: 1px; background: var(--hair); }
+.fill { position: absolute; top: 6.5px; height: 2px; background: var(--mark); }
+
+.node {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  align-items: center;
+  gap: 5px;
   min-width: 0;
-  padding: 8px 8px 9px;
+  padding: 0 0 2px;
   border: none;
   border-radius: var(--r-field);
   background: none;
-  box-shadow: inset 0 0 0 1px var(--hair);
-  text-align: left;
   font: inherit;
   color: inherit;
   cursor: pointer;
 }
-.tile:hover { background: var(--hover); }
-.tile.next { box-shadow: inset 0 0 0 1.5px var(--led1); }
-.chip {
-  align-self: flex-start;
-  display: inline-flex;
+.node:hover .label { color: var(--txt); text-decoration: underline; text-underline-offset: 2px; }
+
+.dot {
+  width: 15px;
+  height: 15px;
+  display: flex;
   align-items: center;
-  height: 16px;
-  padding: 0 6px;
-  border-radius: 2px;
-  box-shadow: inset 0 0 0 1px var(--hair);
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--gutter);
+  box-shadow: inset 0 0 0 1px var(--todo);
+  transform: scale(0.85);
+  font-size: 8px;
+  line-height: 1;
+  color: var(--mark-ink);
+}
+.node.passed .dot { background: var(--mark); box-shadow: none; transform: none; }
+.node.next .dot { box-shadow: inset 0 0 0 2.5px var(--led1); transform: none; }
+
+.label {
   font-family: var(--mono);
-  font-size: 7.5px;
+  font-size: 8.5px;
   font-weight: 500;
   letter-spacing: 1.1px;
   color: var(--txt2);
   white-space: nowrap;
 }
-.chip.passed { background: var(--active); color: var(--active-txt); box-shadow: none; }
-.chip.next { box-shadow: inset 0 0 0 1.5px var(--led1); color: var(--txt); }
-.pct { font-size: 20px; font-weight: 400; line-height: 1; color: var(--txt); }
-.pct i { margin-left: 1px; font-style: normal; font-size: 10px; color: var(--txt3); }
-/* The bar is the section's best; the amber tick is the mark it has to reach. */
-.meter { position: relative; height: 4px; border-radius: 1px; background: var(--hair); }
-.meter i {
-  position: absolute;
-  inset: 0 auto 0 0;
-  max-width: 100%;
-  border-radius: 1px;
-  background: var(--txt2);
-}
-.tile.passed .meter i { background: var(--txt); }
-.meter em { position: absolute; left: 80%; top: -3px; bottom: -3px; width: 1.5px; background: var(--led1); }
-.note {
+.node.passed .label,
+.node.next .label { color: var(--txt); }
+
+.result { display: flex; align-items: baseline; gap: 5px; white-space: nowrap; }
+.pct { font-size: 11px; font-weight: 400; color: var(--txt); }
+.pct.none { color: var(--txt3); }
+.status {
   font-family: var(--mono);
   font-size: 7.5px;
-  letter-spacing: 1.2px;
-  color: var(--txt3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-weight: 500;
+  letter-spacing: 0.9px;
 }
-.tile.next .note { color: var(--led1); }
-.sfoot {
-  display: flex;
-  justify-content: space-between;
-  font-family: var(--mono);
-  font-size: 7.5px;
-  letter-spacing: 1.2px;
-  color: var(--txt3);
-}
-.sfoot .mark { display: inline-flex; align-items: center; gap: 5px; }
-.sfoot .mark i { width: 1.5px; height: 9px; background: var(--led1); }
+.status.quiet { color: var(--txt3); }
+.status.ink { color: var(--txt); }
+.status.mark { color: var(--led1); }
 </style>

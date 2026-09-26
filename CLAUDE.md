@@ -109,18 +109,21 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   icons' own terms (16-unit box, 1.5 stroke, round ends), and takes the
   standard `.ico.on` chip. With it off, home is pixel-identical to what it was
   before songs existed (checked against the old build side by side). In the
-  mode every card becomes a form — see the next entry — and a lesson card's
-  `+ SONG` chip picks it; once something is picked the head offers a song name
-  and `COMBINE · N`. The order cards are picked in is the order they are
-  learned, and the **last
-  one picked is the full song** — which is why the chips relabel live, the
-  newest pick reading `FULL SONG` until something is picked after it. Labels
-  are positional (`stepLabel`), never read off the lessons' names, because
-  imported clips' names say nothing reliable about which part they are. One
-  song is one instrument, so the other kind greys out after the first pick;
-  a lesson belongs to one song at most. The name follows the last pick until
-  it is typed in. **Not designed** — built in the bar's control language, like
-  the calibration dialog, and it wants drawing.
+  mode every card becomes a form — see the next entry — and a lesson card is
+  picked from the **dashed slot in its top-right corner**; once something is
+  picked the head offers a song name and `COMBINE · N`. The order cards are
+  picked in is the order they are learned, and the **last
+  one picked is the full song** — which is why the picks relabel live: each
+  wears an amber **corner stamp** (`A`–`D`, and `FULL` on the newest) and a
+  `PICK n` / `LAST PICK` tag beside its instrument, and picking another card
+  moves `FULL` to it. Labels are positional (`stepLabel`), never read off the
+  lessons' names, because imported clips' names say nothing reliable about
+  which part they are. One song is one instrument, so the other kind drops to
+  `opacity` 0.42 (0.7 in dark) and loses its slot after the first pick; a
+  lesson belongs to one song at most. The name follows the last pick until it
+  is typed in. **Designed in handoff 14 (11l)**; the corner slot and stamp sit
+  on `z-index: 1` because the instrument row is positioned (it anchors
+  `SPLIT`) and, coming later in the card, otherwise took the slot's clicks.
   The rules are pure in `engine/course.ts`, kept in `stores/courses.ts`
   (`courses` and `courseProgress`, two keys because one is what the player
   built and the other what they did with it). **The trainer, the scorer and
@@ -146,13 +149,22 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   complete — ringed in amber, and what the main buttons offer. Don't bring
   gating back without asking.
   **Opening a song puts its section picker up first** (`SongLightbox`, the
-  user's rule): the trainer loads the suggested section behind it, a tile
-  plays any section, `PLAY <suggestion>` plays that one, `✕ LESSONS` goes
-  home. It comes down when a run starts any way at all — a tile, Space, START
+  user's rule): the trainer loads the suggested section behind it, any row
+  plays its section, `PLAY <suggestion>` plays that one, `✕ LESSONS` goes
+  home. It comes down when a run starts any way at all — a row, Space, START
   behind it — because `watch(playing)` clears `songMenu`; and when the view
-  leaves the trainer. The tiles are one component, `SongProgress`, shared
-  with the run summary, and the picker copies the summary's shell value for
-  value so the two read as one family.
+  leaves the trainer. **Handoff 14 (11m) made it a list**: one 38px row per
+  part — chip, length, best bar with the amber 80% tick, score, status, play
+  mark — and the full song under its own rule, because five tiles already
+  filled the width and rows hold eight or ten without shrinking. The summary
+  says the same things as a stepper (`SongProgress`); the three states and
+  the sheet are shared, so the two read as one family. **Eight sections fit
+  at the 1050×620 floor** (seven parts and the full song, measured); the
+  sheet is capped at `calc(100% - 68px)` so it stays centred clear of the
+  bar, and past that the list scrolls while the header and buttons hold.
+  That cap needs the scrim to be **flex, not grid**: a grid item in an
+  auto-sized track has nothing to resolve a percentage max-height against,
+  and the sheet silently grew past the window.
   On home a song stands where its first step would be and its steps are not
   drawn. **A song's card is its full song's card, unchanged** — no strip, no
   step count, no progress line; that was built and removed at the user's
@@ -165,17 +177,19 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   PROGRESS` sits **under** the run-history chart, never in place of it — the
   user's rule: every section is a lesson with a history of its own, and
   whether you are getting better at *this part* is still the question. (It
-  replaced the chart at first.) Both together make the sheet 558px, measured
-  inside the 1050×620 window floor with 31px to spare — the smallest room it
-  gets — so anything added to it has to be measured there again (the weakest
-  lanes were: 512px with them, since they sit beside the chart). A tile is
-  about a fifth of the sheet, which is why the just-played one reads
-  `JUST PASSED`: `PASSED · THIS RUN` was cut off. Completing a section
+  replaced the chart at first.) Since handoff 14 it is a **stepper**: a dot per
+  section on a track filled as far as the suggestion, the label, the best run
+  and a status (`PASSED`, `JUST PASSED`, `N TO GO` in amber, `NOT PLAYED`).
+  The tallest summary — a song section, three weakest lanes, a full tally —
+  is **531px** at the 1050×620 floor, and `useSheetFit` warns in the dev
+  console the moment a lightbox sheet outgrows the room under the bar, so
+  anything added to it gets measured whether or not anyone remembers to.
+  Completing a section
   (`PART C COMPLETE`, or `SONG COMPLETE` for the last one, whichever that is)
   outranks `NEW BEST` in the header. **`NEXT` is always on offer**: the main
   button once this section is complete, and beside `RUN … AGAIN` until then.
   It selects the next section and plays it, after `nextTick` so the
-  lesson-change reset has run first; any tile plays its section. Inside a song
+  lesson-change reset has run first; any stepper node plays its section. Inside a song
   the library's own auto-advance is off, and outside one `advance` skips over
   steps, which are reached only through their song.
   **Neither the section states nor the flags wear a rating colour**: green
@@ -214,8 +228,20 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   is set, else the key set in edit mode (`authoredKey`), else the one read off
   the notes. The chip stays a global reading preference; the edited key is a
   fact about the material, so it lives on the lesson.
-  **Not designed** — built in the bar's control language, like the
-  calibration dialog, and it wants drawing.
+  **Designed in handoff 14 (11l)**: fields are outline only (no fill, the
+  hairline still required in light), the one filled field on the screen is
+  the head's song-name box, BPM moves to the footer beside the key, and the
+  key is **the trainer's `KEY` chip with its caret**, opening the same list —
+  `KeyMenu`, one component for both, so they cannot offer different choices.
+  A card's menu goes through a `Teleport` to the body and is placed in the
+  viewport, opening upwards when there is no room below: the grid scrolls and
+  would clip it, and a greyed card's opacity would dim a menu drawn inside it.
+  **`SPLIT` is a one-second hold** in the song card's corner, with a caption
+  under the footer saying so; letting go early cancels, and there is no
+  dialog — the hold is the confirmation. The amber fills the button left to
+  right while it is held: the designer's suggested feedback (handoff 14's
+  open question 2), not a drawn frame. Space or Enter held on the focused
+  button is the same hold.
 - **LOOP is practice, and a region is played as a pattern of its own.**
   Pressing it plants an eight-bar region (`LOOP_BARS`) at the playhead — where
   you are when you press it is where it starts, which is why it needs no
@@ -329,32 +355,42 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   run lands — and that is accepted, not overlooked. It also retires the
   label-collision rule: `THIS RUN` is now always hard right, so the centred
   attempt count can never be pushed aside.
-- **Weakest lanes are back, beside the history chart** — the user missed
-  them after handoff 09 took them out, and chose this layout from three drawn
-  (as it was, above the chart; beside it; one line under the legend). Up to
-  `WEAKEST_LANES` (3), lowest first, each with the lane's own dimmed hue
-  (`hueOf` at its place in `hueOrder`, so it reads as that lane), its name,
-  its accuracy as a bar and a number, and which way it leant — `EARLY`/`LATE`
-  in the rating's colour, `—` when neither. A lane reading 100 is left out,
+- **Weakest lanes are back, on the history chart's own axis** — the user
+  missed them after handoff 09 took them out, chose "beside the chart" from
+  three layouts, and handoff 14 (11i) then drew that as **one figure**: a
+  620×166 SVG whose left 424 units are the run history and whose right are up
+  to `WEAKEST_LANES` (3) bars on the same `y = 132 − 1.1v` scale, with a
+  dashed line carrying this run's score from its dot across them — a bar
+  under the line fell short of the run. Lowest first, each in the lane's own
+  dimmed hue (`hueOf` at its place in `hueOrder`, so it reads as that lane),
+  its value above, its name and which way it leant below — `EARLY`/`LATE` in
+  the rating's colour, `—` when neither. A lane reading 100 is left out,
   judged on the number shown like `passes`; a clean run has none, and then
-  the chart keeps the **whole width, exactly as before**.
+  the divider, lanes, dashed line and key go and the plot runs the **whole
+  width, exactly as before**. `laneBars` and `PLOT_END` in
+  `components/run-history.ts` are the geometry, pinned in the tests. A long
+  pad name (`CLOSED HAT` is a whole bar pitch at 9px) is set smaller rather
+  than colliding — the frame's lesson is piano, so that case was ours.
   **The figures are the whole run's.** `Scorer.laneStats` is counted as notes
   resolve (`countLane`, beside `counts`, in `hit` and `sweepMisses`). The
   first version read the surviving instances at the end, and `pruneBefore`
   had dropped every earlier repeat — it described the last few repeats, not
   the run; `tests/scoring.test.ts` pins the pruned case. Wrong notes are in no
   lane's figure, for the reason they are outside `tally`.
-  **The trade the user accepted**: beside the lanes the chart has about 336px
-  instead of 572 and its type shrinks with it. What it buys is height — the
-  pair is *shorter* than the chart alone — so a song part's summary with
-  lanes is 512px, inside the 1050×620 floor with 54px spare. Option A, the
-  old block above the chart, measured 669px there and did not fit.
+  **Nothing shrinks any more.** The first build squeezed the chart to about
+  336px beside a panel of lanes and its type shrank with it; the figure is
+  now exactly the sheet's content width — **the sheet is 668px border-box**,
+  the design's 620 being a content-box figure — so every label is drawn at
+  the size written. Only the plot's end moves (424 or 614).
 - **The chart's numbers are on hover, not stamped on it.** Every dot has a
   transparent 12px target — a 3px circle is not a pointer target — and hovering
   one names its score below the dot. The **BEST flag is hover-only too**, over
   the highest attempt wherever it sits (earliest on a tie), which is not always
   the latest run. It used to sit permanently over the current dot; the header's
-  `NEW BEST` already says that, so the flag was saying it twice. Tip below the
+  `NEW BEST` already says that, so the flag was saying it twice. **Handoff 14
+  draws a permanent BEST badge beside the current dot again, and it was not
+  rebuilt** — the reason above still holds; worth settling with the designer.
+  Tip below the
   dot and flag above, deliberately: they collided when both wanted the space
   above, and scores cluster near the top of the plot so below is the empty
   half.
@@ -365,13 +401,30 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   hairline instead. They stand `gap` off the dot rather than tucked against
   it, because the **mouse cursor hangs down and to the right of what it is
   over** and a chip any closer sits under the arrow pointing at it; that
-  clearance is ~21 viewBox units, measured against a 19px arrow and the
-  chart's ~0.93 units-to-the-pixel scale, and `tests/run-history.test.ts`
-  pins it. Under about 22% there is no room below, so the chip **flips
-  above** and the flag stacks above *it* — clamping to the floor instead
-  would lay the chip across the dot it names. The viewBox is 10 taller than
-  handoff 10 §2 drew it, with the plot 10 lower inside it, purely as headroom
-  for the enlarged flag over a full-marks run; `PLOT_SPAN` is untouched.
+  clearance is ~21 viewBox units, measured against a 19px arrow, and since
+  handoff 14 the figure is drawn 1:1 so a unit is a pixel;
+  `tests/run-history.test.ts` pins it. Under about 18% there is no room below
+  without covering the footer labels (inside the figure now), so the chip
+  **flips above** and the flag stacks above *it* — clamping to the floor
+  instead would lay the chip across the dot it names. With lanes shown, both
+  chips stop short of the divider (`chipRight`). The one tight case is the
+  flag over a full-marks run, clamped flush to the top of the figure a few
+  units above its dot.
+- **Handoff 14 is built: the summary (11i), edit mode (11l) and the section
+  picker (11m).** It changed those three screens and nothing else. Two things
+  in it went further than its table says, both on purpose: the summary's
+  **score row and legend now match the frame** — `PREV` (the previous best)
+  rather than `BEST`, a `%` after the score, labels stacked over their
+  numbers, a sentence-case legend — which the build had never matched since
+  handoff 10 drew it, though the handoff calls it unchanged; and **`NEW BEST`
+  is `--flag-best`**, the indigo from the fourteen hues, neither a rating nor
+  a song flag. Its new chrome values live in `styles.css` as `--scrim`,
+  `--bed`, `--on-led1`, `--mark`/`--mark-ink` (a complete section's mark,
+  light grey in dark because a 2px line in the on-chip vanishes there),
+  `--todo`, `--chart-line`/`--chart-grid`, `--flag-best` and `--field-fill`.
+  **DOM-only, like `--led*`, and not mirrored in `theme.ts`** — no canvas
+  draws any of them. Open with the designer: `--led1` and `EARLY` are the same
+  hex in dark (their question 1), and the permanent BEST badge above.
 - **Sheet is a third trainer mode, not a third instrument** (handoff 10 §1).
   `ROLL | SHEET` swaps the renderer under the same transport and scorer —
   invariant 4 still holds, and `SheetStaff` is a renderer plus a pitch→staff

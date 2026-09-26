@@ -1,42 +1,59 @@
 /**
- * Geometry for the summary's run-history chart (handoff 09 §2).
+ * Geometry for the summary's run-history chart (handoff 09 §2, redrawn in
+ * handoff 14 as 11i).
  *
  * Kept out of the component because it is arithmetic with real edge cases —
  * the first-ever run, a second attempt, a full forty — and those are worth
  * pinning in a test rather than eyeballing on screen once.
  *
- * Everything here is in the chart's own coordinate space, not the screen's:
- * the SVG is drawn on a fixed 620 x 148 viewBox and scaled to whatever width
- * the panel column has, so none of it depends on layout.
+ * Everything here is in the chart's own coordinate space, not the screen's.
+ * Since handoff 14 that space is exactly the sheet's content width, 620 units
+ * to 620 pixels, so the type in it is drawn at the size it is written and
+ * never shrinks.
  */
 
 /**
- * The design's viewBox.
- *
- * Handoff 10 §2 doubled the *range* — `PLOT_SPAN`, untouched here. At the old
- * 55px the climb from a first attempt to a good one was a shallow drift; at
- * 110px it reads as progress, which is the only reason the block is on screen.
- *
- * The box is 10 taller than that handoff drew it, and the plot sits 10 lower
- * inside it, which is headroom for the enlarged BEST flag above a full-marks
- * run. Everything scales to the panel's width, so the extra buys about nine
- * screen pixels of height and changes the size of nothing.
+ * The design's figure: one SVG holding the run history and, beside it, the
+ * weakest lanes on the same 0–100 scale (handoff 14 §02).
  */
-export const VIEW = { w: 620, h: 158 } as const;
+export const VIEW = { w: 620, h: 166 } as const;
 /** Left gutter carries the axis labels; the plot starts after it. */
 const PLOT_X0 = 26;
-const PLOT_X1 = 614;
-/** 0% sits at y=142, 100% at y=32. */
-const PLOT_Y0 = 142;
+/**
+ * Where the plot ends. With weakest lanes to show it stops short and the
+ * lanes stand to its right on its own axis; without any it takes the whole
+ * figure, which is the summary as it was before the lanes came back. Only
+ * this end moves — nothing else in the figure is resized to make room.
+ */
+export const PLOT_END = { full: 614, withLanes: 424 } as const;
+/** 0% sits at y=132, 100% at y=22: `y(v) = 132 − 1.1v`. */
+const PLOT_Y0 = 132;
 const PLOT_SPAN = 110;
 /** The rule under the plot, with a dot at each end. */
-export const AXIS_Y = 151;
+export const AXIS_Y = 141;
 export const AXIS_DOT_R = 2.6;
+/** The footer labels' baseline — inside the figure now, not a row under it. */
+export const FOOT_Y = 160;
 export const DOT_R = 3.1;
 export const CURRENT_DOT_R = 4.1;
 /** Gridlines, and their labels in the gutter. Two only — this is a shape to
  *  read, not a table. */
 export const GRID_VALUES = [100, 50] as const;
+
+/**
+ * The weakest lanes' column. Up to three bars, 24 wide on a 54 pitch, rising
+ * from the plot's own zero line; the divider stands between the two halves.
+ */
+export const LANES = {
+  divider: 439,
+  x0: 454,
+  x1: PLOT_END.full,
+  first: 468,
+  pitch: 54,
+  barW: 24,
+  nameY: 146,
+  leanY: 157,
+} as const;
 
 /**
  * The BEST flag above the hovered dot.
@@ -47,11 +64,16 @@ export const GRID_VALUES = [100, 50] as const;
  */
 export const BADGE = { w: 52, h: 18, gap: 18 } as const;
 /**
- * How far the badge may rise. With 100% at y=22 there is room for the badge
- * above a full-marks run *inside* the box, so it no longer hangs outside and
- * no longer depends on `overflow: visible` to be seen at all (handoff 10 §2).
+ * How far the badge may rise: the top of the figure. Above a full-marks run
+ * that is flush with the box, which is the one case where it sits close to
+ * its dot — the header row is directly above and has the run's score in it.
  */
 const BADGE_CEILING = 0;
+/**
+ * How far down the score chip may reach before it flips above its dot: clear
+ * of the footer labels, which sit inside the figure now.
+ */
+const TIP_FLOOR = FOOT_Y - 8;
 
 /**
  * Horizontal step between attempts.
@@ -65,8 +87,8 @@ const BADGE_CEILING = 0;
  * huddled into the left fifth of a mostly empty chart, which is the one thing
  * the block is on screen to avoid.
  */
-export function stepFor(count: number): number {
-  return count > 1 ? (PLOT_X1 - PLOT_X0) / (count - 1) : 0;
+export function stepFor(count: number, x1: number = PLOT_END.full): number {
+  return count > 1 ? (x1 - PLOT_X0) / (count - 1) : 0;
 }
 
 /**
@@ -75,8 +97,8 @@ export function stepFor(count: number): number {
  * Oldest at the left, this run hard right. A lone attempt has no span to
  * stretch across and starts at the left, where a history begins.
  */
-export function xOf(index: number, count: number): number {
-  return PLOT_X0 + index * stepFor(count);
+export function xOf(index: number, count: number, x1: number = PLOT_END.full): number {
+  return PLOT_X0 + index * stepFor(count, x1);
 }
 
 /** Accuracy 0..1 to a y in the plot. Clamped, so a rogue value stays inside. */
@@ -104,6 +126,8 @@ export interface HistoryChart {
    */
   bestIndex: number | null;
   gridlines: Array<{ value: number; y: number }>;
+  /** Where this chart's plot ends — see `PLOT_END`. */
+  x1: number;
 }
 
 /**
@@ -113,9 +137,17 @@ export interface HistoryChart {
  */
 export const TIP = { w: 44, h: 18, gap: 18 } as const;
 
-/** A chip centred on a dot, pulled back inside the chart's left/right edges. */
-function chipX(point: HistoryPoint, width: number): number {
-  return Math.min(Math.max(0, point.x - width / 2), VIEW.w - width);
+/**
+ * A chip centred on a dot, pulled back inside the chart's left edge and
+ * `right` — the figure's edge, or the divider when the lanes are beside it.
+ */
+function chipX(point: HistoryPoint, width: number, right: number): number {
+  return Math.min(Math.max(0, point.x - width / 2), right - width);
+}
+
+/** The right edge a chip may reach: short of the divider when lanes are shown. */
+export function chipRight(x1: number): number {
+  return x1 === PLOT_END.full ? VIEW.w : LANES.divider - 2;
 }
 
 export interface TipBox {
@@ -133,11 +165,11 @@ export interface TipBox {
  * the very dot it is naming. So it flips above instead, which is empty at
  * those scores by definition.
  */
-export function tipAt(point: HistoryPoint): TipBox {
+export function tipAt(point: HistoryPoint, right: number = VIEW.w): TipBox {
   const below = point.y + CURRENT_DOT_R + TIP.gap;
-  const flipped = below + TIP.h > VIEW.h;
+  const flipped = below + TIP.h > TIP_FLOOR;
   return {
-    x: chipX(point, TIP.w),
+    x: chipX(point, TIP.w, right),
     y: flipped ? point.y - CURRENT_DOT_R - TIP.gap - TIP.h : below,
     flipped,
   };
@@ -152,11 +184,11 @@ export function tipAt(point: HistoryPoint): TipBox {
  * When the score chip has flipped above, the flag stacks above *it* — the two
  * appear together on the best dot, which is the first one a pointer finds.
  */
-export function badgeAt(point: HistoryPoint): { x: number; y: number } {
-  const tip = tipAt(point);
+export function badgeAt(point: HistoryPoint, right: number = VIEW.w): { x: number; y: number } {
+  const tip = tipAt(point, right);
   const ceiling = tip.flipped ? tip.y - BADGE.gap - BADGE.h : BADGE_CEILING;
   return {
-    x: chipX(point, BADGE.w),
+    x: chipX(point, BADGE.w, right),
     y: tip.flipped ? ceiling : Math.max(ceiling, point.y - CURRENT_DOT_R - BADGE.gap - BADGE.h),
   };
 }
@@ -165,9 +197,12 @@ export function badgeAt(point: HistoryPoint): { x: number; y: number } {
  * Lay the attempts out. `attempts` is oldest first and includes the run that
  * has just finished, which is always the last point and always the rightmost.
  */
-export function historyChart(attempts: readonly number[]): HistoryChart {
+export function historyChart(
+  attempts: readonly number[],
+  x1: number = PLOT_END.full,
+): HistoryChart {
   const n = attempts.length;
-  const points = attempts.map((value, i) => ({ x: xOf(i, n), y: yOf(value), value }));
+  const points = attempts.map((value, i) => ({ x: xOf(i, n, x1), y: yOf(value), value }));
   const current = points.length ? points[points.length - 1] : null;
   // A single dot has no line, and no "first" to label — it *is* the first.
   const first = points.length > 1 ? points[0] : null;
@@ -189,5 +224,29 @@ export function historyChart(attempts: readonly number[]): HistoryChart {
     current,
     bestIndex,
     gridlines: GRID_VALUES.map((value) => ({ value, y: yOf(value / 100) })),
+    x1,
   };
+}
+
+export interface LaneBar {
+  /** Left edge and centre of the bar. */
+  x: number;
+  cx: number;
+  /** Top of the bar, and its height — on the history's own scale. */
+  y: number;
+  h: number;
+}
+
+/**
+ * The weakest lanes as bars on the history's axis (handoff 14 §02): a lane at
+ * 64% stands exactly as high as a run at 64% would sit, so the dashed line
+ * carrying this run's score across them shows at a glance which fell short.
+ * Weakest first, left to right; at most three are ever passed in.
+ */
+export function laneBars(lanes: readonly { accuracy: number }[]): LaneBar[] {
+  return lanes.map((l, i) => {
+    const x = LANES.first + i * LANES.pitch;
+    const y = yOf(l.accuracy);
+    return { x, cx: x + LANES.barW / 2, y, h: PLOT_Y0 - y };
+  });
 }
