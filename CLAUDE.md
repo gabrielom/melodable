@@ -382,34 +382,36 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   now exactly the sheet's content width — **the sheet is 668px border-box**,
   the design's 620 being a content-box figure — so every label is drawn at
   the size written. Only the plot's end moves (424 or 614).
-- **The chart's numbers are on hover, not stamped on it.** Every dot has a
-  transparent 12px target — a 3px circle is not a pointer target — and hovering
-  one names its score below the dot. The **BEST flag is hover-only too**, over
-  the highest attempt wherever it sits (earliest on a tie), which is not always
-  the latest run. It used to sit permanently over the current dot; the header's
-  `NEW BEST` already says that, so the flag was saying it twice. **Handoff 14
-  draws a permanent BEST badge beside the current dot again, and it was not
-  rebuilt** — the reason above still holds; worth settling with the designer.
-  Tip below the
-  dot and flag above, deliberately: they collided when both wanted the space
-  above, and scores cluster near the top of the plot so below is the empty
-  half.
-- **Both chips are the same box, and neither wears the flag's colour.** Same
-  height, corner and type; `badgeAt` and `tipAt` place them. But green is
+- **The chart's scores are on hover, and BEST is always drawn.** Hovering a
+  run names its score below the dot. The pointer answers to a **strip per
+  run** (`hitStrips`), halfway to each neighbour and the height of the plot —
+  not the 12px circles it had, which overlapped once dots were closer than 24
+  units (28 runs puts them 22 apart) and, the later one winning, named the
+  neighbour of the run pointed at; the user saw it. The **BEST badge is
+  permanent** — the user's call, after it had been hover-only for a while on
+  the argument that the header's `NEW BEST` already said it: a flag you have
+  to find by pointing at the right dot is one nobody sees. It sits on the
+  highest attempt wherever it is (earliest on a tie), not only on this run,
+  in handoff 14's own box and place — 42×14, up and to the left of the dot,
+  `(x − 44, y − 20)`, mirrored to the right for a dot too near the left edge —
+  and not on a lone first run, which is trivially its own best.
+- **The score chip never wears the badge's colour.** `badgeAt` and `tipAt`
+  place them; the chip is the larger of the two on purpose (it was enlarged to
+  be read at the cursor; the badge is the design's, read at rest). Green is
   `--rate-perfect`, a *rating*, so a 62% run wearing it would read as a
   judgement of that run — the score chip takes `--bar` with the standard
-  hairline instead. They stand `gap` off the dot rather than tucked against
+  hairline instead. It stands `gap` off the dot rather than tucked against
   it, because the **mouse cursor hangs down and to the right of what it is
-  over** and a chip any closer sits under the arrow pointing at it; that
+  over** and a chip any closer sits under the arrow pointing at it — which is
+  also why the badge is up and to the left, where the arrow never is; that
   clearance is ~21 viewBox units, measured against a 19px arrow, and since
   handoff 14 the figure is drawn 1:1 so a unit is a pixel;
   `tests/run-history.test.ts` pins it. Under about 18% there is no room below
   without covering the footer labels (inside the figure now), so the chip
-  **flips above** and the flag stacks above *it* — clamping to the floor
-  instead would lay the chip across the dot it names. With lanes shown, both
-  chips stop short of the divider (`chipRight`). The one tight case is the
-  flag over a full-marks run, clamped flush to the top of the figure a few
-  units above its dot.
+  **flips above**, centred higher than the badge reaches, so the two never
+  meet — the test walks every score. Clamping to the floor instead would lay
+  the chip across the dot it names. With lanes shown, both stop short of the
+  divider (`chipRight`).
 - **Handoff 14 is built: the summary (11i), edit mode (11l) and the section
   picker (11m).** It changed those three screens and nothing else. Two things
   in it went further than its table says, both on purpose: the summary's
@@ -424,7 +426,9 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   `--todo`, `--chart-line`/`--chart-grid`, `--flag-best` and `--field-fill`.
   **DOM-only, like `--led*`, and not mirrored in `theme.ts`** — no canvas
   draws any of them. Open with the designer: `--led1` and `EARLY` are the same
-  hex in dark (their question 1), and the permanent BEST badge above.
+  hex in dark (their question 1). Their permanent BEST badge was left out at
+  first and is now built, on the user's word, on the best run rather than
+  only this one.
 - **Sheet is a third trainer mode, not a third instrument** (handoff 10 §1).
   `ROLL | SHEET` swaps the renderer under the same transport and scorer —
   invariant 4 still holds, and `SheetStaff` is a renderer plus a pitch→staff

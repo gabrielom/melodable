@@ -28,9 +28,11 @@ import {
   PLOT_END,
   VIEW,
   TIP,
+  HIT_BAND,
   badgeAt,
   chipRight,
   historyChart,
+  hitStrips,
   laneBars,
   tipAt,
   yOf,
@@ -164,26 +166,33 @@ const nowLabel = computed(() =>
 );
 
 /**
- * Which dot the pointer is over, if any.
+ * Which run the pointer is over, if any.
  *
- * The chart is a shape to read at a glance; the numbers behind it are there
- * for when you want them, not stamped over every dot. Hovering one names its
- * score, and names it BEST when it is the best of them.
+ * The chart is a shape to read at a glance; the score behind each dot is
+ * there for when you want it, not stamped over every dot. The pointer answers
+ * to a strip per run rather than a circle round each dot — circles overlapped
+ * once there were enough runs, and named the neighbour of the one pointed at.
  */
 const hovered = ref<number | null>(null);
 const hoveredPoint = computed(() =>
   hovered.value === null ? null : (chart.value.points[hovered.value] ?? null),
 );
-/** The BEST flag, shown over the best dot only while it is hovered. */
-const hoverBadge = computed(() =>
-  hovered.value !== null && hovered.value === chart.value.bestIndex && hoveredPoint.value
-    ? badgeAt(hoveredPoint.value, right.value)
-    : null,
-);
+const strips = computed(() => hitStrips(chart.value.points, chart.value.x1));
 /** Where the score chip sits, in the chart's own coordinates. */
 const tipBox = computed(() =>
   hoveredPoint.value ? tipAt(hoveredPoint.value, right.value) : null,
 );
+
+/**
+ * The BEST badge, always drawn on the best run wherever it sits — once there
+ * is more than one run to be best among. A first attempt is trivially its own
+ * best, and the header already says so.
+ */
+const bestBadge = computed(() => {
+  const c = chart.value;
+  if (c.points.length < 2 || c.bestIndex === null) return null;
+  return badgeAt(c.points[c.bestIndex], right.value);
+});
 
 // ------------------------------------------------------------------- song
 
@@ -404,25 +413,11 @@ const chartLabel = computed(() => {
           <circle class="axis-cap" cx="26" :cy="AXIS_Y" :r="AXIS_DOT_R" />
           <circle class="axis-cap" :cx="chart.x1" :cy="AXIS_Y" :r="AXIS_DOT_R" />
 
-          <!-- The flag names the best run, and only while that dot is hovered:
-               a badge that always shows is decoration, and the header already
-               says NEW BEST when this run earned one. -->
-          <g v-if="hoverBadge">
-            <rect
-              class="badge"
-              :x="hoverBadge.x"
-              :y="hoverBadge.y"
-              :width="BADGE.w"
-              :height="BADGE.h"
-              rx="2"
-            />
-            <text
-              class="badge-t"
-              :x="hoverBadge.x + BADGE.w / 2"
-              :y="hoverBadge.y + BADGE.h / 2 + 3.6"
-            >
-              BEST
-            </text>
+          <!-- BEST, always, on the best run: up and to the left of its dot,
+               where the cursor never is (handoff 14's own place and size). -->
+          <g v-if="bestBadge" class="best">
+            <rect class="badge" :x="bestBadge.x" :y="bestBadge.y" :width="BADGE.w" :height="BADGE.h" rx="2" />
+            <text class="badge-t" :x="bestBadge.x + BADGE.w / 2" :y="bestBadge.y + 10">BEST</text>
           </g>
 
           <!-- The score, in the flag's box but not its colour: green is a
@@ -442,15 +437,16 @@ const chartLabel = computed(() => {
             </text>
           </g>
 
-          <!-- Invisible targets, wider than the dots: a 3px circle is not
-               something a pointer should have to find. -->
-          <circle
-            v-for="(pt, i) in chart.points"
+          <!-- Invisible targets: a strip per run, touching and never
+               overlapping, so the run named is always the nearest one. -->
+          <rect
+            v-for="(h, i) in strips"
             :key="`hit${i}`"
             class="hit"
-            :cx="pt.x"
-            :cy="pt.y"
-            r="12"
+            :x="h.x"
+            :y="HIT_BAND.y"
+            :width="h.w"
+            :height="HIT_BAND.h"
             @mouseenter="hovered = i"
             @mouseleave="hovered = null"
           />
@@ -661,9 +657,10 @@ const chartLabel = computed(() => {
 .hit { fill: transparent; cursor: default; }
 .badge { fill: var(--rate-perfect); pointer-events: none; }
 .badge-t {
-  font-size: 10px;
-  letter-spacing: 1.2px;
-  fill: var(--win);
+  font-size: 8px;
+  font-weight: 500;
+  letter-spacing: 1px;
+  fill: var(--start-txt);
   text-anchor: middle;
   pointer-events: none;
 }

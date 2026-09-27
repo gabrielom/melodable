@@ -10,6 +10,7 @@ import {
   badgeAt,
   chipRight,
   historyChart,
+  hitStrips,
   laneBars,
   stepFor,
   tipAt,
@@ -140,13 +141,28 @@ describe("historyChart", () => {
   });
 
   it("keeps the badge inside the box, even on a full-marks run", () => {
-    // Handoff 10 §2: the taller plot leaves room above a perfect run, so the
-    // badge no longer hangs outside the viewBox relying on overflow.
-    const perfect = badgeAt(historyChart([0.5, 1]).points[1]);
-    expect(perfect.y).toBe(0);
-    expect(perfect.y + BADGE.h).toBeLessThanOrEqual(VIEW.h);
-    // A low run keeps its badge attached to the dot instead.
-    expect(badgeAt(historyChart([0.1, 0.4]).points[1]).y).toBeGreaterThan(0);
+    const perfect = historyChart([0.5, 1]).points[1];
+    const badge = badgeAt(perfect);
+    expect(badge.y).toBeGreaterThanOrEqual(0);
+    expect(badge.y + BADGE.h).toBeLessThan(perfect.y);
+  });
+
+  it("stands up and to the left of its dot, where the cursor is not", () => {
+    // Handoff 14's own place: (x − 44, y − 20), so the right edge stops two
+    // short of the dot and the foot six above it.
+    const point = historyChart([0.4, 0.9, 0.5]).points[1];
+    const badge = badgeAt(point);
+    expect(badge.x).toBeCloseTo(point.x - 44, 9);
+    expect(badge.y).toBeCloseTo(point.y - 20, 9);
+    expect(badge.x + BADGE.w).toBeLessThan(point.x);
+    expect(badge.y + BADGE.h).toBeLessThan(point.y);
+  });
+
+  it("goes to the right of a dot with no room on its left", () => {
+    const first = historyChart([0.9, 0.5]).points[0];
+    const badge = badgeAt(first);
+    expect(badge.x).toBeGreaterThan(first.x);
+    expect(badge.x).toBeGreaterThanOrEqual(0);
   });
 
   it("never lets the badge leave the box at any accuracy", () => {
@@ -177,15 +193,19 @@ describe("historyChart", () => {
 });
 
 describe("the hovered score's chip", () => {
-  it("never overlaps the BEST flag, which is why it sits below", () => {
-    // Both appear together on the best run's dot — the first one a pointer
-    // finds. Overlapping there would make each unreadable.
+  it("never overlaps the BEST badge, flipped or not", () => {
+    // Both can show at once: the badge is always on the best run, and that
+    // is often the one a pointer finds first.
     for (let pct = 0; pct <= 100; pct++) {
       const point = historyChart([0, pct / 100]).points[1];
       const badge = badgeAt(point);
       const tip = tipAt(point);
-      // The flag is always the upper of the two, flipped or not.
-      expect(tip.y).toBeGreaterThanOrEqual(badge.y + BADGE.h);
+      const apart =
+        tip.y >= badge.y + BADGE.h ||
+        tip.y + TIP.h <= badge.y ||
+        tip.x >= badge.x + BADGE.w ||
+        tip.x + TIP.w <= badge.x;
+      expect(apart).toBe(true);
     }
   });
 
@@ -222,15 +242,6 @@ describe("the hovered score's chip", () => {
     const mid = historyChart([0.5, 0.8]).points[1];
     expect(tipAt(mid).flipped).toBe(false);
     expect(tipAt(mid).y).toBeGreaterThan(mid.y);
-  });
-
-  it("stacks the flag above the flipped chip, not through it", () => {
-    const low = historyChart([0, 0]).points[1];
-    const tip = tipAt(low);
-    const badge = badgeAt(low);
-    expect(tip.flipped).toBe(true);
-    expect(badge.y + BADGE.h).toBeLessThanOrEqual(tip.y);
-    expect(badge.y).toBeGreaterThanOrEqual(0);
   });
 
   it("stays inside the box at either end of the axis", () => {
@@ -292,5 +303,35 @@ describe("the weakest lanes on the history's axis", () => {
     }
     expect(LANES.divider).toBeGreaterThan(PLOT_END.withLanes);
     expect(LANES.divider).toBeLessThan(LANES.x0);
+  });
+});
+
+describe("where the pointer names a run", () => {
+  it("gives every run a strip, touching its neighbours and never overlapping", () => {
+    // Circles did this before and overlapped once the dots were closer than
+    // their width — at 28 runs, pointing at one named the next.
+    for (const n of [2, 7, 28]) {
+      for (const x1 of [PLOT_END.full, PLOT_END.withLanes]) {
+        const c = historyChart(Array.from({ length: n }, (_, i) => i / n), x1);
+        const strips = hitStrips(c.points, x1);
+        expect(strips).toHaveLength(n);
+        strips.forEach((h, i) => {
+          expect(h.x).toBeLessThanOrEqual(c.points[i].x);
+          expect(h.x + h.w).toBeGreaterThanOrEqual(c.points[i].x);
+          if (i > 0) expect(h.x).toBeCloseTo(strips[i - 1].x + strips[i - 1].w, 9);
+        });
+      }
+    }
+  });
+
+  it("gives a lone run a target of its own", () => {
+    const c = historyChart([0.5]);
+    const [h] = hitStrips(c.points, c.x1);
+    expect(h.w).toBeGreaterThan(0);
+    expect(h.x).toBeLessThan(c.points[0].x);
+  });
+
+  it("has nothing to point at with no runs", () => {
+    expect(hitStrips([], PLOT_END.full)).toEqual([]);
   });
 });

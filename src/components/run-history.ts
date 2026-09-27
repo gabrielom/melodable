@@ -56,19 +56,15 @@ export const LANES = {
 } as const;
 
 /**
- * The BEST flag above the hovered dot.
+ * The BEST badge: handoff 14's own box, 42 × 14, standing up and to the left
+ * of the best run's dot. **Always drawn**, on the best attempt wherever it sits
+ * — the user's call: it had been hover-only, and a flag you have to find by
+ * pointing at the right dot is a flag nobody sees.
  *
- * `gap` is the reason both chips stand this far off: the mouse cursor hangs
- * down and to the right of the point it is over, so a chip tucked against the
- * dot is a chip under the arrow. It clears the pointer instead.
+ * Up and to the left is also where the cursor is not: the arrow hangs down and
+ * to the right of the point it is over, so the badge never sits under it.
  */
-export const BADGE = { w: 52, h: 18, gap: 18 } as const;
-/**
- * How far the badge may rise: the top of the figure. Above a full-marks run
- * that is flush with the box, which is the one case where it sits close to
- * its dot — the header row is directly above and has the run's score in it.
- */
-const BADGE_CEILING = 0;
+export const BADGE = { w: 42, h: 14, dx: 44, dy: 20 } as const;
 /**
  * How far down the score chip may reach before it flips above its dot: clear
  * of the footer labels, which sit inside the figure now.
@@ -131,9 +127,11 @@ export interface HistoryChart {
 }
 
 /**
- * The score chip below a dot. Same box as the BEST flag — same height, same
- * corner, same type — so the two read as one language on hover. Narrower,
- * because it holds four characters rather than a word.
+ * The score chip below a hovered dot. Larger than the BEST badge on purpose:
+ * it is read on demand, at the cursor, and was enlarged for that; the badge
+ * is the design's and is read at rest. It never collides with the badge —
+ * the badge is above the dot, the chip below it or, flipped, centred higher
+ * than the badge reaches.
  */
 export const TIP = { w: 44, h: 18, gap: 18 } as const;
 
@@ -176,21 +174,45 @@ export function tipAt(point: HistoryPoint, right: number = VIEW.w): TipBox {
 }
 
 /**
- * Where the BEST flag goes above a dot, kept inside the chart's box.
- *
- * Takes any point rather than assuming the current one: the flag is shown on
- * hover now, and the best run is not always the latest.
- *
- * When the score chip has flipped above, the flag stacks above *it* — the two
- * appear together on the best dot, which is the first one a pointer finds.
+ * Where the BEST badge goes: the design's place, `(x − 44, y − 20)`, so its
+ * right edge stops 2 short of the dot and its foot 6 above it. A dot too near
+ * the left edge for that takes the badge on its right instead, mirrored, and
+ * it never passes `right` (the divider, when the lanes are shown) or the top
+ * of the figure.
  */
 export function badgeAt(point: HistoryPoint, right: number = VIEW.w): { x: number; y: number } {
-  const tip = tipAt(point, right);
-  const ceiling = tip.flipped ? tip.y - BADGE.gap - BADGE.h : BADGE_CEILING;
+  const left = point.x - BADGE.dx;
+  const x = left >= 0 ? left : point.x + (BADGE.dx - BADGE.w);
   return {
-    x: chipX(point, BADGE.w, right),
-    y: tip.flipped ? ceiling : Math.max(ceiling, point.y - CURRENT_DOT_R - BADGE.gap - BADGE.h),
+    x: Math.min(x, right - BADGE.w),
+    y: Math.max(0, point.y - BADGE.dy),
   };
+}
+
+export interface HitStrip {
+  x: number;
+  w: number;
+}
+
+/** The band a hover strip covers: the plot, the axis and the footer under it. */
+export const HIT_BAND = { y: 10, h: FOOT_Y + 4 - 10 } as const;
+
+/**
+ * Where each attempt answers the pointer: a strip from halfway to the dot
+ * before it to halfway to the dot after, the full height of the plot.
+ *
+ * Circles round the dots did this before, 24 units across — and at 28
+ * attempts the dots are 22 apart, so neighbours' circles overlapped and the
+ * later one won: pointing at one run named the next. Strips touch and never
+ * overlap, so the run named is always the nearest one, wherever along its
+ * column the pointer is.
+ */
+export function hitStrips(points: readonly HistoryPoint[], x1: number): HitStrip[] {
+  const n = points.length;
+  if (n === 0) return [];
+  if (n === 1) return [{ x: points[0].x - 12, w: 24 }];
+  const half = stepFor(n, x1) / 2;
+  return points.map((p) => ({ x: p.x - half, w: half * 2 }));
 }
 
 /**
