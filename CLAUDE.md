@@ -1026,6 +1026,33 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   **Not handled**: a device unplugged *while* open — midir reports nothing,
   the connection stays in `MidiState` looking alive, and re-plugging needs a
   pick from the menu.
+- **The controller is a transport button: the four-corner gesture.** Hold
+  the **two lowest and two highest keys**, or the **four corner pads**, and a
+  run that is going stops (holding its frame, as `stop` does) while one that
+  is not starts from the top — Space's job, where Space works (the trainer,
+  no import sheet), from the summary and the song picker too. Melodics has the
+  same gesture; the user asked for it for their Launchkey MK4, on both keys
+  and pads, and for every controller. The rule is pure in
+  `engine/edge-gesture.ts` and is **written in shapes, never note numbers**,
+  because no controller reports its size, octave or pad bank: two adjacent
+  keys are always a semitone apart, so the keyboard's edges are two semitone
+  pairs at least an octave apart (a 25-key's sit 22 apart); a pad bank is
+  measured from its lowest note, in any of three arrangements — MPC 4×4
+  (`0, 3, 12, 15`), a 2×8 of two 4×2 halves (`0, 4, 11, 15`) and a 2×8 filled
+  row by row (`0, 7, 8, 15`). **Which 2×8 the Launchkey MK4 uses is not
+  confirmed** — its drum pads send 36–51 on channel 10, but Novation's guide
+  draws the grid only as an image — so both are accepted; if the pads ever
+  fail and the keys work, that list is where to look.
+  **What stops it firing mid-song**: all four must land within
+  `GESTURE_WINDOW` (0.5s) with nothing else struck in it, and the pad shapes
+  count only from pads — channel 10 or a pads lesson — because a doubled
+  minor triad on the keys *is* the 4×4 shape. It fires once per grab and
+  rearms when all four are released; a note struck again counts as released,
+  so one lost note-off cannot disarm it for the sitting. The gesture's notes
+  are real strikes until the fourth lands, so stopping with it takes their
+  wrong-note dots back (`forgetMarksSince`) — otherwise the held frame shows
+  three mistakes nobody made. Verified with MIDI faked through the Tauri
+  bridge; not yet on the user's hardware.
 - **The computer keyboard is a piano, and a text field outranks it.**
   `PIANO_KEY_MAP` claims fifteen letters (`a`-`l` on the home row, the black
   keys above) on a **window-wide** listener, and its `preventDefault` swallows

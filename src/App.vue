@@ -37,6 +37,7 @@ import { openingStep, songState } from "@/engine/course";
 import { lessonRepeats } from "@/engine/scoring";
 import type { LessonEdit } from "@/engine/lesson-edit";
 import { portToOpen } from "@/engine/midi-port";
+import { GESTURE_WINDOW, edgeGesture, type HeldNote } from "@/engine/edge-gesture";
 import { isTauri } from "@/composables/useMidi";
 import type { LogRow } from "@/components/midi-log";
 import PianoKeyboard from "@/views/piano/PianoKeyboard.vue";
@@ -258,6 +259,7 @@ const {
   keyFifths,
   play,
   stop,
+  forgetMarksSince,
   setBpm,
   followLink,
   strike,
@@ -701,12 +703,56 @@ function onMidiMessage(m: MidiMessage) {
     } else {
       void noteOn(m.note, m.velocity, "hardware", hitTime);
     }
+    watchForEdgeGesture(m, hitTime);
   } else if (m.kind === "noteoff") {
     // Graded at the timestamp midir stamped it with, like a strike — a hold
     // measured at "whenever the handler ran" would inherit every delivery
     // hiccup between the controller and here.
     noteOff(m.note, hardwareHitTime(m.timestampMicros));
+    releaseEdgeNote(m);
   }
+}
+
+// --------------------------------------------------- four-corner gesture
+
+/**
+ * The controller as a transport button: hold its two lowest and two highest
+ * keys, or its four corner pads, and a run that is going stops — holding its
+ * last frame — while one that is not starts from the top, count-in and all.
+ * The Space bar's job, without taking your hands off the instrument.
+ * `engine/edge-gesture.ts` is the rule for what counts.
+ *
+ * Each note is keyed by channel as well as number, so a pad and a key that
+ * happen to share a note never stand in for each other. The gesture fires once
+ * per grab: it rearms only when all four of its notes have been let go, so a
+ * hand resting on the corners does not stop and start the run over and over.
+ */
+const heldHardware = new Map<number, HeldNote>();
+const gestureNotes = new Set<number>();
+const noteKey = (m: MidiMessage) => m.channel * 128 + m.note;
+
+function watchForEdgeGesture(m: MidiMessage, hitTime: number) {
+  heldHardware.set(noteKey(m), { note: m.note, channel: m.channel, at: hitTime });
+  // Struck again means it was let go, whether or not its note-off arrived —
+  // one lost note-off must not disarm the gesture for the rest of the sitting.
+  gestureNotes.delete(noteKey(m));
+  if (gestureNotes.size > 0) return;
+  const g = edgeGesture([...heldHardware.values()], settings.instrument === "pads");
+  if (!g) return;
+  for (const [key, h] of heldHardware) if (hitTime - h.at <= GESTURE_WINDOW) gestureNotes.add(key);
+  // Where Space works, and nowhere else: the trainer, with no sheet over it.
+  if (view.value !== "trainer" || importOpen.value) return;
+  if (playing.value) {
+    stop();
+    forgetMarksSince(g.since);
+  } else {
+    void onPlay();
+  }
+}
+
+function releaseEdgeNote(m: MidiMessage) {
+  heldHardware.delete(noteKey(m));
+  gestureNotes.delete(noteKey(m));
 }
 
 const {

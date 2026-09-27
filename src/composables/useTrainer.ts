@@ -726,6 +726,17 @@ export function useTrainer(
     playing.value = true;
   }
 
+  /**
+   * Take back the dots struck since `t`. The four-corner gesture's first three
+   * notes are ordinary strikes when they land — only the fourth makes them a
+   * command — and a held frame should not show them as mistakes.
+   */
+  function forgetMarksSince(t: number): void {
+    let keep = 0;
+    for (const m of wrongMarks) if (m.time < t) wrongMarks[keep++] = m;
+    wrongMarks.length = keep;
+  }
+
   function stop(): void {
     // Read the position *before* stopping: a stopped transport reports beat 0,
     // which is the one answer this must not get.
@@ -1326,6 +1337,7 @@ export function useTrainer(
     runBeats,
     play,
     stop,
+    forgetMarksSince,
     setBpm,
     followLink,
     strike,
