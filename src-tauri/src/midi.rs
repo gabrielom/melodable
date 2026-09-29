@@ -14,10 +14,42 @@ use midir::{Ignore, MidiInput, MidiInputConnection};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
-/// Holds the currently open input connection so it isn't dropped.
+/// Holds the currently open input connections so they aren't dropped.
+///
+/// `companion` is the controller's DAW port, opened beside its MIDI port and
+/// read for drum pads only. A Launchkey sends its drum pads down the MIDI port
+/// until a DAW takes it over — Ableton's control-surface script does, the
+/// moment Live opens — and from then on the pads report on the DAW port
+/// instead, on channel 10. Without this, the pads went silent in Melodable as
+/// soon as Ableton was running, while the keys (which stay on the MIDI port)
+/// carried on.
 #[derive(Default)]
 pub struct MidiState {
     pub conn: Mutex<Option<MidiInputConnection<()>>>,
+    pub companion: Mutex<Option<MidiInputConnection<()>>>,
+}
+
+/// Which messages a connection passes on.
+#[derive(Clone, Copy)]
+enum Filter {
+    /// Everything — the port the player chose.
+    All,
+    /// Note on/off on MIDI channel 10 only: the drum pads, and nothing of the
+    /// control-surface conversation (encoders, session pads, transport
+    /// buttons, LED feedback) that shares a DAW port with them.
+    DrumNotes,
+}
+
+impl Filter {
+    fn passes(self, message: &[u8]) -> bool {
+        match self {
+            Filter::All => true,
+            Filter::DrumNotes => {
+                let status = message[0] & 0xF0;
+                (status == 0x80 || status == 0x90) && (message[0] & 0x0F) == 9
+            }
+        }
+    }
 }
 
 /// One parsed MIDI message, shipped to the frontend as `midi://message`.
@@ -54,13 +86,45 @@ pub fn list_midi_ports() -> Result<Vec<String>, String> {
 }
 
 /// Open the port at `index` and start streaming messages to the frontend.
-/// Returns the port name on success. Any previously open port is closed first.
+/// Returns the port name on success. Any previously open port is closed first,
+/// and so is its companion — the frontend opens a new one if the new port
+/// has one.
 #[tauri::command]
 pub fn open_midi_port(
     app: AppHandle,
     state: State<'_, MidiState>,
     index: usize,
 ) -> Result<String, String> {
+    // Close whatever was open before (dropping the old connections).
+    *state.companion.lock().map_err(|e| e.to_string())? = None;
+    *state.conn.lock().map_err(|e| e.to_string())? = None;
+
+    let (name, conn) = connect(app, index, "melodable-in", Filter::All)?;
+    *state.conn.lock().map_err(|e| e.to_string())? = Some(conn);
+    Ok(name)
+}
+
+/// Open the port at `index` as the companion of the one already open, passing
+/// on its drum-pad notes only (see `MidiState`). Replaces any earlier
+/// companion.
+#[tauri::command]
+pub fn open_midi_companion(
+    app: AppHandle,
+    state: State<'_, MidiState>,
+    index: usize,
+) -> Result<String, String> {
+    *state.companion.lock().map_err(|e| e.to_string())? = None;
+    let (name, conn) = connect(app, index, "melodable-drums", Filter::DrumNotes)?;
+    *state.companion.lock().map_err(|e| e.to_string())? = Some(conn);
+    Ok(name)
+}
+
+fn connect(
+    app: AppHandle,
+    index: usize,
+    conn_name: &str,
+    filter: Filter,
+) -> Result<(String, MidiInputConnection<()>), String> {
     let mut input = MidiInput::new("melodable").map_err(|e| e.to_string())?;
     // We want everything except active-sensing noise; sysex/timing are ignored.
     input.ignore(Ignore::All);
@@ -75,18 +139,12 @@ pub fn open_midi_port(
         .port_name(&port)
         .unwrap_or_else(|_| "Unknown device".to_string());
 
-    // Close whatever was open before (dropping the old connection).
-    {
-        let mut guard = state.conn.lock().map_err(|e| e.to_string())?;
-        *guard = None;
-    }
-
     let conn = input
         .connect(
             &port,
-            "melodable-in",
+            conn_name,
             move |stamp, message, _| {
-                if message.is_empty() {
+                if message.is_empty() || !filter.passes(message) {
                     return;
                 }
                 let status = message[0] & 0xF0;
@@ -117,16 +175,13 @@ pub fn open_midi_port(
         )
         .map_err(|e| e.to_string())?;
 
-    let mut guard = state.conn.lock().map_err(|e| e.to_string())?;
-    *guard = Some(conn);
-
-    Ok(name)
+    Ok((name, conn))
 }
 
 /// Close the active MIDI input port, if any.
 #[tauri::command]
 pub fn close_midi_port(state: State<'_, MidiState>) -> Result<(), String> {
-    let mut guard = state.conn.lock().map_err(|e| e.to_string())?;
-    *guard = None;
+    *state.companion.lock().map_err(|e| e.to_string())? = None;
+    *state.conn.lock().map_err(|e| e.to_string())? = None;
     Ok(())
 }

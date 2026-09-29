@@ -39,3 +39,23 @@ export function portToOpen(ports: readonly string[], remembered: string | null |
   const i = ports.findIndex((p) => !isDawPort(p));
   return i >= 0 ? i : null;
 }
+
+/**
+ * The DAW port that belongs to the MIDI port `name`, if the device has one:
+ * the same name with its `MIDI` token swapped for `DAW` — "Launchkey MK4 37
+ * MIDI Out" and "Launchkey MK4 37 DAW Out". Compared with both tokens taken
+ * out, so it does not matter which word order or suffix a platform gives them.
+ *
+ * It is opened beside the chosen port and read for drum pads only (the Rust
+ * side filters to channel-10 notes). A Launchkey's pads leave the MIDI port for
+ * this one the moment a DAW takes the controller over — Ableton does as soon
+ * as Live opens — and without it they went silent in Melodable while the keys
+ * went on working.
+ */
+export function dawCompanion(ports: readonly string[], name: string): number | null {
+  if (isDawPort(name)) return null;
+  const base = (p: string) => p.replace(/\b(MIDI|DAW)\b/gi, "").replace(/\s+/g, " ").trim().toLowerCase();
+  const own = base(name);
+  const i = ports.findIndex((p) => p !== name && isDawPort(p) && base(p) === own);
+  return i >= 0 ? i : null;
+}

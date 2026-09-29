@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isDawPort, portToOpen } from "../src/engine/midi-port";
+import { dawCompanion, isDawPort, portToOpen } from "../src/engine/midi-port";
 
 const LAUNCHKEY = ["Launchkey MK4 37 MIDI Out", "Launchkey MK4 37 DAW Out"];
 
@@ -38,5 +38,21 @@ describe("portToOpen", () => {
   it("opens nothing when there is nothing a player would play", () => {
     expect(portToOpen([], undefined)).toBeNull();
     expect(portToOpen(["Launchkey MK4 37 DAW Out"], undefined)).toBeNull();
+  });
+});
+
+describe("dawCompanion", () => {
+  it("finds the Launchkey's DAW port beside its MIDI port", () => {
+    expect(dawCompanion(LAUNCHKEY, "Launchkey MK4 37 MIDI Out")).toBe(1);
+    expect(dawCompanion(["IAC Bus 1", "LKMK4 DAW Out", "LKMK4 MIDI Out"], "LKMK4 MIDI Out")).toBe(1);
+  });
+
+  it("does not pair a port with another device's DAW port", () => {
+    expect(dawCompanion(["Launchkey MK4 49 DAW Out", "Launchkey MK4 37 MIDI Out"], "Launchkey MK4 37 MIDI Out")).toBeNull();
+  });
+
+  it("has none for a device without one, or when the DAW port itself was chosen", () => {
+    expect(dawCompanion(["Arturia KeyStep"], "Arturia KeyStep")).toBeNull();
+    expect(dawCompanion(LAUNCHKEY, "Launchkey MK4 37 DAW Out")).toBeNull();
   });
 });

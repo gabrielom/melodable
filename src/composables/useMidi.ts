@@ -8,6 +8,7 @@
 
 import { ref, onUnmounted } from "vue";
 import type { MidiMessage } from "@/engine/types";
+import { dawCompanion } from "@/engine/midi-port";
 
 /** True when running inside the Tauri shell (rather than a plain browser tab). */
 export const isTauri = (): boolean =>
@@ -68,6 +69,16 @@ export function useMidi(onMessage: (m: MidiMessage) => void) {
       const name = await invoke<string>("open_midi_port", { index });
       connectedIndex.value = index;
       connectedName.value = name;
+
+      // The device's DAW port too, for its drum pads only: a DAW taking the
+      // controller over moves them there (see `dawCompanion`). Best effort —
+      // the keys and everything else still come through the port just opened.
+      const companion = dawCompanion(ports.value, name);
+      if (companion !== null) {
+        await invoke("open_midi_companion", { index: companion }).catch((e) =>
+          console.warn("MIDI: could not open the DAW port for drum pads", e),
+        );
+      }
 
       if (!unlisten) {
         unlisten = await listen<MidiMessage>("midi://message", (e) => onMessage(e.payload));

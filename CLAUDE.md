@@ -1023,6 +1023,21 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   a remembered device that is unplugged today still wins when it returns.
   While nothing is open, `autoConnect` rescans quietly every 3s, which is what
   catches a controller plugged in after launch; it stops once a port is open.
+  **Its DAW port is opened too, for drum pads only** (`dawCompanion`, and
+  `open_midi_companion` in `midi.rs`, held in `MidiState.companion` beside
+  the main connection — invariant 5 applies to both). A Launchkey's pads
+  leave the MIDI port for the DAW port the moment a DAW takes the controller
+  over — Ableton's script does as soon as Live opens, and Novation's guide
+  says Drum mode then reports on the DAW port, channel 10 — so the user's
+  pads went silent in Melodable whenever Ableton was running, while the keys
+  (which stay on the MIDI port) worked. The companion passes **note on/off on
+  channel 10 and nothing else**, filtered in Rust: the rest of that port is
+  the control-surface conversation (encoders, session pads, buttons), which
+  would arrive as wrong notes. macOS lets both apps read the port; Windows
+  opens ports exclusively, so there the companion may fail while Live holds
+  it, and the failure is only logged. Type-checked against stubbed
+  `midir`/Tauri signatures — this container cannot build the Tauri crate —
+  and not yet run on the user's hardware.
   **Not handled**: a device unplugged *while* open — midir reports nothing,
   the connection stays in `MidiState` looking alive, and re-plugging needs a
   pick from the menu.
