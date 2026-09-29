@@ -48,6 +48,17 @@ describe("the keyboard's edges", () => {
     expect(edgeGesture(slow, false)).toBeNull();
   });
 
+  it("waits for a hand that sets one pair down before the other", () => {
+    // Left pair, a pause, then the right pair: 0.9s end to end.
+    const twoHanded: HeldNote[] = [
+      { note: 48, channel: 0, at: 10 },
+      { note: 49, channel: 0, at: 10.05 },
+      { note: 83, channel: 0, at: 10.85 },
+      { note: 84, channel: 0, at: 10.9 },
+    ];
+    expect(edgeGesture(twoHanded, false)).toBe("keys");
+  });
+
   it("says when the grab began, so its strikes can be taken back", () => {
     const g = detect(grab([84, 48, 83, 49], 0, 20), false);
     expect(g?.since).toBe(20);

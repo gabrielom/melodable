@@ -15,6 +15,7 @@ const KIND_LABEL: Record<string, string> = {
   noteoff: "note off",
   cc: "cc",
   other: "other",
+  gesture: "corners",
 };
 const kindLabel = (k: string) => KIND_LABEL[k] ?? k;
 const emit = defineEmits<{ (e: "clear"): void; (e: "collapse"): void }>();
@@ -151,6 +152,8 @@ header {
 }
 .row.noteon .kind { color: var(--rate-great); }
 .row.cc .kind { color: var(--led2); }
+/* The four-corner gesture, recognised: a transport command, not a note. */
+.row.gesture .kind { color: var(--led1); }
 
 /* Source dot: where the message came from. */
 .src {

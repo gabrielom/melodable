@@ -740,6 +740,10 @@ function watchForEdgeGesture(m: MidiMessage, hitTime: number) {
   const g = edgeGesture([...heldHardware.values()], settings.instrument === "pads");
   if (!g) return;
   for (const [key, h] of heldHardware) if (hitTime - h.at <= GESTURE_WINDOW) gestureNotes.add(key);
+  // Said in the monitor whether or not it acts, so "nothing happened" can be
+  // told apart from "it was never recognised" — the monitor is where the
+  // notes that did arrive are shown anyway.
+  pushLog("gesture", m.note, 0, m.channel, "hardware");
   // Where Space works, and nowhere else: the trainer, with no sheet over it.
   if (view.value !== "trainer" || importOpen.value) return;
   if (playing.value) {

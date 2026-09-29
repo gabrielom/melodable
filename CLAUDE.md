@@ -1044,15 +1044,23 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   draws the grid only as an image — so both are accepted; if the pads ever
   fail and the keys work, that list is where to look.
   **What stops it firing mid-song**: all four must land within
-  `GESTURE_WINDOW` (0.5s) with nothing else struck in it, and the pad shapes
+  `GESTURE_WINDOW` (1.5s) with nothing else struck in it still held, and the
+  pad shapes
   count only from pads — channel 10 or a pads lesson — because a doubled
   minor triad on the keys *is* the 4×4 shape. It fires once per grab and
   rearms when all four are released; a note struck again counts as released,
   so one lost note-off cannot disarm it for the sitting. The gesture's notes
   are real strikes until the fourth lands, so stopping with it takes their
   wrong-note dots back (`forgetMarksSince`) — otherwise the held frame shows
-  three mistakes nobody made. Verified with MIDI faked through the Tauri
-  bridge; not yet on the user's hardware.
+  three mistakes nobody made. The window was 0.5s first and the user
+  reported the gesture "not working"; a two-handed grab that sets one pair
+  down before the other can take longer, and since only held notes count the
+  width costs nothing. **Every recognised gesture logs a `corners` row in the
+  MIDI monitor**, acted on or not — so a failure can be split into "the
+  notes never arrived", "they arrived and were not recognised" (read their
+  numbers and channels off the rows above) and "recognised, but not where
+  Space works" (on home, say). Verified with MIDI faked through the Tauri
+  bridge, not yet on the user's hardware.
 - **The computer keyboard is a piano, and a text field outranks it.**
   `PIANO_KEY_MAP` claims fifteen letters (`a`-`l` on the home row, the black
   keys above) on a **window-wide** listener, and its `preventDefault` swallows

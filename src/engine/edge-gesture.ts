@@ -25,8 +25,8 @@
  *   image in Novation's guide, so both are here.
  *
  * **What keeps it from firing mid-song** is that it asks for all four notes
- * to be struck within `GESTURE_WINDOW` of each other and for nothing else to
- * have been struck in that window. Two minor-second clusters an octave or more
+ * to be struck within `GESTURE_WINDOW` of each other and for nothing else
+ * struck in that window to still be held. Two minor-second clusters an octave or more
  * apart, grabbed at once, is not something music asks for. The pad shapes are
  * narrower still — a C minor triad doubled an octave up is exactly the 4×4's
  * `0, 3, 12, 15` — so they only count when the notes come from pads: MIDI
@@ -42,8 +42,16 @@ export interface HeldNote {
   at: number;
 }
 
-/** How close together the four strikes must land to be one grab. */
-export const GESTURE_WINDOW = 0.5;
+/**
+ * How close together the four strikes must land to be one grab.
+ *
+ * Generous on purpose. It was 0.5s at first and a hand that set down the
+ * left pair and then the right took longer than that. Only notes still held
+ * count, so a wide window lets in nothing played and released on the way;
+ * what it keeps out is a note held down since long before — a sustained bass,
+ * or one whose note-off never arrived.
+ */
+export const GESTURE_WINDOW = 1.5;
 
 /** The two pairs of keys must be at least this far apart, in semitones. */
 export const MIN_KEY_SPAN = 12;
