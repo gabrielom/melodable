@@ -1034,9 +1034,12 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   same gesture; the user asked for it for their Launchkey MK4, on both keys
   and pads, and for every controller. The rule is pure in
   `engine/edge-gesture.ts` and is **written in shapes, never note numbers**,
-  because no controller reports its size, octave or pad bank: two adjacent
-  keys are always a semitone apart, so the keyboard's edges are two semitone
-  pairs at least an octave apart (a 25-key's sit 22 apart); a pad bank is
+  because no controller reports its size, octave or pad bank: the keyboard's
+  edges are two tight pairs at least an octave apart (a 25-key's sit 22
+  apart), each a **semitone or a whole tone** — the outermost keys counting
+  the black one (C C♯), or the outermost *white* keys (C D), which is where
+  the user's hand actually landed on the Launchkey: C3 D3 and B6 C7, read off
+  the MIDI monitor, refused by the first, semitone-only rule; a pad bank is
   measured from its lowest note, in any of three arrangements — MPC 4×4
   (`0, 3, 12, 15`), a 2×8 of two 4×2 halves (`0, 4, 11, 15`) and a 2×8 filled
   row by row (`0, 7, 8, 15`). **Which 2×8 the Launchkey MK4 uses is not

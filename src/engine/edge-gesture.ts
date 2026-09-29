@@ -10,9 +10,9 @@
  * It has to work on a controller whose size, octave or pad bank we are never
  * told, so neither shape is written as note numbers:
  *
- * - **Keys**: two adjacent keys are a semitone apart, always — E–F and B–C
- *   included — so "the two keys at each end" is two semitone pairs, whatever
- *   the keyboard's size or octave shift. They must be at least an octave
+ * - **Keys**: "the two keys at each end" is two tight pairs — a semitone for
+ *   the outermost keys counting the black one, a whole tone for the outermost
+ *   white keys — whatever the keyboard's size or octave shift. They must be at least an octave
  *   apart, which a 25-key controller clears with room to spare (its pairs sit
  *   22 semitones apart at their inner edges).
  * - **Pads**: a bank of sixteen, measured from its lowest note, so a bank
@@ -52,6 +52,17 @@ export interface HeldNote {
  * or one whose note-off never arrived.
  */
 export const GESTURE_WINDOW = 1.5;
+
+/**
+ * Whether two keys at one end can be "the two keys at the edge". A semitone is
+ * the two outermost keys counting the black one (C and C♯); a whole tone is
+ * the two outermost *white* keys (C and D), which is what a hand reaching for
+ * the corners of a keyboard actually lands on — the user's first try on the
+ * Launchkey was C3 D3 at the bottom and B6 C7 at the top, and the semitone-only
+ * rule turned it down. At the top the two readings agree, B and C being a
+ * semitone apart either way.
+ */
+const edgePair = (gap: number) => gap === 1 || gap === 2;
 
 /** The two pairs of keys must be at least this far apart, in semitones. */
 export const MIN_KEY_SPAN = 12;
@@ -95,7 +106,7 @@ export function edgeGesture(
   const [a, b, c, d] = notes;
   const since = Math.min(...grab.map((h) => h.at));
 
-  if (b - a === 1 && d - c === 1 && c - b >= MIN_KEY_SPAN) return { kind: "keys", since };
+  if (edgePair(b - a) && edgePair(d - c) && c - b >= MIN_KEY_SPAN) return { kind: "keys", since };
 
   const fromPads = padsLesson || grab.every((h) => h.channel === DRUM_CHANNEL);
   if (fromPads) {

@@ -18,6 +18,11 @@ describe("the keyboard's edges", () => {
     expect(edgeGesture(grab([48, 49, 83, 84]), false)).toBe("keys");
   });
 
+  it("fires on the two outermost white keys, as the user's hands landed (C3 D3, B6 C7)", () => {
+    expect(edgeGesture(grab([48, 50, 95, 96]), false)).toBe("keys");
+    expect(edgeGesture(grab([48, 50, 83, 84]), false)).toBe("keys");
+  });
+
   it("fires whatever the size or octave — 25, 49, 61 and 88 keys", () => {
     expect(edgeGesture(grab([48, 49, 71, 72]), false)).toBe("keys"); // 25: C3–C5
     expect(edgeGesture(grab([36, 37, 83, 84]), false)).toBe("keys"); // 49: C2–C6
@@ -35,6 +40,8 @@ describe("the keyboard's edges", () => {
     expect(edgeGesture(grab([60, 64, 67, 72]), false)).toBeNull(); // a C chord, doubled
     expect(edgeGesture(grab([60, 61, 63, 64]), false)).toBeNull(); // a cluster
     expect(edgeGesture(grab([60, 61, 70, 71]), false)).toBeNull(); // pairs under an octave apart
+    expect(edgeGesture(grab([48, 51, 93, 96]), false)).toBeNull(); // pairs a third wide
+    expect(edgeGesture(grab([48, 52, 79, 84]), false)).toBeNull(); // an open C voicing
     expect(edgeGesture(grab([48, 49, 83]), false)).toBeNull(); // three of the four
   });
 
