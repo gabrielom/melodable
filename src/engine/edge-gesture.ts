@@ -15,21 +15,23 @@
  *   white keys — whatever the keyboard's size or octave shift. They must be at least an octave
  *   apart, which a 25-key controller clears with room to spare (its pairs sit
  *   22 semitones apart at their inner edges).
- * - **Pads**: a bank of sixteen, measured from its lowest note, so a bank
- *   shifted up by 16 is the same shape. Three arrangements are accepted,
- *   because controllers disagree and none of them reports which it is: the
- *   MPC 4×4 (corners 0, 3, 12, 15), a 2×8 made of two 4×2 halves the way an
- *   Ableton drum rack folds onto two rows (0, 4, 11, 15), and a 2×8 filled
- *   row by row (0, 7, 8, 15). The Launchkey MK4 sends its drum pads as notes
- *   36–51 on channel 10; which of the two 2×8s it uses is drawn only as an
- *   image in Novation's guide, so both are here.
+ * - **Pads**: four pads of a sixteen-pad bank whose lowest and highest are
+ *   exactly 15 apart. Every layout puts the bank's first and last note on two
+ *   of its corners — the MPC 4×4 (0, 3, 12, 15), a 2×8 of two 4×2 halves
+ *   (0, 4, 11, 15), a 2×8 filled row by row (0, 7, 8, 15) — and they disagree
+ *   only about where the other two corners are. The first version listed
+ *   those three layouts and accepted nothing else, and the Launchkey MK4's
+ *   pads were refused: its drum pads send 36–51 on channel 10, but its grid is
+ *   drawn only as a picture in Novation's guide and was guessed wrong. So the
+ *   rule now holds only what every layout shares, and a bank shifted up by 16
+ *   is the same shape.
  *
  * **What keeps it from firing mid-song** is that it asks for all four notes
  * to be struck within `GESTURE_WINDOW` of each other and for nothing else
  * struck in that window to still be held. Two minor-second clusters an octave or more
- * apart, grabbed at once, is not something music asks for. The pad shapes are
- * narrower still — a C minor triad doubled an octave up is exactly the 4×4's
- * `0, 3, 12, 15` — so they only count when the notes come from pads: MIDI
+ * apart, grabbed at once, is not something music asks for. The pad shape is
+ * looser — a C minor triad doubled an octave up is exactly the 4×4's
+ * `0, 3, 12, 15` — so it only counts when the notes come from pads: MIDI
  * channel 10, where drum pads send by convention and the Launchkey's do, or a
  * pads lesson, where every strike is a pad.
  */
@@ -70,12 +72,8 @@ export const MIN_KEY_SPAN = 12;
 /** MIDI channel 10, where drum pads send by convention. Zero-based. */
 export const DRUM_CHANNEL = 9;
 
-/** The corner pads of a sixteen-pad bank, relative to its lowest note. */
-export const PAD_CORNERS: readonly (readonly number[])[] = [
-  [0, 3, 12, 15], // 4×4, MPC-style
-  [0, 4, 11, 15], // 2×8, two 4×2 halves side by side
-  [0, 7, 8, 15], // 2×8, filled row by row
-];
+/** A sixteen-pad bank's lowest and highest notes, which are always corners. */
+export const PAD_BANK_SPAN = 15;
 
 export type EdgeGestureKind = "keys" | "pads";
 
@@ -110,10 +108,7 @@ export function edgeGesture(
 
   const fromPads = padsLesson || grab.every((h) => h.channel === DRUM_CHANNEL);
   if (fromPads) {
-    const shape = notes.map((n) => n - a);
-    if (PAD_CORNERS.some((corners) => corners.every((v, i) => v === shape[i]))) {
-      return { kind: "pads", since };
-    }
+    if (d - a === PAD_BANK_SPAN) return { kind: "pads", since };
   }
   return null;
 }

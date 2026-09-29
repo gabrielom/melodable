@@ -90,6 +90,18 @@ describe("the pads' corners", () => {
     expect(edgeGesture(onPads([36, 43, 44, 51]), false)).toBe("pads");
   });
 
+  it("does not depend on where the middle corners are — only the bank's ends", () => {
+    // Whatever the Launchkey's grid turns out to be, its corners include 36 and 51.
+    expect(edgeGesture(onPads([36, 38, 49, 51]), false)).toBe("pads");
+    expect(edgeGesture(onPads([36, 44, 45, 51]), false)).toBe("pads");
+  });
+
+  it("accepts any four held pads that include the bank's two ends — the price of not knowing the grid", () => {
+    // Kick, snare, hat and ride all held down at once would fire it too. Pads
+    // are struck and let go, so four held together is a grab, not a groove.
+    expect(edgeGesture(onPads([36, 38, 42, 51]), false)).toBe("pads");
+  });
+
   it("follows the bank when the pads are shifted", () => {
     expect(edgeGesture(onPads([52, 55, 64, 67]), false)).toBe("pads");
   });
@@ -106,5 +118,6 @@ describe("the pads' corners", () => {
   it("does not fire on a groove", () => {
     expect(edgeGesture(onPads([36, 38, 42, 46]), false)).toBeNull(); // kick, snare, hats
     expect(edgeGesture(onPads([36, 39, 48]), false)).toBeNull();
+    expect(edgeGesture(onPads([36, 40, 47, 50]), false)).toBeNull(); // 14 apart: not a bank
   });
 });

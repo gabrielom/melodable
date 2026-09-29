@@ -1040,17 +1040,21 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   the black one (C C♯), or the outermost *white* keys (C D), which is where
   the user's hand actually landed on the Launchkey: C3 D3 and B6 C7, read off
   the MIDI monitor, refused by the first, semitone-only rule; a pad bank is
-  measured from its lowest note, in any of three arrangements — MPC 4×4
-  (`0, 3, 12, 15`), a 2×8 of two 4×2 halves (`0, 4, 11, 15`) and a 2×8 filled
-  row by row (`0, 7, 8, 15`). **Which 2×8 the Launchkey MK4 uses is not
-  confirmed** — its drum pads send 36–51 on channel 10, but Novation's guide
-  draws the grid only as an image — so both are accepted; if the pads ever
-  fail and the keys work, that list is where to look.
+  any four held pads whose lowest and highest are **exactly 15 apart** — a
+  sixteen-pad bank's first and last notes, which every layout puts on two of
+  its corners. The first version listed three layouts (MPC 4×4, two 2×8s)
+  and the gesture did nothing on the user's Launchkey MK4 pads: they send
+  36–51 on channel 10, but Novation's guide draws the grid only as a picture,
+  so the layouts were a guess. **The pad notes the user pressed were never
+  seen** — if the span-15 rule also fails, ask for the MIDI monitor while
+  holding the corner pads before changing it again. Holding only what every layout shares cost a little
+  precision — four held pads including the bank's two ends fire it, whatever
+  the other two — and pads are struck and let go, so four held at once is a
+  grab, not a groove.
   **What stops it firing mid-song**: all four must land within
   `GESTURE_WINDOW` (1.5s) with nothing else struck in it still held, and the
-  pad shapes
-  count only from pads — channel 10 or a pads lesson — because a doubled
-  minor triad on the keys *is* the 4×4 shape. It fires once per grab and
+  pad shape counts only from pads — channel 10 or a pads lesson — because a
+  doubled minor triad on the keys *is* the 4×4 shape. It fires once per grab and
   rearms when all four are released; a note struck again counts as released,
   so one lost note-off cannot disarm it for the sitting. The gesture's notes
   are real strikes until the fourth lands, so stopping with it takes their
