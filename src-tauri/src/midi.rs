@@ -16,40 +16,16 @@ use tauri::{AppHandle, Emitter, State};
 
 /// Holds the currently open input connections so they aren't dropped.
 ///
-/// `companion` is the controller's DAW port, opened beside its MIDI port and
-/// read for drum pads only. A Launchkey sends its drum pads down the MIDI port
-/// until a DAW takes it over — Ableton's control-surface script does, the
-/// moment Live opens — and from then on the pads report on the DAW port
-/// instead, on channel 10. Without this, the pads went silent in Melodable as
-/// soon as Ableton was running, while the keys (which stay on the MIDI port)
-/// carried on.
+/// `companion` is the controller's DAW port, opened beside its MIDI port. A
+/// Launchkey sends its drum pads down the MIDI port until a DAW takes it over
+/// — Ableton's control-surface script does, the moment Live opens — and from
+/// then on the pads are expected on the DAW port instead. Everything it
+/// carries is passed up, tagged `port: "daw"`: the MIDI monitor shows all of
+/// it, and the frontend decides what reaches the trainer (`isDrumPadNote`).
 #[derive(Default)]
 pub struct MidiState {
     pub conn: Mutex<Option<MidiInputConnection<()>>>,
     pub companion: Mutex<Option<MidiInputConnection<()>>>,
-}
-
-/// Which messages a connection passes on.
-#[derive(Clone, Copy)]
-enum Filter {
-    /// Everything — the port the player chose.
-    All,
-    /// Note on/off on MIDI channel 10 only: the drum pads, and nothing of the
-    /// control-surface conversation (encoders, session pads, transport
-    /// buttons, LED feedback) that shares a DAW port with them.
-    DrumNotes,
-}
-
-impl Filter {
-    fn passes(self, message: &[u8]) -> bool {
-        match self {
-            Filter::All => true,
-            Filter::DrumNotes => {
-                let status = message[0] & 0xF0;
-                (status == 0x80 || status == 0x90) && (message[0] & 0x0F) == 9
-            }
-        }
-    }
 }
 
 /// One parsed MIDI message, shipped to the frontend as `midi://message`.
@@ -63,6 +39,11 @@ pub struct MidiMsg {
     pub velocity: u8,
     /// 0-15
     pub channel: u8,
+    /// The raw status byte, so the monitor can name a message `kind` calls
+    /// "other" (aftertouch, pitch bend, program change).
+    pub status: u8,
+    /// "main" for the port the player chose, "daw" for its companion.
+    pub port: &'static str,
     /// midir's monotonic timestamp in microseconds. Grade timing against this,
     /// not against the moment the event reaches JS.
     #[serde(rename = "timestampMicros")]
@@ -99,14 +80,13 @@ pub fn open_midi_port(
     *state.companion.lock().map_err(|e| e.to_string())? = None;
     *state.conn.lock().map_err(|e| e.to_string())? = None;
 
-    let (name, conn) = connect(app, index, "melodable-in", Filter::All)?;
+    let (name, conn) = connect(app, index, "melodable-in", "main")?;
     *state.conn.lock().map_err(|e| e.to_string())? = Some(conn);
     Ok(name)
 }
 
-/// Open the port at `index` as the companion of the one already open, passing
-/// on its drum-pad notes only (see `MidiState`). Replaces any earlier
-/// companion.
+/// Open the port at `index` as the companion of the one already open (see
+/// `MidiState`). Replaces any earlier companion.
 #[tauri::command]
 pub fn open_midi_companion(
     app: AppHandle,
@@ -114,7 +94,7 @@ pub fn open_midi_companion(
     index: usize,
 ) -> Result<String, String> {
     *state.companion.lock().map_err(|e| e.to_string())? = None;
-    let (name, conn) = connect(app, index, "melodable-drums", Filter::DrumNotes)?;
+    let (name, conn) = connect(app, index, "melodable-daw", "daw")?;
     *state.companion.lock().map_err(|e| e.to_string())? = Some(conn);
     Ok(name)
 }
@@ -123,7 +103,7 @@ fn connect(
     app: AppHandle,
     index: usize,
     conn_name: &str,
-    filter: Filter,
+    port_tag: &'static str,
 ) -> Result<(String, MidiInputConnection<()>), String> {
     let mut input = MidiInput::new("melodable").map_err(|e| e.to_string())?;
     // We want everything except active-sensing noise; sysex/timing are ignored.
@@ -144,7 +124,7 @@ fn connect(
             &port,
             conn_name,
             move |stamp, message, _| {
-                if message.is_empty() || !filter.passes(message) {
+                if message.is_empty() {
                     return;
                 }
                 let status = message[0] & 0xF0;
@@ -167,6 +147,8 @@ fn connect(
                         note,
                         velocity,
                         channel,
+                        status: message[0],
+                        port: port_tag,
                         timestamp_micros: stamp,
                     },
                 );

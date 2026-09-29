@@ -36,10 +36,10 @@ import KeyMenu from "@/components/KeyMenu.vue";
 import { openingStep, songState } from "@/engine/course";
 import { lessonRepeats } from "@/engine/scoring";
 import type { LessonEdit } from "@/engine/lesson-edit";
-import { portToOpen } from "@/engine/midi-port";
+import { isDrumPadNote, portToOpen } from "@/engine/midi-port";
 import { GESTURE_WINDOW, edgeGesture, type HeldNote } from "@/engine/edge-gesture";
 import { isTauri } from "@/composables/useMidi";
-import type { LogRow } from "@/components/midi-log";
+import { otherKind, type LogRow } from "@/components/midi-log";
 import PianoKeyboard from "@/views/piano/PianoKeyboard.vue";
 import BarTooltip from "@/components/BarTooltip.vue";
 
@@ -605,6 +605,14 @@ function pushLog(
   ].slice(0, MAX_LOG);
 }
 
+/** A line of words in the monitor: what became of the DAW port. */
+function pushNotice(text: string) {
+  log.value = [
+    { id: logId++, kind: "notice", note: 0, velocity: 0, channel: 0, delta: 0, source: "daw" as const, text },
+    ...log.value,
+  ].slice(0, MAX_LOG);
+}
+
 // ----------------------------------------------------------------- triggers
 
 function flashPad(index: number, velocity: number) {
@@ -684,7 +692,11 @@ function noteOff(midi: number, releaseTime?: number) {
 
 /** Hardware input. Scoring uses `m.timestampMicros`, not handler time. */
 function onMidiMessage(m: MidiMessage) {
-  pushLog(m.kind, m.note, m.velocity, m.channel, "hardware");
+  // The DAW port is logged whole, so the monitor shows what a controller sends
+  // there while a DAW has it; only its drum pads go any further.
+  const kind = m.kind === "other" ? otherKind(m.status) : m.kind;
+  pushLog(kind, m.note, m.velocity, m.channel, m.port === "daw" ? "daw" : "hardware");
+  if (!isDrumPadNote(m)) return;
 
   // Calibrating: a strike is a tap against the click, not a note. Measured on
   // the *raw* time — feeding it the offset under test would only ever report
@@ -768,7 +780,7 @@ const {
   refreshPorts,
   connect,
   disconnect,
-} = useMidi(onMidiMessage);
+} = useMidi(onMidiMessage, pushNotice);
 
 /**
  * Pick a device from the menu: open it and remember it by name, so the next

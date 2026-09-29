@@ -78,6 +78,10 @@ export interface MidiMessage {
   note: number;
   velocity: number;
   channel: number;
+  /** The raw status byte — what names a message `kind` calls "other". */
+  status: number;
+  /** The port the player chose, or the controller's DAW port beside it. */
+  port: "main" | "daw";
   /** midir's monotonic timestamp. Grade against this, not Date.now(). */
   timestampMicros: number;
 }

@@ -1030,10 +1030,16 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   over — Ableton's script does as soon as Live opens, and Novation's guide
   says Drum mode then reports on the DAW port, channel 10 — so the user's
   pads went silent in Melodable whenever Ableton was running, while the keys
-  (which stay on the MIDI port) worked. The companion passes **note on/off on
-  channel 10 and nothing else**, filtered in Rust: the rest of that port is
-  the control-surface conversation (encoders, session pads, buttons), which
-  would arrive as wrong notes. macOS lets both apps read the port; Windows
+  (which stay on the MIDI port) worked. Only **note on/off on channel 10**
+  from it reaches the trainer (`isDrumPadNote`): the rest of that port is the
+  control-surface conversation (encoders, session pads, buttons), which would
+  arrive as wrong notes. **The monitor shows the port whole**, each row marked
+  with a green ring rather than the amber dot, and a notice row says whether
+  the port opened, failed, or was not found — because with the companion in
+  place the user's pads *still* went silent under Ableton, and nothing on
+  screen could say which of those it was. The filter lived in Rust at first;
+  it moved up so the traffic it drops could be seen. **Still open**: read the
+  monitor with Ableton running before changing the filter. macOS lets both apps read the port; Windows
   opens ports exclusively, so there the companion may fail while Live holds
   it, and the failure is only logged. Type-checked against stubbed
   `midir`/Tauri signatures — this container cannot build the Tauri crate —

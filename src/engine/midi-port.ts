@@ -1,3 +1,5 @@
+import type { MidiMessage } from "./types";
+
 /**
  * Which MIDI input to open without being asked.
  *
@@ -46,11 +48,11 @@ export function portToOpen(ports: readonly string[], remembered: string | null |
  * MIDI Out" and "Launchkey MK4 37 DAW Out". Compared with both tokens taken
  * out, so it does not matter which word order or suffix a platform gives them.
  *
- * It is opened beside the chosen port and read for drum pads only (the Rust
- * side filters to channel-10 notes). A Launchkey's pads leave the MIDI port for
- * this one the moment a DAW takes the controller over — Ableton does as soon
- * as Live opens — and without it they went silent in Melodable while the keys
- * went on working.
+ * It is opened beside the chosen port and read for drum pads only
+ * (`isDrumPadNote`). A Launchkey's pads leave the MIDI port for this one the
+ * moment a DAW takes the controller over — Ableton does as soon as Live opens
+ * — and without it they went silent in Melodable while the keys went on
+ * working.
  */
 export function dawCompanion(ports: readonly string[], name: string): number | null {
   if (isDawPort(name)) return null;
@@ -58,4 +60,16 @@ export function dawCompanion(ports: readonly string[], name: string): number | n
   const own = base(name);
   const i = ports.findIndex((p) => p !== name && isDawPort(p) && base(p) === own);
   return i >= 0 ? i : null;
+}
+
+/**
+ * Whether a message reaches the trainer. Everything from the chosen port
+ * does. From the DAW port only note on/off on channel 10 — the drum pads —
+ * and none of the control-surface conversation that shares it (encoders,
+ * session pads, transport buttons), which would arrive as wrong notes. The
+ * monitor shows the DAW port's traffic whole either way.
+ */
+export function isDrumPadNote(m: Pick<MidiMessage, "kind" | "channel" | "port">): boolean {
+  if (m.port !== "daw") return true;
+  return (m.kind === "noteon" || m.kind === "noteoff") && m.channel === 9;
 }

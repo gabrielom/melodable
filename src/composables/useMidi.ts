@@ -14,7 +14,12 @@ import { dawCompanion } from "@/engine/midi-port";
 export const isTauri = (): boolean =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-export function useMidi(onMessage: (m: MidiMessage) => void) {
+/**
+ * `onNotice` hears what became of the DAW port, in words, for the MIDI
+ * monitor: opened, failed, or not there. It is the one part of connecting that
+ * could fail without anything on screen saying so.
+ */
+export function useMidi(onMessage: (m: MidiMessage) => void, onNotice: (text: string) => void = () => {}) {
   const ports = ref<string[]>([]);
   const connectedIndex = ref<number | null>(null);
   const connectedName = ref<string>("");
@@ -70,14 +75,17 @@ export function useMidi(onMessage: (m: MidiMessage) => void) {
       connectedIndex.value = index;
       connectedName.value = name;
 
-      // The device's DAW port too, for its drum pads only: a DAW taking the
+      // The device's DAW port too, for its drum pads: a DAW taking the
       // controller over moves them there (see `dawCompanion`). Best effort —
       // the keys and everything else still come through the port just opened.
       const companion = dawCompanion(ports.value, name);
       if (companion !== null) {
-        await invoke("open_midi_companion", { index: companion }).catch((e) =>
-          console.warn("MIDI: could not open the DAW port for drum pads", e),
+        await invoke<string>("open_midi_companion", { index: companion }).then(
+          (daw) => onNotice(`DAW port open · ${daw}`),
+          (e) => onNotice(`DAW port failed · ${String(e)}`),
         );
+      } else {
+        onNotice(`no DAW port beside ${name}`);
       }
 
       if (!unlisten) {

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { dawCompanion, isDawPort, portToOpen } from "../src/engine/midi-port";
+import { dawCompanion, isDawPort, isDrumPadNote, portToOpen } from "../src/engine/midi-port";
+import { otherKind } from "../src/components/midi-log";
 
 const LAUNCHKEY = ["Launchkey MK4 37 MIDI Out", "Launchkey MK4 37 DAW Out"];
 
@@ -54,5 +55,30 @@ describe("dawCompanion", () => {
   it("has none for a device without one, or when the DAW port itself was chosen", () => {
     expect(dawCompanion(["Arturia KeyStep"], "Arturia KeyStep")).toBeNull();
     expect(dawCompanion(LAUNCHKEY, "Launchkey MK4 37 DAW Out")).toBeNull();
+  });
+});
+
+describe("isDrumPadNote", () => {
+  it("lets everything from the chosen port through", () => {
+    expect(isDrumPadNote({ kind: "noteon", channel: 0, port: "main" })).toBe(true);
+    expect(isDrumPadNote({ kind: "cc", channel: 3, port: "main" })).toBe(true);
+  });
+
+  it("lets only channel-10 notes through from the DAW port", () => {
+    expect(isDrumPadNote({ kind: "noteon", channel: 9, port: "daw" })).toBe(true);
+    expect(isDrumPadNote({ kind: "noteoff", channel: 9, port: "daw" })).toBe(true);
+    // Session pads, encoders and buttons: the control-surface conversation.
+    expect(isDrumPadNote({ kind: "noteon", channel: 0, port: "daw" })).toBe(false);
+    expect(isDrumPadNote({ kind: "cc", channel: 9, port: "daw" })).toBe(false);
+  });
+});
+
+describe("otherKind", () => {
+  it("names what the monitor would otherwise call 'other'", () => {
+    expect(otherKind(0xa9)).toBe("poly at");
+    expect(otherKind(0xd0)).toBe("pressure");
+    expect(otherKind(0xe1)).toBe("bend");
+    expect(otherKind(0xc0)).toBe("program");
+    expect(otherKind(0xf8)).toBe("0xf8");
   });
 });
