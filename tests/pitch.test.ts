@@ -3,6 +3,7 @@ import {
   keyGeometry,
   isWhiteKey,
   noteName,
+  pitchLetter,
   countWhiteKeys,
   normalizeRange,
 } from "../src/engine/pitch";
@@ -118,6 +119,22 @@ describe("pad positions", () => {
         }),
       );
       expect(seen.size, layout).toBe(16);
+    }
+  });
+});
+
+describe("pitchLetter", () => {
+  it("names the pitch class without the octave", () => {
+    expect(pitchLetter(60)).toBe("C"); // C4
+    expect(pitchLetter(72)).toBe("C"); // C5 — same letter, different octave
+    expect(pitchLetter(61)).toBe("C#");
+    expect(pitchLetter(71)).toBe("B");
+  });
+
+  it("agrees with noteName minus the octave", () => {
+    for (let n = 21; n <= 108; n++) {
+      expect(noteName(n).startsWith(pitchLetter(n))).toBe(true);
+      expect(noteName(n).slice(pitchLetter(n).length)).toMatch(/^-?\d+$/);
     }
   });
 });

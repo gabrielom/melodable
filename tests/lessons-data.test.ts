@@ -2,6 +2,28 @@ import { describe, it, expect } from "vitest";
 import { BUILTIN_LESSONS } from "../src/data/lessons";
 import { noteToPad } from "../src/engine/gm";
 import { lessonRepeats } from "../src/engine/scoring";
+import { TEMPO_MAX, TEMPO_MIN } from "../src/engine/types";
+
+describe("the tempo range", () => {
+  it("reaches every tempo a clip can be imported at", () => {
+    // There were two ranges: the transport readout clamped to 50-160 while
+    // the import dialog offered 40-240, so a 200 BPM clip displayed its own
+    // tempo and then snapped to 160 the first time the readout was touched,
+    // with no way back up. Importing must not be a one-way door.
+    expect(TEMPO_MIN).toBeLessThanOrEqual(40);
+    expect(TEMPO_MAX).toBeGreaterThanOrEqual(240);
+  });
+
+  it("covers every built-in lesson, which is why the old cap was never felt", () => {
+    for (const l of BUILTIN_LESSONS) {
+      expect(l.bpm).toBeGreaterThanOrEqual(TEMPO_MIN);
+      expect(l.bpm).toBeLessThanOrEqual(TEMPO_MAX);
+    }
+    // All of them sit inside the old 50-160 too — the cap only ever bit on
+    // imported material.
+    expect(Math.max(...BUILTIN_LESSONS.map((l) => l.bpm))).toBeLessThan(160);
+  });
+});
 
 describe("builtin lesson data", () => {
   it("has a non-empty catalogue with unique ids", () => {

@@ -1,10 +1,22 @@
 [package]
-name = "rhythm-trainer"
+name = "melodable"
 version = "0.1.0"
-description = "Rhythm Trainer — timing trainer for pads and piano"
+description = "Melodable — timing trainer for pads and piano"
 authors = ["you"]
 edition = "2021"
 rust-version = "1.77"
+
+# The binary is capitalised while the crate is not, on purpose.
+#
+# `tauri dev` on macOS runs this executable directly — there is no `.app` — so
+# the name macOS shows under the Dock icon and in cmd-tab is the *filename*.
+# With the crate's own name it read "rhythm-trainer", and lowercase after the
+# rename. A bundled build takes its name from `productName` instead, so this
+# only governs dev; Tauri's own docs point at this field rather than
+# `mainBinaryName`, which is applied at bundle time and so never reaches dev.
+[[bin]]
+name = "Melodable"
+path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

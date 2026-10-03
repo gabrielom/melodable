@@ -15,11 +15,12 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             midi::list_midi_ports,
             midi::open_midi_port,
+            midi::open_midi_companion,
             midi::close_midi_port,
             link::link_available,
             link::link_enable,
             link::link_set_tempo,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Rhythm Trainer");
+        .expect("error while running Melodable");
 }

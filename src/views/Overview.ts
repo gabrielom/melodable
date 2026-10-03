@@ -1,5 +1,5 @@
 /**
- * The run at a glance: a 22px strip above the lane holding every note of the
+ * The run at a glance: a 33px strip above the lane holding every note of the
  * whole run — the pattern laid out once per repeat, end to end.
  *
  * It is a true miniature, not a decoration: one dot per note, in its lane's
@@ -14,7 +14,7 @@
 
 import type { TargetNote } from "@/engine/scoring";
 import type { VisibleWindow } from "@/views/lane-frame";
-import { ledOf, RADIUS, type Palette, type Theme } from "@/engine/theme";
+import { hueOf, RADIUS, type Palette, type Theme } from "@/engine/theme";
 import type { InstrumentType, Rating } from "@/engine/types";
 
 export interface OverviewFrame {
@@ -38,12 +38,61 @@ export interface OverviewFrame {
    * Drawn as the viewport rectangle. Null when stopped.
    */
   view: VisibleWindow | null;
+  /**
+   * The looping region in run beats, or null when loop mode is off. Drawn
+   * *over* the dots — it is a thing you grab, not a backdrop — and edged in
+   * the home screen's selected-card accent, which is the app's one "this is
+   * the bit you picked" colour.
+   */
+  loop: { from: number; to: number } | null;
   palette: Palette;
   theme: Theme;
 }
 
-/** Note dot, px. Small enough that a 2.75px row never becomes a solid line. */
+/** Note dot, px. Small enough that a thin row never becomes a solid line. */
 const DOT = 2;
+/**
+ * Gap kept clear above the first row of dots and below the last.
+ *
+ * The rows are spread across what is left rather than each sitting centred in
+ * an equal slice, so the outermost lanes never touch the strip's border — the
+ * top row used to sit 1px in and the bottom one flush against the edge, which
+ * read as clipping. The spacing between rows falls out of the same span, so it
+ * adapts to however many lanes a lesson has: eight in pads, three or four in
+ * the piano views.
+ */
+const ROW_INSET = 3;
+
+/**
+ * Top edge of a lane's row of dots, in a strip `height` tall.
+ *
+ * Rows are spread between the two insets rather than each centred in an equal
+ * slice: the first sits exactly `ROW_INSET` from the top and the last ends
+ * exactly `ROW_INSET` from the bottom, whatever the lane count. A single lane
+ * has no span to spread over, so it centres.
+ *
+ * The inset gives way before the dot does: a strip too short to hold both
+ * margins keeps the dots inside itself rather than hanging them over the edge.
+ * That only bites while the canvas is being sized, but a draw can land there.
+ */
+export function rowTop(row: number, rows: number, height: number): number {
+  const inset = Math.min(ROW_INSET, Math.max(0, (height - DOT) / 2));
+  const span = Math.max(0, height - inset * 2 - DOT);
+  if (rows <= 1) return inset + span / 2;
+  return inset + (Math.min(row, rows - 1) / (rows - 1)) * span;
+}
+/**
+ * How near an edge counts as grabbing it rather than the region's body.
+ *
+ * Generous against a 1.5px rule, because this is a 33px strip and the whole
+ * run is squeezed into it: a bar can be a few pixels wide, so an edge aimed at
+ * by eye is easily missed by the pointer. Kept under half the smallest region
+ * a drag can produce so the two handles can never both claim the same pixel.
+ */
+export const LOOP_GRIP = 7;
+/** The region's own rule, drawn over the dots. */
+const LOOP_EDGE_W = 1.5;
+
 /** Downbeat tick ink — the same values the lane's separators use. */
 const TICK_INK = { dark: "#ffffff1f", light: "#00000026" } as const;
 
@@ -68,9 +117,48 @@ export function viewportSpan(
   return to > from ? [from, to] : null;
 }
 
+/** What a pointer would take hold of on the loop region. */
+export type LoopGrab = "from" | "to" | "body" | null;
+
+/**
+ * What a pointer at `x` grabs on a region drawn between `x0` and `x1`.
+ *
+ * The **nearer** edge wins rather than the left one always: squeezed into a
+ * 33px strip a whole run can put a bar in a few pixels, so a short region has
+ * both grips over the same ground, and preferring the left would leave its
+ * right edge unreachable — you could shrink a region and never grow it again.
+ * A tie goes left, so the answer never depends on a rounding.
+ */
+export function loopGrabAt(x: number, x0: number, x1: number, grip: number): LoopGrab {
+  const dFrom = Math.abs(x - x0);
+  const dTo = Math.abs(x - x1);
+  if (Math.min(dFrom, dTo) <= grip) return dTo < dFrom ? "to" : "from";
+  return x > x0 && x < x1 ? "body" : null;
+}
+
 export class Overview {
   private ctx: CanvasRenderingContext2D;
   private dpr = 1;
+  /**
+   * The run's length and the region's pixels, as the last draw had them.
+   *
+   * Recorded rather than recomputed, the same way the lane records its visible
+   * window: a pointer arrives between frames and has to be answered against
+   * the picture the player is actually looking at.
+   */
+  private geom: { run: number; width: number; loop: [number, number] | null } | null = null;
+
+  /** Run beat under a pointer x, or null before the first draw. */
+  beatAt(x: number): number | null {
+    if (!this.geom || this.geom.width <= 0) return null;
+    return (Math.max(0, Math.min(this.geom.width, x)) / this.geom.width) * this.geom.run;
+  }
+
+  /** What a pointer x would grab of the region last drawn. */
+  grabAt(x: number): LoopGrab {
+    const loop = this.geom?.loop;
+    return loop ? loopGrabAt(x, loop[0], loop[1], LOOP_GRIP) : null;
+  }
 
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext("2d")!;
@@ -120,6 +208,11 @@ export class Overview {
       ctx.fillRect(Math.round(xOf(b * bpb)), 0, 1, H);
     }
 
+    const loopPx: [number, number] | null = f.loop
+      ? [Math.round(xOf(f.loop.from)) + 0.5, Math.round(xOf(f.loop.to)) - 0.5]
+      : null;
+    this.geom = { run, width: W, loop: loopPx };
+
     // Viewport rectangle, under the dots: neutral, so it can't be mistaken
     // for the playhead or for a rating.
     if (f.runBeat !== null && f.view) {
@@ -137,7 +230,32 @@ export class Overview {
       }
     }
 
+    // The region's tint goes under the dots, its edges over them. **The dots
+    // are never veiled** — this is a minimap and all of it has to read — so
+    // the stretch outside the loop is left exactly as it is rather than dimmed
+    // to make the loop stand out. The accent does that on its own.
+    if (loopPx && loopPx[1] > loopPx[0]) {
+      ctx.save();
+      ctx.globalAlpha = 0.14;
+      ctx.fillStyle = p.accent;
+      ctx.fillRect(loopPx[0], 0.5, loopPx[1] - loopPx[0], H - 1);
+      ctx.restore();
+    }
+
     this.dots(f, W, H, loop, repeats, xOf);
+
+    if (loopPx) {
+      // Edged in the home screen's selected-card accent: the app already has
+      // one colour for "this is the bit you picked", and this is that.
+      ctx.fillStyle = p.accent;
+      ctx.fillRect(loopPx[0] - LOOP_EDGE_W / 2, 0, LOOP_EDGE_W, H);
+      ctx.fillRect(loopPx[1] - LOOP_EDGE_W / 2, 0, LOOP_EDGE_W, H);
+      // A rule along the top and bottom closes the box, so the two edges read
+      // as one region rather than as a pair of unrelated markers.
+      const w = Math.max(0, loopPx[1] - loopPx[0]);
+      ctx.fillRect(loopPx[0], 0, w, 1);
+      ctx.fillRect(loopPx[0], H - 1, w, 1);
+    }
 
     if (f.runBeat !== null) {
       ctx.fillStyle = p.head;
@@ -160,30 +278,34 @@ export class Overview {
     const ctx = this.ctx;
     const p = f.palette;
 
-    // Piano maps pitch to a row; pads map the lane's screen position.
-    const order =
-      f.instrument === "piano"
-        ? [...new Set(f.targets.map((t) => t.lane))].sort((a, b) => b - a)
-        : f.padLanes;
+    // Piano maps pitch to a row, highest at the top so the strip reads the
+    // way the roll does; pads map the lane's screen position.
+    const piano = f.instrument === "piano";
+    const order = piano
+      ? [...new Set(f.targets.map((t) => t.lane))].sort((a, b) => b - a)
+      : f.padLanes;
     const rows = Math.max(1, order.length);
-    const rowH = H / rows;
     const rowOf = (lane: number) => {
       const i = order.indexOf(lane);
       return i < 0 ? rows - 1 : i;
     };
+    /**
+     * Hues are assigned low-to-high for piano, but the rows run high-to-low,
+     * so the two indices are mirror images. Pads have only the one order.
+     */
+    const hueIndex = (row: number) => (piano ? rows - 1 - row : row);
 
     for (let r = 0; r < repeats; r++) {
       f.targets.forEach((t, i) => {
         const rating = f.ratings.get(`${r}:${i}`);
-        // Graded notes wear their rating; everything still to come wears the
-        // lane's own colour. Same rule as the lanes below.
+        const row = rowOf(t.lane);
+        // Graded notes wear their rating; everything still to come wears its
+        // lane's dimmed hue. The same rule, and the same values, as the lanes
+        // below — the strip is a miniature of them, not its own language.
         ctx.fillStyle = rating
           ? p.rating[rating]
-          : f.instrument === "piano"
-            ? p.instrument
-            : ledOf(p, rowOf(t.lane));
-        const y = rowOf(t.lane) * rowH + (rowH - DOT) / 2;
-        ctx.fillRect(Math.round(xOf(r * loop + t.beat)), Math.round(y), DOT, DOT);
+          : hueOf(p, f.instrument, hueIndex(row)).dim;
+        ctx.fillRect(Math.round(xOf(r * loop + t.beat)), Math.round(rowTop(row, rows, H)), DOT, DOT);
       });
     }
   }

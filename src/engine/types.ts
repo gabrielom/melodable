@@ -11,7 +11,40 @@ export interface NoteEvent {
   time: number; // beats (quarter note = 1.0)
   pitch: number; // MIDI note number (0-127)
   velocity?: number; // 0-127 (optional target dynamics)
+  /**
+   * How long the note is written to be held, in beats.
+   *
+   * Absent or below `HOLD_MIN_BEATS` means an instant note — an onset to hit
+   * and nothing more, which is every note the app had before sustain existed.
+   * Above it the note is *held*: the release is judged too, and the lane draws
+   * a bar from the head showing how much of the written length you covered.
+   */
+  duration?: number;
 }
+
+/**
+ * Shortest written length that is worth aiming a release at. Below this a
+ * note is an ornament rather than a hold: there is nothing to sustain, and
+ * the bar would be a smudge on the head rather than a duration.
+ *
+ * A dotted eighth, chosen so it clears the design's 34px minimum bar at the
+ * five-bar zoom in the horizontal views (44px at the standard width, 40px at
+ * the window floor). The vertical views have far less room on the time axis,
+ * so there a hold has to be a half note or longer before the bar is drawn —
+ * that is the 34px rule biting, not this one.
+ */
+export const HOLD_MIN_BEATS = 0.75;
+
+/** How much of a note's written length the player actually covered. */
+export type HoldResult = "held" | "short" | "dropped";
+
+/**
+ * Where the sustain bands sit, as a fraction of the written length.
+ *
+ * The design proposes these pending feel-testing on real hardware, which is
+ * exactly why they are two named numbers rather than literals in a branch.
+ */
+export const HOLD_WINDOWS = { held: 0.85, short: 0.5 } as const;
 
 export interface Lesson {
   id: string;
@@ -30,6 +63,13 @@ export interface Lesson {
   notes: NoteEvent[];
   source: "builtin" | "midi-import";
   hint?: string;
+  /**
+   * The key, as fifths (-7..7), when the player has set one in edit mode.
+   * Absent means it is read off the notes (`keySignatureFor`), which is right
+   * nearly always — this is for the clip that uses only part of its scale.
+   * Read it through `authoredKey`, which checks it.
+   */
+  key?: number;
 }
 
 /** Raw MIDI event coming up from Rust via the `midi://message` event. */
@@ -38,6 +78,10 @@ export interface MidiMessage {
   note: number;
   velocity: number;
   channel: number;
+  /** The raw status byte — what names a message `kind` calls "other". */
+  status: number;
+  /** The port the player chose, or the controller's DAW port beside it. */
+  port: "main" | "daw";
   /** midir's monotonic timestamp. Grade against this, not Date.now(). */
   timestampMicros: number;
 }
@@ -73,6 +117,37 @@ export type Rating = "perfect" | "great" | "early" | "late" | "miss";
  * outer band that `classify` splits into `early` / `late` by sign.
  */
 export const TIMING_WINDOWS = { perfect: 0.032, great: 0.06, loose: 0.1 } as const;
+
+/**
+ * How near a target a strike has to land to count as an *attempt* at it.
+ *
+ * Wider than `loose`, and it exists to stop one sloppy strike being charged
+ * twice. A note struck 150ms late is outside every grading window, so it earns
+ * nothing — and the note it was aimed at will be swept as a miss a moment
+ * later, which is the charge. Calling the strike a wrong note as well would
+ * bill the same mistake to two different accounts.
+ *
+ * So beyond this, a strike is a wrong note; inside it, the strike is silent
+ * and the note's own miss speaks for it. 250ms is a long time in rhythm — two
+ * and a half loose windows — which is what "completely out of time" means.
+ */
+export const WRONG_GRACE = 0.25;
+
+/**
+ * The tempo range the app accepts, everywhere it accepts one.
+ *
+ * **One range, because there were two.** The transport readout clamped to
+ * 50-160 while the import dialog offered 40-240, so a clip could enter the
+ * library at a tempo the bar could not express: the imported Lavoe montuno is
+ * 200 BPM, displayed correctly because the lesson sets it directly, and the
+ * first touch of the readout — a drag, an arrow key, a typed number — snapped
+ * it to 160 with no way back up. The ceiling has to cover anything the
+ * importer will take, or importing is a one-way door.
+ *
+ * The built-in lessons run 70-98, which is why 160 was never felt.
+ */
+export const TEMPO_MIN = 40;
+export const TEMPO_MAX = 240;
 
 /**
  * Score weight per rating. `early` and `late` carry what the old single loose

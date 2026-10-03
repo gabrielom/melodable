@@ -20,6 +20,14 @@
 const JUMP_BEATS = 0.25;
 
 /**
+ * Scheduling lead-in before the count-in's first beat, so the opening click
+ * is never scheduled in the past. Exported because the idle preview parks the
+ * playhead exactly where `start` will place it, and that includes this — miss
+ * it and the notes twitch a few pixels the moment Start is pressed.
+ */
+export const START_DELAY = 0.15;
+
+/**
  * Beats the playhead keeps running past the last repeat before the run is
  * called finished, so the final note can still be struck late and is seen to
  * resolve rather than vanishing with the transport.
@@ -40,6 +48,17 @@ export function phaseDelta(absBeat: number, phase: number, loopBeats: number): n
   if (d > loopBeats / 2) d -= loopBeats;
   else if (d < -loopBeats / 2) d += loopBeats;
   return d;
+}
+
+/**
+ * An external beat grid to start against — Ableton Link, in practice.
+ *
+ * `beat` is the grid's position within a bar at clock time `at`, so beat 0 of
+ * the grid is a bar line the other app agrees on.
+ */
+export interface StartGrid {
+  beat: number;
+  at: number;
 }
 
 export interface TransportPosition {
@@ -121,12 +140,41 @@ export class Transport {
   /**
    * Begin playback: a short scheduling delay, then the count-in bar, then
    * loop 0. `now` is the current clock reading.
+   *
+   * With a `grid` (Ableton Link) beat 0 is pinned to that grid instead of
+   * falling wherever the press landed. Without it the follower would start us
+   * at an arbitrary phase and yank the playhead onto the grid a frame later,
+   * which is up to half a loop and eats the count-in it lands in.
    */
-  start(now: number, delay = 0.15): void {
+  start(now: number, delay = START_DELAY, grid?: StartGrid): void {
     this.playing = true;
     this.anchorLoop = 0;
-    this.anchorTime = now + delay + this.countInBeats * this.secPerBeat;
+    const earliest = now + delay + this.countInBeats * this.secPerBeat;
+    this.anchorTime = grid ? this.gridAtOrAfter(earliest, grid) : earliest;
     this.scheduledUntilBeat = -this.countInBeats;
+  }
+
+  /**
+   * The first bar line at or after `t`, on the external grid.
+   *
+   * A *bar*, deliberately, and not the lesson's loop. Stepping by the loop
+   * would make every candidate start point a whole loop apart and therefore
+   * all of the same parity — for a two-bar lesson against a four-bar set,
+   * every one of them lands on the same two bars, and no press time can reach
+   * the other two. Stepping by the bar puts the choice in the player's hands:
+   * the count-in occupies the bar after the press, so pressing one bar before
+   * the set's last bar starts the run on its downbeat.
+   *
+   * The count-in keeps its full length and simply starts later; the wait
+   * before it is silent.
+   */
+  private gridAtOrAfter(t: number, grid: StartGrid): number {
+    const barSeconds = this.beatsPerBar * this.secPerBeat;
+    const origin = grid.at - grid.beat * this.secPerBeat;
+    // Nudge before rounding up so a boundary landing exactly on `t` is taken
+    // rather than pushed a whole bar away by floating-point dust.
+    const bars = Math.ceil((t - origin) / barSeconds - 1e-9);
+    return origin + bars * barSeconds;
   }
 
   stop(): void {

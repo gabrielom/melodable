@@ -9,8 +9,9 @@
  *
  * - The playhead is **centred** in the note field, one continuous line across
  *   the whole stack, painted above the lane separators.
- * - **Ahead of it** notes carry their lane's LED at full strength — what is
- *   coming has to be the most readable thing on screen.
+ * - **Ahead of it** notes carry their lane's hue, dimmed: a target says *what*
+ *   to hit, and dimming keeps a whole field of them from shouting over the
+ *   handful that have been judged.
  * - **Behind it** they carry the colour they were graded, keep travelling, and
  *   dissolve into a veil as they reach the far edge. They never vanish at the
  *   playhead.
@@ -19,16 +20,31 @@
  *   content.
  */
 
-import { ledOf, RADIUS } from "@/engine/theme";
+import { hueOf, RADIUS } from "@/engine/theme";
 import { PADS, padPosition } from "@/engine/gm";
 import {
+  HOLD_CLEARANCE,
+  holdFill,
+  holdFloor,
+  holdLength,
+  noteInk,
   paintCountIn,
   paintGrid,
+  paintHold,
   paintVeil,
   pxPerBeat,
   SEPARATOR_INK,
+  WRONG_DOT_R,
+  paintWrong,
 } from "@/views/lane-geometry";
 import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
+import { TIMING_WINDOWS } from "@/engine/types";
+
+/** Per-lane label state for one frame — see `laneState`. */
+interface LaneState {
+  busy: Set<number>;
+  lit: Set<number>;
+}
 
 /** Canvas takes a font shorthand, not a CSS variable — mirrors `--mono`. */
 const MONO = '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
@@ -43,13 +59,26 @@ const LED_EDGE = 3;
 /** Hairline between lanes. */
 const LANE_GAP = 1;
 /** Note block, horizontal. */
-const NOTE_W = 14;
-const NOTE_H = 14;
+const NOTE_W = 28;
+const NOTE_H = 28;
 /** Note block when notes fall: a pill inset from the column's edges. */
-const NOTE_V = 8;
+const NOTE_V = 16;
 const NOTE_V_INSET = 12;
+/**
+ * Ceiling on that pill's width. A two-lane lesson gets half the window per
+ * column, and a note that simply insets from the column's edges becomes a
+ * 600px slab — the lane reads as a filled bar rather than as a note. Past this
+ * the note stays put and centres in its column instead of growing with it.
+ */
+const NOTE_V_MAX_W = 144;
 /** Vertical: distance from the bottom of the note field to the hit line. */
 const HIT_FROM_BOTTOM = 76;
+/**
+ * How far a hold's slot reaches back behind its own head, in the scrolling
+ * view. Half the 28px note, so the cap ends exactly at the head's centre and
+ * the slot's opening is never visible.
+ */
+const HEAD_CAP = 14;
 
 /** Controller mini-grid: 3px cells, 1px gaps. */
 const CELL = 3;
@@ -79,6 +108,12 @@ export class PadLanes implements LaneRenderer {
       this.canvas.width = w;
       this.canvas.height = h;
     }
+  }
+
+
+  /** Pads draw no chord ribbon: nothing to hit. */
+  ribbonBarAt(): number | null {
+    return null;
   }
 
   visibleBeats(): VisibleWindow {
@@ -115,14 +150,14 @@ export class PadLanes implements LaneRenderer {
     this.window = { behind: halfBeats, ahead: halfBeats };
 
     const xOfBeat = (beat: number) => hitX + (beat - f.absBeat) * beatPx;
-    const busy = new Set(f.instances.map((i) => i.lane));
+    const state = this.laneState(f);
 
     this.gutterHits = [];
     lanes.forEach((pad, li) => {
       const y = li * (laneH + LANE_GAP);
       this.gutterHits.push({ pad, x0: 0, x1: GUTTER, y0: y, y1: y + laneH });
 
-      this.gutter(f, 0, y, GUTTER, laneH, pad, li, "horizontal", busy.has(pad));
+      this.gutter(f, 0, y, GUTTER, laneH, pad, li, "horizontal", state);
 
       // note bed, then the tempo grid ruled over it
       ctx.fillStyle = p.lane;
@@ -143,34 +178,68 @@ export class PadLanes implements LaneRenderer {
       h: H,
     });
 
-    if (f.playing) {
-      // Notes: upcoming in the lane LED at full strength, played in their
-      // rating colour. Both scroll with the lane; nothing jumps at the head.
+    // Notes: upcoming in the lane LED at full strength, played in their
+    // rating colour. Both scroll with the lane; nothing jumps at the head.
+    // Drawn whenever there are any, not only while the transport runs — a
+    // stopped lesson previews its opening bars parked at the playhead.
+    if (f.instances.length) {
       ctx.save();
       ctx.beginPath();
       ctx.rect(trackX, 0, trackW, H);
       ctx.clip();
 
       const size = Math.min(NOTE_H, Math.max(5, laneH - 4));
+      const pxPerSec = beatPx / f.secPerBeat;
+      // Bars under the heads, so a head always sits on top of its own slot
+      // and on any neighbour's bar that reaches it.
+      for (const inst of f.instances) {
+        if (inst.duration <= 0) continue;
+        const li = lanes.indexOf(inst.lane);
+        if (li < 0) continue;
+        const x = hitX + (inst.time - f.now) * pxPerSec;
+        if (x < trackX - NOTE_W || x > W + NOTE_W) continue;
+        const len = holdLength(
+          inst.duration * beatPx,
+          this.roomAhead(f, inst, (i) => hitX + (i.time - f.now) * pxPerSec, NOTE_W),
+          x - NOTE_W / 2 < trackX || x + NOTE_W / 2 > W,
+          holdFloor("scrolling", HEAD_CAP),
+        );
+        if (len === null) continue;
+        const y = li * (laneH + LANE_GAP);
+        paintHold(ctx, {
+          x,
+          y: y + (laneH - size) / 2,
+          w: len,
+          h: size,
+          headEnd: "left",
+          headCap: HEAD_CAP,
+          radius: RADIUS[f.theme].note,
+          colour: noteInk(f, inst, li),
+          fill: holdFill(inst, f.now),
+        });
+      }
+
       for (const inst of f.instances) {
         const li = lanes.indexOf(inst.lane);
         if (li < 0) continue;
-        // Nothing has been played during the count-in, so the past stays empty.
-        if (f.countIn && inst.time < f.now) continue;
-        const x = hitX + (inst.time - f.now) * (beatPx / f.secPerBeat);
+        const x = hitX + (inst.time - f.now) * pxPerSec;
         if (x < trackX - NOTE_W || x > W + NOTE_W) continue;
         const y = li * (laneH + LANE_GAP);
-        this.note(
-          f,
-          x - NOTE_W / 2,
-          y + (laneH - size) / 2,
-          NOTE_W,
-          size,
-          inst.resolved ? p.rating[inst.rating!] : ledOf(p, li),
-        );
+        this.note(f, x - NOTE_W / 2, y + (laneH - size) / 2, NOTE_W, size, noteInk(f, inst, li));
+      }
+
+      for (const m of f.wrongMarks) {
+        const li = lanes.indexOf(m.lane);
+        if (li < 0) continue;
+        paintWrong(ctx, hitX + (m.time - f.now) * pxPerSec,
+          li * (laneH + LANE_GAP) + laneH / 2, WRONG_DOT_R, p.rating.miss, p.lane);
       }
       ctx.restore();
+    }
 
+    // The played side's wash only means something once something has been
+    // played, so the preview leaves it off.
+    if (f.playing) {
       paintVeil(ctx, p.lane, [trackX, 0], [hitX, 0], [trackX, 0, hitX - trackX, H]);
     }
 
@@ -184,7 +253,6 @@ export class PadLanes implements LaneRenderer {
     ctx.fillStyle = p.head;
     ctx.fillRect(Math.round(hitX) - 1, 0, 2, H);
 
-    if (!f.playing) this.idle(f, trackX + trackW / 2, H / 2);
     this.countIn(f, W, H);
   }
 
@@ -202,7 +270,7 @@ export class PadLanes implements LaneRenderer {
 
     // Notes fall, so a later beat sits higher up the screen.
     const yOfBeat = (beat: number) => hitY - (beat - f.absBeat) * beatPx;
-    const busy = new Set(f.instances.map((i) => i.lane));
+    const state = this.laneState(f);
 
     this.gutterHits = [];
     lanes.forEach((pad, li) => {
@@ -212,7 +280,7 @@ export class PadLanes implements LaneRenderer {
       // The label tile sits at the bottom, LED on its outer edge — the same
       // place it occupies in the horizontal gutter.
       this.gutterHits.push({ pad, x0: x, x1: x + laneW, y0: fieldH, y1: H });
-      this.gutter(f, x, fieldH, laneW, TILE_H, pad, li, "vertical", busy.has(pad));
+      this.gutter(f, x, fieldH, laneW, TILE_H, pad, li, "vertical", state);
     });
 
     paintGrid(ctx, {
@@ -229,32 +297,66 @@ export class PadLanes implements LaneRenderer {
       h: fieldH,
     });
 
-    if (f.playing) {
+    if (f.instances.length) {
       ctx.save();
       ctx.beginPath();
       ctx.rect(0, 0, W, fieldH);
       ctx.clip();
 
+      const pxPerSec = beatPx / f.secPerBeat;
+      const inset = Math.min(NOTE_V_INSET, Math.max(0, (laneW - 8) / 2));
+      // Inset from the column, but never wider than the cap — then centred,
+      // so a two-lane lesson gets a note rather than a bar.
+      const noteW = Math.min(NOTE_V_MAX_W, laneW - inset * 2);
+      const xOfLane = (li: number) => li * (laneW + LANE_GAP) + (laneW - noteW) / 2;
+
+      for (const inst of f.instances) {
+        if (inst.duration <= 0) continue;
+        const li = lanes.indexOf(inst.lane);
+        if (li < 0) continue;
+        const y = hitY - (inst.time - f.now) * pxPerSec;
+        if (y < -NOTE_V || y > fieldH + NOTE_V) continue;
+        const len = holdLength(
+          inst.duration * beatPx,
+          this.roomAhead(f, inst, (i) => hitY - (i.time - f.now) * pxPerSec, NOTE_V, true),
+          y - NOTE_V / 2 < 0 || y + NOTE_V / 2 > fieldH,
+          holdFloor("falling", 0),
+        );
+        if (len === null) continue;
+        paintHold(ctx, {
+          x: xOfLane(li),
+          y: y - len,
+          w: noteW,
+          h: len,
+          headEnd: "bottom",
+          // No head cap: the pill is only 16px, so a 14px cap would be half
+          // uncovered and show as a gap under the note. The walls carry the
+          // pill's own corners instead.
+          headCap: 0,
+          radius: NOTE_V / 2,
+          colour: noteInk(f, inst, li),
+          fill: holdFill(inst, f.now),
+        });
+      }
+
       for (const inst of f.instances) {
         const li = lanes.indexOf(inst.lane);
         if (li < 0) continue;
-        if (f.countIn && inst.time < f.now) continue;
-        const y = hitY - (inst.time - f.now) * (beatPx / f.secPerBeat);
+        const y = hitY - (inst.time - f.now) * pxPerSec;
         if (y < -NOTE_V || y > fieldH + NOTE_V) continue;
-        const x = li * (laneW + LANE_GAP);
-        const inset = Math.min(NOTE_V_INSET, Math.max(0, (laneW - 8) / 2));
-        this.note(
-          f,
-          x + inset,
-          y - NOTE_V / 2,
-          laneW - inset * 2,
-          NOTE_V,
-          inst.resolved ? p.rating[inst.rating!] : ledOf(p, li),
-          NOTE_V / 2, // pill
-        );
+        this.note(f, xOfLane(li), y - NOTE_V / 2, noteW, NOTE_V, noteInk(f, inst, li), NOTE_V / 2);
+      }
+
+      for (const m of f.wrongMarks) {
+        const li = lanes.indexOf(m.lane);
+        if (li < 0) continue;
+        paintWrong(ctx, xOfLane(li) + noteW / 2, hitY - (m.time - f.now) * pxPerSec,
+          WRONG_DOT_R, p.rating.miss, p.lane);
       }
       ctx.restore();
+    }
 
+    if (f.playing) {
       // Shorter falloff than horizontal — the played run here is only 76px.
       paintVeil(ctx, p.lane, [0, fieldH], [0, hitY], [0, hitY, W, fieldH - hitY]);
     }
@@ -267,7 +369,6 @@ export class PadLanes implements LaneRenderer {
     ctx.fillStyle = p.head;
     ctx.fillRect(0, Math.round(hitY) - 1, W, 2);
 
-    if (!f.playing) this.idle(f, W / 2, hitY / 2);
     this.countIn(f, W, fieldH);
   }
 
@@ -277,6 +378,11 @@ export class PadLanes implements LaneRenderer {
    * A lane's label block: the LED on its outer edge, the controller mini-grid,
    * then the drum name. Identical content in both orientations — only the edge
    * the LED sits on differs.
+   *
+   * The strip, the lit mini-grid cell and every unplayed note in the lane are
+   * the same dimmed tint, and provably so — that is what lets you scan the
+   * stack without a legend. Full strength is reserved for a lane that is
+   * sounding right now, which is the one thing the strip has to shout.
    */
   private gutter(
     f: LaneFrame,
@@ -287,14 +393,15 @@ export class PadLanes implements LaneRenderer {
     pad: number,
     li: number,
     orientation: "horizontal" | "vertical",
-    active: boolean,
+    state: LaneState,
   ): void {
     const ctx = this.ctx;
     const p = f.palette;
     ctx.fillStyle = p.gutter;
     ctx.fillRect(x, y, w, h);
 
-    ctx.fillStyle = ledOf(p, li);
+    const hue = hueOf(p, "pads", li);
+    ctx.fillStyle = state.lit.has(pad) ? hue.full : hue.dim;
     if (orientation === "horizontal") ctx.fillRect(x, y, LED_EDGE, h);
     else ctx.fillRect(x, y + h - LED_EDGE, w, LED_EDGE);
 
@@ -310,7 +417,7 @@ export class PadLanes implements LaneRenderer {
     const cy = orientation === "horizontal" ? y + h / 2 : y + (h - LED_EDGE) / 2;
     const gridRight = this.miniGrid(f, pad, li, inner + 10, cy);
 
-    ctx.fillStyle = f.playing && !active ? p.txt2 : p.txt;
+    ctx.fillStyle = f.playing && !state.busy.has(pad) ? p.txt2 : p.txt;
     ctx.font = `500 8.5px ${MONO}`;
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
@@ -332,11 +439,59 @@ export class PadLanes implements LaneRenderer {
     const y0 = cy - gh / 2;
     for (let r = 0; r < pos.rows; r++) {
       for (let c = 0; c < pos.cols; c++) {
-        ctx.fillStyle = r === pos.row && c === pos.col ? ledOf(f.palette, li) : f.palette.miniOff;
+        ctx.fillStyle =
+          r === pos.row && c === pos.col ? hueOf(f.palette, "pads", li).dim : f.palette.miniOff;
         ctx.fillRect(x0 + c * CELL_STEP, y0 + r * CELL_STEP, CELL, CELL);
       }
     }
     return x0 + gw;
+  }
+
+  /**
+   * What each lane's label block has to say about itself this frame.
+   *
+   * `busy` — the lane has notes anywhere in the visible window; a lane with
+   * nothing to play has its name dimmed rather than reading as equally live.
+   * `lit` — the lane has a note *at* the playhead, so it is sounding now. That
+   * is the one thing that earns the LED at full strength, and it makes the
+   * strip pulse with the part the way a controller's own pads do.
+   *
+   * Both in one pass over the instances: this runs every frame, and the pair
+   * of Sets is already more allocation than a draw wants.
+   */
+  private laneState(f: LaneFrame): LaneState {
+    const busy = new Set<number>();
+    const lit = new Set<number>();
+    for (const i of f.instances) {
+      busy.add(i.lane);
+      if (f.playing && Math.abs(i.time - f.now) <= TIMING_WINDOWS.loose) lit.add(i.lane);
+    }
+    return { busy, lit };
+  }
+
+  /**
+   * Room a hold has before it runs into the next head in its lane.
+   *
+   * Lanes are separate rows here, so "whose band it would cross" is simply
+   * "same lane" — the piano has the harder version of this, where a note is
+   * taller than its row. `posOf` maps an instance to the time axis, and
+   * `reverse` is for the falling view, where later means a smaller y.
+   */
+  private roomAhead(
+    f: LaneFrame,
+    inst: LaneFrame["instances"][number],
+    posOf: (i: LaneFrame["instances"][number]) => number,
+    headSize: number,
+    reverse = false,
+  ): number {
+    const here = posOf(inst);
+    let room = Infinity;
+    for (const other of f.instances) {
+      if (other === inst || other.lane !== inst.lane || other.time <= inst.time) continue;
+      const gap = reverse ? here - posOf(other) : posOf(other) - here;
+      room = Math.min(room, gap - headSize / 2 - HOLD_CLEARANCE);
+    }
+    return room;
   }
 
   /** Pad under a point on the canvas, for click-to-play. Null elsewhere. */
@@ -367,20 +522,10 @@ export class PadLanes implements LaneRenderer {
     ctx.fill();
   }
 
-  private idle(f: LaneFrame, cx: number, cy: number): void {
-    const ctx = this.ctx;
-    ctx.fillStyle = f.palette.txt3;
-    ctx.font = `500 8.5px ${MONO}`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    this.trackedCentered("PRESS START FOR THE COUNT-IN", cx, cy, 1.1, Infinity);
-    ctx.textBaseline = "alphabetic";
-  }
 
   private countIn(f: LaneFrame, W: number, H: number): void {
     if (!f.countIn) return;
     paintCountIn(this.ctx, {
-      theme: f.theme,
       palette: f.palette,
       beats: f.countInBeats,
       beat: f.countInBeat,
@@ -412,29 +557,14 @@ export class PadLanes implements LaneRenderer {
     }
   }
 
-  /** Same, centred on `cx`. */
-  private trackedCentered(
-    text: string,
-    cx: number,
-    y: number,
-    spacing: number,
-    maxWidth: number,
-  ): void {
-    const ctx = this.ctx;
-    const prev = ctx.textAlign;
-    ctx.textAlign = "left";
-    const width = (s: string) => ctx.measureText(s).width + spacing * Math.max(0, s.length - 1);
-    let s = text;
-    if (width(s) > maxWidth) {
-      while (s.length > 1 && width(s + "…") > maxWidth) s = s.slice(0, -1);
-      s += "…";
-    }
-    this.tracked(s, cx - width(s) / 2, y, spacing, Infinity);
-    ctx.textAlign = prev;
-  }
 
-  private roundRect(x: number, y: number, w: number, h: number, r: number): void {
+  private roundRect(x: number, y: number, w: number, h: number, radius: number): void {
     const ctx = this.ctx;
+    // Clamp, as `arcTo` will not: a radius over half the shorter side makes
+    // the corner arcs overlap and the path double back, drawing a pointed
+    // lens with a spike off each end instead of a rounded box. Nothing here
+    // asks for one today, but the piano's notes did.
+    const r = Math.max(0, Math.min(radius, w / 2, h / 2));
     ctx.beginPath();
     ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r);

@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref, watch } from "vue";
 import type { InstrumentType } from "@/engine/types";
 import type { Theme } from "@/engine/theme";
+import { clampLatency } from "@/engine/calibration";
 import { persistGet, persistSet } from "./persist";
 
 /**
@@ -19,26 +20,117 @@ export type PadLayout = "4x4" | "2x8";
 export type LaneOrientation = "vertical" | "horizontal";
 
 /**
+ * How the run is drawn: the falling-note roll, or real notation on a staff
+ * (handoff 10 §1). Sheet is horizontal only and piano only — a treble staff
+ * and a keyboard cannot say anything about a drum pad.
+ */
+export type LaneMode = "roll" | "sheet";
+
+/**
+ * How much colour the staff carries (handoff 12).
+ *
+ * Colour is not a binary here: the trainer paints two systems, the instrument
+ * hues before the playhead and the timing colours after it, and a player
+ * reading music may want to silence them independently. These are the two
+ * systems taken away one at a time, in that order.
+ *
+ * - `all` — both, which is the default and the trainer's normal behaviour.
+ * - `results` — the hues go and the judgement stays: **plain staff ink ahead
+ *   of the playhead, timing colours behind it.** What is coming reads as
+ *   notation and nothing else, and how it went still reads at a glance. This
+ *   is the state to sight-read in.
+ * - `mono` — both go, so the page reads as plain notation throughout.
+ *
+ * `results` is the state handoff 12 §1 calls "targets only" and describes the
+ * other way round — hues kept, judgement dropped. It was built that way and is
+ * **deliberately reversed**, on the user's word, given three times: what they
+ * want silenced on a staff is the pitch tint, not the mark. Their sentence is
+ * the spec — "all the notes to the right of the playhead should have no
+ * colour, after the playhead they should all have timing colours". Don't
+ * "restore" the handoff's reading without asking.
+ *
+ * Sheet only. The roll has no such choice: a falling lane is a stack of
+ * *lanes*, and stripping their hues would leave nothing to tell one from
+ * another.
+ */
+export type ColourMode = "all" | "results" | "mono";
+
+/**
+ * How a note is named: by letter, or by what it *does* in the key.
+ *
+ * Piano only. A degree is a statement about a scale, and a drum pad is not in
+ * one — handoff 11 §3.3 keeps degrees, key and sheet off every pads frame for
+ * the same reason.
+ */
+export type NoteLabel = "note" | "degree";
+
+/**
  * The subset of settings we persist across launches (Tauri store, M3).
  * `instrument` is intentionally absent — from M5 the active view follows the
  * restored lesson's instrument, so persisting it separately would conflict.
  */
 interface SettingsSnapshot {
   theme: Theme;
-  volume: number;
+  /** Superseded by the three bus levels; still read so old stores migrate. */
+  volume?: number;
+  volNotes: number;
+  volGuide: number;
+  volMetronome: number;
   soundOutput: SoundOutput;
-  metronome: boolean;
+  /** Superseded by `volMetronome` being above zero; read so an old store migrates. */
+  metronome?: boolean;
   monitorOpen: boolean;
   padLayout: PadLayout;
   laneOrientation: LaneOrientation;
+  laneMode: LaneMode;
+  /** Superseded by `colourMode`; still read so an old store migrates. */
+  sheetInk?: "colour" | "mono";
+  /** `targets` is the middle state's old name, migrated on read. */
+  colourMode?: ColourMode | "targets";
+  noteLabel?: NoteLabel;
+  keyOverride?: number | null;
   pianoLow: number;
   pianoHigh: number;
+  latencyMs: number;
+  /** The MIDI input picked by hand, by name; null after Disconnect. */
+  midiDevice?: string | null;
 }
 
 /** The OS preference, used until the player picks a side themselves. */
 function systemTheme(): Theme {
   if (typeof window === "undefined" || !window.matchMedia) return "dark";
   return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+/**
+ * The guide and click levels a stored snapshot should restore to.
+ *
+ * Pure, so the one thing here that can silently change what a returning player
+ * hears is testable. Two shapes arrive:
+ *
+ * - **After the faders became the switches**, the levels are the whole truth
+ *   and are taken as they are.
+ * - **Before**, each was gated by a flag *on top of* its level. The click had
+ *   a persisted flag, so a stored `false` means silence whatever the fader
+ *   says. The guide's flag was session state that began every run off, so no
+ *   run ever started with it audible however loud the fader was left — and
+ *   restoring that level would start playing the lesson at someone who had
+ *   never once heard it.
+ *
+ * The old shape is recognised by the flag still being there. That costs the
+ * guide level a returning player never actually used, which is the price of
+ * not surprising them with sound.
+ */
+export function busLevelsFrom(
+  saved: Partial<SettingsSnapshot>,
+  guideNow: number,
+  metronomeNow: number,
+): { guide: number; metronome: number } {
+  const level = (v: unknown, fallback: number) => (typeof v === "number" ? v : fallback);
+  const guide = level(saved.volGuide, guideNow);
+  const metronome = level(saved.volMetronome, metronomeNow);
+  if (typeof saved.metronome !== "boolean") return { guide, metronome };
+  return { guide: 0, metronome: saved.metronome ? metronome : 0 };
 }
 
 export const useSettings = defineStore("settings", () => {
@@ -52,10 +144,26 @@ export const useSettings = defineStore("settings", () => {
    * with the store plugin instead.
    */
   const theme = ref<Theme>(systemTheme());
-  const volume = ref(0.9);
+  /**
+   * One level per audio bus. Three faders rather than one because they
+   * compete: the click has to cut through while you are learning the pattern
+   * and get out of the way once you are not, and the guide part belongs
+   * under your own playing rather than level with it.
+   *
+   * **A fader at zero is also the switch.** The bar carried a `GUIDE | CLICK`
+   * pair that did nothing a fader could not: both were audio gates and nothing
+   * else, each with its own bus here, so the pair was a second way to say the
+   * same thing in the one row that is tight for width.
+   *
+   * The guide starts at zero, which is what the pair's own default said. Its
+   * toggle was session state that began every run off, so nobody has ever
+   * heard the guide without asking for it, and a fader defaulting to 0.6 would
+   * have started playing the lesson along with them.
+   */
+  const volNotes = ref(0.9);
+  const volGuide = ref(0);
+  const volMetronome = ref(0.9);
   const soundOutput = ref<SoundOutput>("internal");
-  /** Metronome click, count-in included. Off when the DAW provides the click. */
-  const metronome = ref(true);
   /** MIDI log, shown as an overlay over the lane. Off by default — it is a
    *  diagnostic, and the design gives the lane the whole stage. */
   const monitorOpen = ref(false);
@@ -63,10 +171,44 @@ export const useSettings = defineStore("settings", () => {
   const padLayout = ref<PadLayout>("4x4");
   /** Scrolling (right-to-left) is the designed view; falling is the alternative. */
   const laneOrientation = ref<LaneOrientation>("horizontal");
+  /** Roll or notation. The roll is the default — sheet is the specialist view. */
+  const laneMode = ref<LaneMode>("roll");
+  /** Sheet's colour. Everything on by default: the hues are how the app names
+   *  a pitch everywhere else, so the staff arrives speaking that language. */
+  const colourMode = ref<ColourMode>("all");
+  /** Letters by default: degrees are the specialist reading, as sheet is. */
+  const noteLabel = ref<NoteLabel>("note");
+  /**
+   * A key chosen by hand, overriding the one derived from the lesson's notes.
+   *
+   * Null means "read it off the music", which is right nearly always — the
+   * override exists because a clip that uses only part of a scale honestly
+   * derives a smaller signature, and only the player knows what it is really
+   * in. Kept as fifths, the same currency the staff and the degrees both take.
+   */
+  const keyOverride = ref<number | null>(null);
 
   /** Fallback piano range (C3..C6) when a lesson has no notes to frame. */
   const pianoLow = ref(48);
   const pianoHigh = ref(84);
+
+  /**
+   * Timing calibration: milliseconds subtracted from every hardware strike
+   * before it is graded (M7). Positive means the rig makes you play late —
+   * a DAW's output buffer, a controller's own scan — and this cancels it.
+   *
+   * Only hardware carries it. A mouse click or a computer key has no rig
+   * between the intent and the timestamp, so there is nothing to cancel.
+   */
+  const latencyMs = ref(0);
+
+  /**
+   * The MIDI input the player last picked, remembered by name so launch can
+   * reopen it (`engine/midi-port.ts` has the rule). `undefined` is "never
+   * chosen", `null` is "pressed Disconnect" — two different answers to
+   * whether to open anything by ourselves.
+   */
+  const midiDevice = ref<string | null | undefined>(undefined);
 
   /** True once persisted values have been loaded (or confirmed absent). */
   const hydrated = ref(false);
@@ -79,14 +221,41 @@ export const useSettings = defineStore("settings", () => {
   void persistGet<SettingsSnapshot>("settings").then((saved) => {
     if (saved) {
       if (saved.theme === "dark" || saved.theme === "light") theme.value = saved.theme;
-      if (typeof saved.volume === "number") volume.value = saved.volume;
+      // A store written before the split has one level; seed all three from
+      // it so an upgrade does not silently reset the player's volume.
+      if (typeof saved.volume === "number") {
+        volNotes.value = saved.volume;
+        volGuide.value = saved.volume;
+        volMetronome.value = saved.volume;
+      }
+      if (typeof saved.volNotes === "number") volNotes.value = saved.volNotes;
+      const levels = busLevelsFrom(saved, volGuide.value, volMetronome.value);
+      volGuide.value = levels.guide;
+      volMetronome.value = levels.metronome;
       if (saved.soundOutput) soundOutput.value = saved.soundOutput;
-      if (typeof saved.metronome === "boolean") metronome.value = saved.metronome;
       if (typeof saved.monitorOpen === "boolean") monitorOpen.value = saved.monitorOpen;
       if (saved.padLayout) padLayout.value = saved.padLayout;
       if (saved.laneOrientation) laneOrientation.value = saved.laneOrientation;
+      if (saved.laneMode === "roll" || saved.laneMode === "sheet") laneMode.value = saved.laneMode;
+      // The two-state toggle this replaced maps straight onto the ends of
+      // the new three, so an upgrade keeps whatever was chosen.
+      if (saved.sheetInk === "colour") colourMode.value = "all";
+      if (saved.sheetInk === "mono") colourMode.value = "mono";
+      // `targets` was the middle state before it was reversed. It is the same
+      // slot on the toggle, so a store written under the old name lands on
+      // the middle state rather than silently falling back to the default.
+      if (saved.colourMode === "targets") colourMode.value = "results";
+      if (saved.colourMode === "all" || saved.colourMode === "results" || saved.colourMode === "mono") {
+        colourMode.value = saved.colourMode;
+      }
+      if (saved.noteLabel === "note" || saved.noteLabel === "degree") noteLabel.value = saved.noteLabel;
+      if (typeof saved.keyOverride === "number" || saved.keyOverride === null) {
+        keyOverride.value = saved.keyOverride;
+      }
       if (typeof saved.pianoLow === "number") pianoLow.value = saved.pianoLow;
       if (typeof saved.pianoHigh === "number") pianoHigh.value = saved.pianoHigh;
+      if (typeof saved.latencyMs === "number") latencyMs.value = clampLatency(saved.latencyMs);
+      if (typeof saved.midiDevice === "string" || saved.midiDevice === null) midiDevice.value = saved.midiDevice;
     }
     hydrated.value = true;
   });
@@ -94,19 +263,26 @@ export const useSettings = defineStore("settings", () => {
   // Persist on change. Guarded so the async hydrate above doesn't get
   // clobbered by an initial write before it lands.
   watch(
-    [theme, volume, soundOutput, metronome, monitorOpen, padLayout, laneOrientation, pianoLow, pianoHigh],
+    [theme, volNotes, volGuide, volMetronome, soundOutput, monitorOpen, padLayout, laneOrientation, laneMode, colourMode, noteLabel, keyOverride, pianoLow, pianoHigh, latencyMs, midiDevice],
     () => {
     if (!hydrated.value) return;
     void persistSet("settings", {
       theme: theme.value,
-      volume: volume.value,
+      volNotes: volNotes.value,
+      volGuide: volGuide.value,
+      volMetronome: volMetronome.value,
       soundOutput: soundOutput.value,
-      metronome: metronome.value,
       monitorOpen: monitorOpen.value,
       padLayout: padLayout.value,
       laneOrientation: laneOrientation.value,
+      laneMode: laneMode.value,
+      colourMode: colourMode.value,
+      noteLabel: noteLabel.value,
+      keyOverride: keyOverride.value,
       pianoLow: pianoLow.value,
       pianoHigh: pianoHigh.value,
+      latencyMs: latencyMs.value,
+      midiDevice: midiDevice.value,
     } satisfies SettingsSnapshot);
     },
   );
@@ -114,14 +290,21 @@ export const useSettings = defineStore("settings", () => {
   return {
     instrument,
     theme,
-    volume,
+    volNotes,
+    volGuide,
+    volMetronome,
     soundOutput,
-    metronome,
     monitorOpen,
     padLayout,
     laneOrientation,
+    laneMode,
+    colourMode,
+    noteLabel,
+    keyOverride,
     pianoLow,
     pianoHigh,
+    latencyMs,
+    midiDevice,
     hydrated,
     setInstrument,
   };

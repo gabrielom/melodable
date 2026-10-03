@@ -15,6 +15,7 @@ const KIND_LABEL: Record<string, string> = {
   noteoff: "note off",
   cc: "cc",
   other: "other",
+  gesture: "corners",
 };
 const kindLabel = (k: string) => KIND_LABEL[k] ?? k;
 const emit = defineEmits<{ (e: "clear"): void; (e: "collapse"): void }>();
@@ -38,15 +39,20 @@ const emit = defineEmits<{ (e: "clear"): void; (e: "collapse"): void }>();
       <p v-if="!rows.length" class="empty">
         Hit a pad or key — hardware, mouse, or computer keyboard.
       </p>
-      <div v-for="r in rows" :key="r.id" class="row" :class="r.kind">
-        <span class="kind">
-          <i class="src" :class="r.source" />{{ kindLabel(r.kind) }}
-        </span>
-        <span>{{ r.note }} <em>{{ noteName(r.note) }}</em></span>
-        <span>{{ r.velocity }}</span>
-        <span>{{ r.channel + 1 }}</span>
-        <span class="dim">{{ r.delta > 0 ? r.delta : "—" }}</span>
-      </div>
+      <template v-for="r in rows" :key="r.id">
+        <div v-if="r.text" class="row notice">
+          <i class="src" :class="r.source" /><span>{{ r.text }}</span>
+        </div>
+        <div v-else class="row" :class="r.kind" :title="r.source === 'daw' ? 'From the DAW port' : undefined">
+          <span class="kind">
+            <i class="src" :class="r.source" />{{ kindLabel(r.kind) }}
+          </span>
+          <span>{{ r.note }} <em>{{ noteName(r.note) }}</em></span>
+          <span>{{ r.velocity }}</span>
+          <span>{{ r.channel + 1 }}</span>
+          <span class="dim">{{ r.delta > 0 ? r.delta : "—" }}</span>
+        </div>
+      </template>
     </div>
   </section>
 </template>
@@ -151,6 +157,18 @@ header {
 }
 .row.noteon .kind { color: var(--rate-great); }
 .row.cc .kind { color: var(--led2); }
+/* What became of the DAW port — words, not a message, so one cell. */
+.row.notice {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 8.5px;
+  letter-spacing: 0.4px;
+  color: var(--txt2);
+  overflow-wrap: anywhere;
+}
+/* The four-corner gesture, recognised: a transport command, not a note. */
+.row.gesture .kind { color: var(--led1); }
 
 /* Source dot: where the message came from. */
 .src {
@@ -161,5 +179,8 @@ header {
   background: var(--txt3);
 }
 .src.hardware { background: var(--led1); }
+/* The controller's DAW port, read beside the chosen one — where a Launchkey's
+   pads go while a DAW has it. A ring, so it cannot pass for the amber dot. */
+.src.daw { background: none; box-shadow: inset 0 0 0 1.5px var(--led0); }
 .src.keyboard { background: var(--led2); }
 </style>

@@ -20,6 +20,15 @@ export interface RawMidiNote {
   pitch: number;
   velocity: number;
   channel: number;
+  /**
+   * `note_off_tick − note_on_tick`. The file already carries this and the
+   * importer used to throw it away; a held note in the clip has to survive
+   * into the lesson or the sustain judgement has nothing to grade.
+   *
+   * Zero for a note whose off never arrives — a truncated file, or a clip
+   * that ends on a sounding note.
+   */
+  durationTicks: number;
 }
 
 export interface ParsedMidi {
@@ -30,6 +39,26 @@ export interface ParsedMidi {
   bpm: number;
   /** Beats per bar from the first time-signature meta (x/4 assumed), else 4. */
   beatsPerBar: number;
+}
+
+/**
+ * Key for the open-note table. Channel and pitch together, because the same
+ * pitch on two channels is two different notes.
+ */
+const openKey = (channel: number, pitch: number) => (channel << 8) | pitch;
+
+/** End a sounding note at `tick`, if one is sounding. */
+function closeNote(
+  open: Map<number, RawMidiNote>,
+  channel: number,
+  pitch: number,
+  tick: number,
+): void {
+  const k = openKey(channel, pitch);
+  const note = open.get(k);
+  if (!note) return;
+  note.durationTicks = Math.max(0, tick - note.tick);
+  open.delete(k);
 }
 
 /** Parse a Standard MIDI File. Throws a readable error on malformed input. */
@@ -88,6 +117,8 @@ export function parseMidiFile(buffer: ArrayBuffer): ParsedMidi {
   let beatsPerBar = 4;
   let timeSigSet = false;
   const notes: RawMidiNote[] = [];
+  /** Notes still sounding, so a note-off can date the one it belongs to. */
+  const open = new Map<number, RawMidiNote>();
 
   for (let t = 0; t < ntrks; t++) {
     if (p + 8 > dv.byteLength) break;
@@ -139,11 +170,21 @@ export function parseMidiFile(buffer: ArrayBuffer): ParsedMidi {
         // sysex — skip
         const l = vlq();
         for (let i = 0; i < l; i++) u8();
-      } else if (hi === 0x90) {
+      } else if (hi === 0x90 || hi === 0x80) {
         const pitch = u8();
         const vel = u8();
-        if (vel > 0) notes.push({ tick, pitch, velocity: vel, channel });
-      } else if (hi === 0x80 || hi === 0xa0 || hi === 0xb0 || hi === 0xe0) {
+        // A note-on with velocity 0 is the conventional note-off.
+        if (hi === 0x90 && vel > 0) {
+          const note: RawMidiNote = { tick, pitch, velocity: vel, channel, durationTicks: 0 };
+          // Re-striking a pitch that is still sounding ends the first one
+          // here; a key cannot be held twice at once.
+          closeNote(open, channel, pitch, tick);
+          open.set(openKey(channel, pitch), note);
+          notes.push(note);
+        } else {
+          closeNote(open, channel, pitch, tick);
+        }
+      } else if (hi === 0xa0 || hi === 0xb0 || hi === 0xe0) {
         u8();
         u8();
       } else if (hi === 0xc0 || hi === 0xd0) {
@@ -246,6 +287,11 @@ export function midiToLesson(
       time: Number((n.beat - shift).toFixed(4)),
       pitch: instrument === "pads" ? padPitchFor(n.pitch) : n.pitch,
       velocity: n.velocity,
+      // Pads are struck, not held: a drum has already decayed by the time you
+      // could let go of the pad, so a sustain judgement there would grade
+      // something the instrument cannot do. Piano keeps what the clip wrote.
+      duration:
+        instrument === "pads" ? 0 : Number((n.durationTicks / parsed.ppq).toFixed(4)),
     }))
     .sort((a, b) => a.time - b.time || a.pitch - b.pitch);
 

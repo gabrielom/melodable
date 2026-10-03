@@ -8,24 +8,40 @@
  * route through the same scorer; hardware hits are graded at their midir
  * timestamp mapped onto the audio clock, never at handler time.
  */
-import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
 import { useSettings, type PadLayout } from "@/stores/settings";
 import { useLessons } from "@/stores/lessons";
 import { useMidi } from "@/composables/useMidi";
 import { useLink } from "@/composables/useLink";
 import { useTrainer } from "@/composables/useTrainer";
-import { AudioEngine } from "@/engine/audio";
+import { AudioEngine, type Bus } from "@/engine/audio";
 import { PADS, PAD_KEY_MAP, PIANO_KEY_MAP, noteToPad } from "@/engine/gm";
 import { parseMidiFile, midiToLesson, type ParsedMidi } from "@/engine/midi-file";
+import { TEMPO_MAX, TEMPO_MIN } from "@/engine/types";
 import type { MidiMessage, InstrumentType } from "@/engine/types";
 
 import DeviceMenu from "@/components/DeviceMenu.vue";
 import MidiMonitor from "@/components/MidiMonitor.vue";
 import HomeScreen from "@/components/HomeScreen.vue";
+import { useCourses } from "@/stores/courses";
 import ImportDialog from "@/components/ImportDialog.vue";
+import CalibrationDialog from "@/components/CalibrationDialog.vue";
+import { useCalibration } from "@/composables/useCalibration";
+import { clampLatency } from "@/engine/calibration";
+import { keyName } from "@/engine/notation";
+import { chordName, diatonicTriad, romanOf } from "@/engine/harmony";
 import RunSummary from "@/components/RunSummary.vue";
-import type { LogRow } from "@/components/midi-log";
+import SongLightbox from "@/components/SongLightbox.vue";
+import KeyMenu from "@/components/KeyMenu.vue";
+import { openingStep, songState } from "@/engine/course";
+import { lessonRepeats } from "@/engine/scoring";
+import type { LessonEdit } from "@/engine/lesson-edit";
+import { isDrumPadNote, portToOpen } from "@/engine/midi-port";
+import { GESTURE_WINDOW, edgeGesture, type HeldNote } from "@/engine/edge-gesture";
+import { isTauri } from "@/composables/useMidi";
+import { otherKind, type LogRow } from "@/components/midi-log";
 import PianoKeyboard from "@/views/piano/PianoKeyboard.vue";
+import BarTooltip from "@/components/BarTooltip.vue";
 
 const settings = useSettings();
 const lessons = useLessons();
@@ -42,8 +58,112 @@ function openLesson(index: number) {
   view.value = "trainer";
 }
 
+const courses = useCourses();
+
+/**
+ * The song whose section picker is up, if any. Opening a song puts it up
+ * first (the user's rule): the trainer loads the suggested section behind it,
+ * and the picker is where any section is chosen from.
+ */
+const songMenu = ref<string | null>(null);
+
+const songMenuState = computed(() => {
+  const c = courses.courses.find((x) => x.id === songMenu.value);
+  return c ? songState(c, courses.progressOf(c.id)) : null;
+});
+/** How many sections of each song are complete — edit mode names it on the card. */
+const songsComplete = computed<Record<string, number>>(() =>
+  Object.fromEntries(
+    courses.courses.map((c) => [c.id, songState(c, courses.progressOf(c.id)).passedCount]),
+  ),
+);
+
+/** Each section's run length and tempo, for the picker's rows and meta line. */
+const songMenuSections = computed(() => {
+  const c = courses.courses.find((x) => x.id === songMenu.value);
+  if (!c) return [];
+  return c.lessonIds.map((id) => {
+    const l = lessons.lessons.find((x) => x.id === id);
+    return l ? { bars: l.bars * lessonRepeats(l), bpm: l.bpm } : { bars: 0, bpm: 0 };
+  });
+});
+
+function openSong(courseId: string) {
+  const c = courses.courses.find((x) => x.id === courseId);
+  if (!c) return;
+  lessons.selectId(c.lessonIds[openingStep(c, courses.progressOf(c.id))]);
+  view.value = "trainer";
+  songMenu.value = courseId;
+}
+
+/**
+ * A section of the song, played straight away — from the picker or from the
+ * summary. The lesson-change watcher resets the trainer for it first, so the
+ * run starts only after that has happened.
+ */
+async function playStep(lessonId: string) {
+  songMenu.value = null;
+  if (lessonId === lessons.current.id) return onPlay();
+  lessons.selectId(lessonId);
+  await nextTick();
+  await onPlay();
+}
+
+/**
+ * Edit mode on home: switched from the pencil in the home bar, and nothing of
+ * it is drawn until it is on. Every card becomes a form for its own name,
+ * description, tempo and key; lessons can be picked to combine into a song;
+ * a song can be split back apart.
+ */
+const editing = ref(false);
+
+function combineSong(name: string, lessonIds: string[]) {
+  courses.combine(name, lessonIds);
+}
+
+function editLesson(lessonId: string, edit: LessonEdit) {
+  lessons.editLesson(lessonId, edit);
+}
+
+/**
+ * A song's name and description are its own. Its tempo and key belong to its
+ * sections — the trainer plays and grades each section by its own lesson — so
+ * setting them on the song sets them on every section, which is what a song
+ * being one piece means.
+ */
+function editSong(courseId: string, edit: LessonEdit) {
+  const c = courses.courses.find((x) => x.id === courseId);
+  if (!c) return;
+  if (edit.name !== undefined || edit.hint !== undefined) {
+    courses.editCourse(courseId, { name: edit.name, hint: edit.hint });
+  }
+  if (edit.bpm !== undefined || edit.key !== undefined) {
+    const shared: LessonEdit = {};
+    if (edit.bpm !== undefined) shared.bpm = edit.bpm;
+    if (edit.key !== undefined) shared.key = edit.key;
+    for (const id of c.lessonIds) lessons.editLesson(id, shared);
+  }
+}
+
+// Editing is a home-screen mode; leaving home ends it — and leaving the
+// trainer takes a song's section picker with it.
+watch(view, (v) => {
+  if (v !== "home") editing.value = false;
+  if (v !== "trainer") songMenu.value = null;
+});
+
+/** What the home grid shows: a song counts once, and its steps not at all. */
+const cardCount = computed(() => {
+  const inSong = courses.members();
+  return lessons.lessons.filter((l) => !inSong.has(l.id)).length + courses.courses.length;
+});
+
 function goHome() {
   if (playing.value) stop();
+  // Stopping holds the run's last frame on the lane; leaving ends that hold,
+  // so re-opening a lesson shows what you are about to play rather than where
+  // you left off last sitting.
+  park();
   view.value = "home";
 }
 
@@ -124,30 +244,75 @@ const {
   runResult,
   bpm,
   bpmLabel,
-  guide,
   accuracy,
   combo,
   bestCombo,
   toast,
   pops,
-  lanes: trainerLanes,
   isPiano,
   pianoRange,
   lessonPitches,
   totalLoops,
-  loopBeats,
+  linkQuantum,
+  sheetAvailable,
+  sheetOn,
+  keyFifths,
   play,
   stop,
+  forgetMarksSince,
   setBpm,
   followLink,
   strike,
+  release,
   padAtPoint,
+  park,
+  loopOn,
+  region,
+  runBars,
+  setLoop,
+  setLoopRegion,
+  stripBarAtPoint,
+  stripGrabAt,
+  chords,
+  chordOverrides,
+  chordBarAtPoint,
+  setChordOverride,
   hardwareHitTime,
+  rawHitTime,
 } = useTrainer(audio, laneCanvas, overviewCanvas);
+
+// A run started any other way — Space, or START behind the picker — plays the
+// section that is loaded, and the picker has nothing left to offer over it.
+watch(playing, (on) => {
+  if (on) songMenu.value = null;
+});
+
+// ------------------------------------------------------------- calibration
+// A before-a-run decision, like the instrument switch and Link, so it lives on
+// the home bar (see CLAUDE.md). The tap test needs audio running and hardware
+// timestamps, so it is fed from `onMidiMessage` rather than from the scorer.
+const calOpen = ref(false);
+const calibration = useCalibration(audio);
+
+async function openCalibration() {
+  await ensureAudio();
+  calOpen.value = true;
+}
+
+function closeCalibration() {
+  calibration.cancel();
+  calOpen.value = false;
+}
+
+function setLatency(ms: number) {
+  settings.latencyMs = clampLatency(ms);
+}
 
 // ------------------------------------------------------------ Ableton Link
 // Link shares tempo and phase with Ableton; the trainer's loop rides its grid.
-// `loopBeats` is the quantum, so our loop boundary is one Ableton agrees on.
+// The quantum is one bar — the unit Ableton uses — so our bar lines are ones
+// Ableton agrees on, and which of its bars the run enters on is the player's
+// to choose by when they press Start.
 const {
   available: linkAvailable,
   enabled: linkOn,
@@ -158,12 +323,12 @@ const {
 } = useLink(followLink);
 
 function toggleLink() {
-  void setLinkEnabled(!linkOn.value, loopBeats.value);
+  void setLinkEnabled(!linkOn.value, linkQuantum.value, bpm.value);
 }
 
-// A different lesson can mean a different loop length — re-agree the quantum.
-watch(loopBeats, (q) => {
-  if (linkOn.value) void setLinkEnabled(true, q);
+// A lesson in another time signature means another bar length — re-agree it.
+watch(linkQuantum, (q) => {
+  if (linkOn.value) void setLinkEnabled(true, q, bpm.value);
 });
 
 let logId = 0;
@@ -176,7 +341,6 @@ const MAX_LOG = 60;
 async function ensureAudio() {
   if (audioReady.value) return;
   await audio.init();
-  audio.setVolume(settings.volume);
   audioReady.value = audio.ready;
 }
 
@@ -189,18 +353,152 @@ async function onPlay() {
 function onLanePointer(e: PointerEvent) {
   const el = e.currentTarget as HTMLCanvasElement;
   const r = el.getBoundingClientRect();
-  const pad = padAtPoint(e.clientX - r.left, e.clientY - r.top);
+  const x = e.clientX - r.left;
+  const y = e.clientY - r.top;
+  // The ribbon first: it sits under the field, so a click there is never also
+  // a click on a pad.
+  if (openChordMenu(e, x, y, r)) return;
+  const pad = padAtPoint(x, y);
   if (pad !== null) {
     e.preventDefault();
     void triggerPad(pad, 110, "click");
   }
 }
 
+/**
+ * Moving and resizing the loop region on the mini strip.
+ *
+ * The strip is a canvas, so there is nothing to hit-test against but the
+ * geometry the renderer last drew — which is what it records for exactly this.
+ * A grab is one of three things: an edge, which resizes; the body, which
+ * moves; or the ground outside, which does nothing. **Whole bars throughout**:
+ * a region is snapped to the bar as it is dragged rather than on release, so
+ * what you see under the pointer is what you will get.
+ *
+ * Nothing is committed until the pointer is let go. While playing, committing
+ * re-enters the run, and doing that on every pixel of a drag would be
+ * unusable.
+ */
+type StripDrag = {
+  grab: "from" | "to" | "body";
+  /** Bar the pointer went down on, for the body's own offset. */
+  atBar: number;
+  start: { fromBar: number; bars: number };
+};
+const stripDrag = ref<StripDrag | null>(null);
+const loopCursor = ref<"edge" | "body" | null>(null);
+
+/** A pointer event's x within the strip. */
+const stripX = (e: PointerEvent) =>
+  e.clientX - (e.currentTarget as HTMLCanvasElement).getBoundingClientRect().left;
+
+function onStripDown(e: PointerEvent) {
+  if (!loopOn.value || !region.value) return;
+  const el = e.currentTarget as HTMLCanvasElement;
+  const grab = stripGrabAt(stripX(e));
+  const bar = stripBarAtPoint(stripX(e));
+  if (!grab || bar === null) return;
+  e.preventDefault();
+  el.setPointerCapture(e.pointerId);
+  stripDrag.value = { grab, atBar: bar, start: { ...region.value } };
+}
+
+function onStripMove(e: PointerEvent) {
+  const drag = stripDrag.value;
+  if (!drag) {
+    // Not dragging: just say what the pointer is over, so the cursor can.
+    if (!loopOn.value) return;
+    const grab = stripGrabAt(stripX(e));
+    loopCursor.value = grab === "body" ? "body" : grab ? "edge" : null;
+    return;
+  }
+  const raw = stripBarAtPoint(stripX(e));
+  if (raw === null) return;
+  const s = drag.start;
+  if (drag.grab === "body") {
+    // Moving: the length is what you set, so it is kept and the position gives
+    // way at the ends — which is what `clampRegion` does on its own.
+    setLoopRegion({ fromBar: s.fromBar + (raw - drag.atBar), bars: s.bars }, false);
+    return;
+  }
+  // Resizing: the *other* edge is held still, so this one is clamped to the
+  // run here rather than left to `clampRegion` — its rule preserves the length
+  // and slides the region, which for a drag on one edge would haul the far one
+  // along behind it.
+  const bar = Math.max(0, Math.min(raw, runBars.value - 1));
+  if (drag.grab === "from") {
+    const end = s.fromBar + s.bars;
+    const from = Math.min(bar, end - 1);
+    setLoopRegion({ fromBar: from, bars: end - from }, false);
+  } else {
+    setLoopRegion({ fromBar: s.fromBar, bars: Math.max(1, bar + 1 - s.fromBar) }, false);
+  }
+}
+
+function onStripUp(e: PointerEvent) {
+  if (!stripDrag.value) return;
+  const el = e.currentTarget as HTMLCanvasElement;
+  if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+  stripDrag.value = null;
+  // Committed once, at the end: while playing this re-enters the run, and
+  // doing that on every pixel of a drag would be unusable.
+  if (region.value) setLoopRegion({ ...region.value }, true);
+}
+
+function onStripHoverOut() {
+  if (!stripDrag.value) loopCursor.value = null;
+}
+
+/**
+ * Naming a bar's chord by hand.
+ *
+ * The ribbon is derived, and derivation from a melody has a floor it cannot
+ * get under: two chords can be the *same pitch classes* — B6 and G#m7, E6 and
+ * C#m7 — so which one a bar is depends on an accompaniment an imported clip
+ * does not carry. The derivation names its answer confidently and is sometimes
+ * wrong; this is where the player says so.
+ *
+ * The menu is placed where the block is rather than in the bar, because the
+ * block is what it is about and there is a whole stage of room under it.
+ */
+const chordMenu = ref<{ bar: number; x: number; y: number } | null>(null);
+
+function openChordMenu(e: PointerEvent, x: number, y: number, r: DOMRect): boolean {
+  const bar = chordBarAtPoint(x, y);
+  if (bar === null) return false;
+  e.preventDefault();
+  chordMenu.value = { bar, x: r.left + x, y: r.top + y };
+  return true;
+}
+
+/** The seven triads of the key, as the menu lists them. */
+const chordChoices = computed(() =>
+  [1, 2, 3, 4, 5, 6, 7].map((degree) => {
+    const c = diatonicTriad(degree, keyFifths.value);
+    return { degree, roman: romanOf(c), name: chordName(c, keyFifths.value) };
+  }),
+);
+
+/** What the ribbon currently says for the bar the menu is open on. */
+const chordMenuDerived = computed(() => {
+  const bar = chordMenu.value?.bar;
+  if (bar === undefined) return null;
+  const c = chords.value[bar];
+  return c ? `${romanOf(c)} · ${chordName(c, keyFifths.value)}` : null;
+});
+
+function pickChord(degree: number | null) {
+  if (chordMenu.value) setChordOverride(chordMenu.value.bar, degree);
+  chordMenu.value = null;
+}
+
 // ------------------------------------------------------------------- tempo
 // The design replaces the slider with a recessed readout you drag: a compact
 // control that still gives fine adjustment, which a 54px slider could not.
-const TEMPO_MIN = 50;
-const TEMPO_MAX = 160;
+//
+// Its range is `TEMPO_MIN`/`TEMPO_MAX`, shared with the import dialog — see
+// the constants. It used to carry its own 50-160, which silently capped any
+// clip imported faster than that.
 /** Pixels of vertical drag per BPM. Up is faster. */
 const TEMPO_PX_PER_BPM = 3;
 
@@ -211,19 +509,62 @@ function applyTempo(v: number) {
   void proposeLinkTempo(clamped);
 }
 
+/**
+ * How far the pointer may wander before a press counts as a drag rather than
+ * a click. Also stops a one-pixel tremor on mousedown from nudging the tempo.
+ */
+const TEMPO_DRAG_SLOP = 3;
+
+const tempoEditing = ref(false);
+const tempoDraft = ref("");
+const tempoInput = ref<HTMLInputElement | null>(null);
+
+/** Click the readout to type a tempo outright, instead of dragging to it. */
+function beginTempoEdit() {
+  tempoDraft.value = bpmLabel.value.toFixed(1);
+  tempoEditing.value = true;
+  void nextTick(() => {
+    tempoInput.value?.focus();
+    tempoInput.value?.select();
+  });
+}
+
+function commitTempoEdit() {
+  if (!tempoEditing.value) return;
+  tempoEditing.value = false;
+  // Accept a comma decimal, and a bare "120" as readily as "120.0".
+  const v = Number.parseFloat(tempoDraft.value.replace(",", "."));
+  if (Number.isFinite(v)) applyTempo(v);
+}
+
+function cancelTempoEdit() {
+  tempoEditing.value = false;
+}
+
 function onTempoDragStart(e: PointerEvent) {
+  if (tempoEditing.value) return;
   const el = e.currentTarget as HTMLElement;
+  const startX = e.clientX;
   const startY = e.clientY;
   const startBpm = bpm.value;
+  let dragging = false;
   el.setPointerCapture(e.pointerId);
 
-  const move = (ev: PointerEvent) =>
+  const move = (ev: PointerEvent) => {
+    if (!dragging) {
+      const moved = Math.abs(ev.clientY - startY) + Math.abs(ev.clientX - startX);
+      if (moved <= TEMPO_DRAG_SLOP) return;
+      dragging = true;
+    }
     applyTempo(startBpm + (startY - ev.clientY) / TEMPO_PX_PER_BPM);
+  };
   const up = (ev: PointerEvent) => {
     el.releasePointerCapture(ev.pointerId);
     el.removeEventListener("pointermove", move);
     el.removeEventListener("pointerup", up);
     el.removeEventListener("pointercancel", up);
+    // A press that never turned into a drag is a click: open the field.
+    if (!dragging && ev.type === "pointerup") beginTempoEdit();
   };
   el.addEventListener("pointermove", move);
   el.addEventListener("pointerup", up);
@@ -232,6 +573,13 @@ function onTempoDragStart(e: PointerEvent) {
 
 /** Keyboard equivalent, so the control isn't mouse-only. */
 function onTempoKey(e: KeyboardEvent) {
+  // While typing, the arrows belong to the caret.
+  if (tempoEditing.value) return;
+  if (e.key === "Enter" || e.key === " ") {
+    beginTempoEdit();
+    e.preventDefault();
+    return;
+  }
   const step = e.shiftKey ? 0.1 : 1;
   if (e.key === "ArrowUp" || e.key === "ArrowRight") applyTempo(bpm.value + step);
   else if (e.key === "ArrowDown" || e.key === "ArrowLeft") applyTempo(bpm.value - step);
@@ -253,6 +601,14 @@ function pushLog(
   lastLogTime = now;
   log.value = [
     { id: logId++, kind, note, velocity, channel, delta, source },
+    ...log.value,
+  ].slice(0, MAX_LOG);
+}
+
+/** A line of words in the monitor: what became of the DAW port. */
+function pushNotice(text: string) {
+  log.value = [
+    { id: logId++, kind: "notice", note: 0, velocity: 0, channel: 0, delta: 0, source: "daw" as const, text },
     ...log.value,
   ].slice(0, MAX_LOG);
 }
@@ -313,7 +669,19 @@ async function noteOn(
   strike(midi, hitTime);
 }
 
-function noteOff(midi: number) {
+/**
+ * Letting go of a key. `releaseTime` is the audio-clock moment it happened —
+ * a hardware note-off carries its own midir timestamp, the same as a strike.
+ *
+ * The scorer is told even when the key was never lit, because the two can
+ * disagree: `activeNotes` is cleared when the view changes, and a hold does
+ * not care whether the keyboard is still drawing the key down.
+ */
+function noteOff(midi: number, releaseTime?: number) {
+  // The same pitch→lane mapping the strike used, so a hold closes on the lane
+  // it was opened on rather than on the raw pitch.
+  const pad = noteToPad(midi);
+  release(pad !== null && settings.instrument === "pads" ? pad : midi, releaseTime);
   if (!activeNotes.value.has(midi)) return;
   const next = new Map(activeNotes.value);
   next.delete(midi);
@@ -324,7 +692,19 @@ function noteOff(midi: number) {
 
 /** Hardware input. Scoring uses `m.timestampMicros`, not handler time. */
 function onMidiMessage(m: MidiMessage) {
-  pushLog(m.kind, m.note, m.velocity, m.channel, "hardware");
+  // The DAW port is logged whole, so the monitor shows what a controller sends
+  // there while a DAW has it; only its drum pads go any further.
+  const kind = m.kind === "other" ? otherKind(m.status) : m.kind;
+  pushLog(kind, m.note, m.velocity, m.channel, m.port === "daw" ? "daw" : "hardware");
+  if (!isDrumPadNote(m)) return;
+
+  // Calibrating: a strike is a tap against the click, not a note. Measured on
+  // the *raw* time — feeding it the offset under test would only ever report
+  // what was left over.
+  if (calibration.active.value && m.kind === "noteon") {
+    calibration.feed(rawHitTime(m.timestampMicros));
+    return;
+  }
 
   if (m.kind === "noteon") {
     const hitTime = hardwareHitTime(m.timestampMicros);
@@ -335,9 +715,60 @@ function onMidiMessage(m: MidiMessage) {
     } else {
       void noteOn(m.note, m.velocity, "hardware", hitTime);
     }
+    watchForEdgeGesture(m, hitTime);
   } else if (m.kind === "noteoff") {
-    noteOff(m.note);
+    // Graded at the timestamp midir stamped it with, like a strike — a hold
+    // measured at "whenever the handler ran" would inherit every delivery
+    // hiccup between the controller and here.
+    noteOff(m.note, hardwareHitTime(m.timestampMicros));
+    releaseEdgeNote(m);
   }
+}
+
+// --------------------------------------------------- four-corner gesture
+
+/**
+ * The controller as a transport button: hold its two lowest and two highest
+ * keys, or its four corner pads, and a run that is going stops — holding its
+ * last frame — while one that is not starts from the top, count-in and all.
+ * The Space bar's job, without taking your hands off the instrument.
+ * `engine/edge-gesture.ts` is the rule for what counts.
+ *
+ * Each note is keyed by channel as well as number, so a pad and a key that
+ * happen to share a note never stand in for each other. The gesture fires once
+ * per grab: it rearms only when all four of its notes have been let go, so a
+ * hand resting on the corners does not stop and start the run over and over.
+ */
+const heldHardware = new Map<number, HeldNote>();
+const gestureNotes = new Set<number>();
+const noteKey = (m: MidiMessage) => m.channel * 128 + m.note;
+
+function watchForEdgeGesture(m: MidiMessage, hitTime: number) {
+  heldHardware.set(noteKey(m), { note: m.note, channel: m.channel, at: hitTime });
+  // Struck again means it was let go, whether or not its note-off arrived —
+  // one lost note-off must not disarm the gesture for the rest of the sitting.
+  gestureNotes.delete(noteKey(m));
+  if (gestureNotes.size > 0) return;
+  const g = edgeGesture([...heldHardware.values()], settings.instrument === "pads");
+  if (!g) return;
+  for (const [key, h] of heldHardware) if (hitTime - h.at <= GESTURE_WINDOW) gestureNotes.add(key);
+  // Said in the monitor whether or not it acts, so "nothing happened" can be
+  // told apart from "it was never recognised" — the monitor is where the
+  // notes that did arrive are shown anyway.
+  pushLog("gesture", m.note, 0, m.channel, "hardware");
+  // Where Space works, and nowhere else: the trainer, with no sheet over it.
+  if (view.value !== "trainer" || importOpen.value) return;
+  if (playing.value) {
+    stop();
+    forgetMarksSince(g.since);
+  } else {
+    void onPlay();
+  }
+}
+
+function releaseEdgeNote(m: MidiMessage) {
+  heldHardware.delete(noteKey(m));
+  gestureNotes.delete(noteKey(m));
 }
 
 const {
@@ -349,14 +780,102 @@ const {
   refreshPorts,
   connect,
   disconnect,
-} = useMidi(onMidiMessage);
+} = useMidi(onMidiMessage, pushNotice);
+
+/**
+ * Pick a device from the menu: open it and remember it by name, so the next
+ * launch reopens it — `tauri dev` rebuilds leave the Tauri store alone, so
+ * this survives every rebuild as well.
+ */
+async function pickDevice(i: number): Promise<void> {
+  await connect(i);
+  if (connectedIndex.value === i) settings.midiDevice = connectedName.value;
+}
+
+/** Disconnect by hand, and stop reopening anything until a device is picked. */
+async function dropDevice(): Promise<void> {
+  await disconnect();
+  settings.midiDevice = null;
+}
+
+/**
+ * Reopen the remembered device, or on first run take the controller that is
+ * plugged in (`portToOpen`). Runs once the settings are in and then every few
+ * seconds while nothing is open, which is what catches a controller plugged
+ * in after launch. It stops asking the moment a port is open.
+ */
+let autoConnecting = false;
+async function autoConnect(): Promise<void> {
+  // Its own guard rather than `midiBusy`: the menu's scan on mount sets that,
+  // and backing off for it made launch wait a whole scan interval.
+  if (autoConnecting || !settings.hydrated || connectedIndex.value !== null) return;
+  if (settings.midiDevice === null) return;
+  autoConnecting = true;
+  try {
+    await refreshPorts(true);
+    const i = portToOpen(ports.value, settings.midiDevice);
+    if (i !== null && connectedIndex.value === null) await connect(i);
+  } finally {
+    autoConnecting = false;
+  }
+}
+const DEVICE_SCAN_MS = 3000;
+let deviceScan: ReturnType<typeof setInterval> | null = null;
+watch(
+  () => settings.hydrated,
+  (ready) => {
+    if (!ready || !isTauri() || deviceScan) return;
+    void autoConnect();
+    deviceScan = setInterval(() => void autoConnect(), DEVICE_SCAN_MS);
+  },
+  { immediate: true },
+);
 
 // ------------------------------------------------------- computer keyboard
 
 const heldKeys = new Set<string>();
 
+/**
+ * Whether a Space keystroke is the transport's to take. Anything already
+ * focused that does something with Space keeps it: a text field, a button
+ * (Space activates it), and the tempo readout (Space opens it for typing).
+ * Otherwise Space belongs to the transport, the way it does in a DAW.
+ */
+function spaceIsTransport(e: KeyboardEvent): boolean {
+  const el = e.target as HTMLElement | null;
+  if (!el) return true;
+  if (el.isContentEditable) return false;
+  if (["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(el.tagName)) return false;
+  return el.getAttribute("role") !== "slider";
+}
+
+/**
+ * Whether a keystroke is being typed into a field — one that takes text, or a
+ * list that jumps to an option by its first letter.
+ *
+ * The computer keyboard is a piano here — `a` through `l` on the home row,
+ * the black keys above — and that mapping listens on the whole window. A text
+ * field has to win: a name has letters in it, and a letter the piano claims is
+ * swallowed by its `preventDefault` and plays a note instead of landing in the
+ * field. That is how the song-name box came to accept Backspace, which is no
+ * note, and almost nothing else — and the import dialog's name field had the
+ * same fault, unnoticed, because its default name is usually kept.
+ */
+function typingInto(e: KeyboardEvent): boolean {
+  const el = e.target as HTMLElement | null;
+  if (!el) return false;
+  if (el.isContentEditable || el.tagName === "TEXTAREA" || el.tagName === "SELECT") return true;
+  if (el.tagName !== "INPUT") return false;
+  const type = (el as HTMLInputElement).type;
+  return !["button", "checkbox", "radio", "range", "submit", "reset", "file"].includes(type);
+}
+
 function onKeyDown(e: KeyboardEvent) {
-  // Escape closes whichever bar menu is open, then stops the run.
+  // Escape closes whichever menu is open, then stops the run.
+  if (e.key === "Escape" && chordMenu.value) {
+    chordMenu.value = null;
+    return;
+  }
   if (e.key === "Escape" && openMenu.value) {
     openMenu.value = null;
     return;
@@ -365,7 +884,29 @@ function onKeyDown(e: KeyboardEvent) {
     stop();
     return;
   }
+  // Space starts and stops the run. Held down it must still swallow the key,
+  // or the page scrolls under the lane — but it only toggles on the first
+  // press. Not while the import sheet is up: it owns the screen.
+  if (
+    e.key === " " &&
+    !e.metaKey &&
+    !e.ctrlKey &&
+    !e.altKey &&
+    view.value === "trainer" &&
+    !importOpen.value &&
+    spaceIsTransport(e)
+  ) {
+    e.preventDefault();
+    if (!e.repeat) {
+      if (playing.value) stop();
+      else void onPlay();
+    }
+    return;
+  }
+
   if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+  // A field taking text keeps its keys; the piano only plays when nothing is.
+  if (typingInto(e)) return;
   const key = e.key.toLowerCase();
   if (heldKeys.has(key)) return;
 
@@ -388,12 +929,69 @@ function onKeyDown(e: KeyboardEvent) {
 
 function onKeyUp(e: KeyboardEvent) {
   const key = e.key.toLowerCase();
-  heldKeys.delete(key);
+  // Only a key that played something has anything to release — a letter typed
+  // into a field never did.
+  if (!heldKeys.delete(key)) return;
   const midiNote = PIANO_KEY_MAP[key];
   if (settings.instrument === "piano" && midiNote !== undefined) noteOff(midiNote);
 }
 
 // ------------------------------------------------------------------- theme
+/**
+ * The key the trainer is reading in. The list the chip offers is `KeyMenu`,
+ * shared with the piano cards in edit mode.
+ *
+ * "Auto" is first and is the resting state: the key is read off the lesson's
+ * own notes, which is right nearly always. The override exists because a clip
+ * that uses only part of a scale honestly derives a smaller signature, and
+ * only the player knows what it is really in (handoff 11 §1.5).
+ *
+ * Majors only. A signature names a major and its relative minor equally, and
+ * which of the two a lesson is in is a teaching decision the frames do not
+ * make — handoff 11 leaves it open.
+ */
+const keyLabel = computed(() => keyName(keyFifths.value));
+/**
+ * The three states, and the icon each one samples (handoff 12 §2).
+ *
+ * Read the three bars as three notes on the staff, left to right as the eye
+ * sees them: the playhead sits a third along (`PLAYHEAD_FRAC`), so the left
+ * bar is a note already played and the right two are still coming. That makes
+ * `results` literally one bar in three — the coloured third is the part of the
+ * staff behind the playhead.
+ *
+ * `all` keeps the handoff's own icon. Only the middle state's meaning changed,
+ * so only its sample does.
+ *
+ * Class names rather than literals, so the values live with the rest of the
+ * chrome in `styles.css`.
+ */
+const COLOUR_MODES = [
+  {
+    id: "all" as const,
+    label: "All colours",
+    tip: "Pitch hues and timing colours",
+    bars: ["s-perfect", "s-great", "s-early"],
+  },
+  {
+    id: "results" as const,
+    label: "Results only",
+    tip: "Plain notes ahead of the playhead; timing colours once played",
+    bars: ["s-perfect", "s-off", "s-off"],
+  },
+  {
+    id: "mono" as const,
+    label: "Mono",
+    tip: "Plain notation, no colour",
+    bars: ["s-off", "s-off", "s-off"],
+  },
+];
+
+function pickKey(fifths: number | null) {
+  settings.keyOverride = fifths;
+  openMenu.value = null;
+}
+
 // The palette lives in CSS custom properties keyed off `data-theme` on <html>;
 // the canvas renderers get the same values as data via `engine/theme.ts`.
 watch(
@@ -418,6 +1016,7 @@ onUnmounted(() => {
   window.removeEventListener("keydown", onKeyDown);
   window.removeEventListener("keyup", onKeyUp);
   document.removeEventListener("pointerdown", onPadMenuPointer);
+  if (deviceScan) clearInterval(deviceScan);
 });
 
 // -------------------------------------------------------------------- misc
@@ -432,16 +1031,31 @@ const padLayouts: Array<{ id: PadLayout; label: string; hint: string }> = [
  * two open at once reads as a mistake. The bar lifts above the stage while
  * any of them is showing so the panel isn't clipped by the lane canvas.
  */
-type BarMenu = "pad" | "device" | "volume" | null;
+type BarMenu = "pad" | "device" | "volume" | "key" | null;
 const openMenu = ref<BarMenu>(null);
 const padMenuOpen = computed(() => openMenu.value === "pad");
 const volMenuOpen = computed(() => openMenu.value === "volume");
 const padMenuRoot = ref<HTMLElement | null>(null);
 const volMenuRoot = ref<HTMLElement | null>(null);
+const keyMenuRoot = ref<HTMLElement | null>(null);
 
 function toggleMenu(which: Exclude<BarMenu, null>) {
   openMenu.value = openMenu.value === which ? null : which;
 }
+
+/**
+ * Changing screen closes whatever was open.
+ *
+ * Half the bar's menus belong to one screen only, so a menu can lose the
+ * control it hangs off while `openMenu` still names it — and the flag is read
+ * for more than the panel: the bar lifts above the stage and every tooltip is
+ * suppressed while it is set. Left standing, opening a lesson from the device
+ * menu would kill the trainer's tooltips and re-open the menu on the way back.
+ */
+watch(view, () => {
+  openMenu.value = null;
+  chordMenu.value = null;
+});
 
 function togglePadMenu() {
   toggleMenu("pad");
@@ -456,8 +1070,17 @@ function pickPadLayout(id: PadLayout) {
 
 function onPadMenuPointer(e: PointerEvent) {
   const t = e.target as Node;
+  // The canvas handler has already set a new one by the time this runs, so
+  // only a click landing outside the panel closes it.
+  if (chordMenu.value && !(t instanceof Element && t.closest(".chord-menu"))
+      && !(t instanceof Element && t.closest("canvas.lane-canvas"))) {
+    chordMenu.value = null;
+  }
   if (padMenuOpen.value && padMenuRoot.value && !padMenuRoot.value.contains(t)) openMenu.value = null;
   if (volMenuOpen.value && volMenuRoot.value && !volMenuRoot.value.contains(t)) openMenu.value = null;
+  if (openMenu.value === "key" && keyMenuRoot.value && !keyMenuRoot.value.contains(t)) {
+    openMenu.value = null;
+  }
 }
 
 /**
@@ -482,11 +1105,38 @@ watch(
   { immediate: true },
 );
 
-function onVolume(e: Event) {
+/**
+ * The three faders, in the order they appear in the popover: what you play,
+ * the part playing along with you, then the click.
+ */
+const MIXER: ReadonlyArray<{ bus: Bus; key: "volNotes" | "volGuide" | "volMetronome"; label: string }> = [
+  { bus: "notes", key: "volNotes", label: "YOUR NOTES" },
+  { bus: "guide", key: "volGuide", label: "GUIDE NOTES" },
+  { bus: "metronome", key: "volMetronome", label: "METRONOME" },
+];
+
+function setBusVolume(row: (typeof MIXER)[number], e: Event) {
   const v = Number((e.target as HTMLInputElement).value) / 100;
-  settings.volume = v;
-  audio.setVolume(v);
+  settings[row.key] = v;
+  audio.setBusVolume(row.bus, v);
 }
+
+/** The icon reads the loudest fader, and shows muted only when all are down. */
+const loudestBus = computed(() =>
+  Math.max(settings.volNotes, settings.volGuide, settings.volMetronome),
+);
+
+// Push the stored levels into the engine — before `init` they are held and
+// applied when the context opens, so hydration order does not matter.
+watch(
+  () => [settings.volNotes, settings.volGuide, settings.volMetronome] as const,
+  ([n, g, m]) => {
+    audio.setBusVolume("notes", n);
+    audio.setBusVolume("guide", g);
+    audio.setBusVolume("metronome", m);
+  },
+  { immediate: true },
+);
 
 </script>
 
@@ -494,13 +1144,30 @@ function onVolume(e: Event) {
   <div class="app">
     <!-- ===================== transport (window titlebar) =====================
          34px, every control 20px tall. Also the macOS titlebar: the 72px left
-         inset clears the traffic lights and `data-tauri-drag-region` makes the
-         empty space draggable. One row, all controls, down to ~1100px — below
-         that things drop out in the order the design specifies (see `.app`
-         media queries at the bottom of this file). -->
-    <header class="bar" :class="{ 'menu-open': openMenu !== null }" data-tauri-drag-region>
+         inset clears the traffic lights.
+
+         `data-tauri-drag-region="deep"` makes the whole subtree draggable, and
+         Tauri's shim walks up from whatever was clicked and stops at the first
+         interactive element — a button, an input, anything with a tabindex or
+         an interactive role — so every control here opts out on its own. The
+         bare attribute would only catch direct hits on the header itself,
+         which at this density is the gaps and the left inset and nothing else:
+         with all 21 controls showing, the spacers collapse to zero and there
+         is effectively nowhere left to grab.
+
+         Dropdowns hang off the bar in the DOM, so they carry ="false" to stop
+         a drag starting on their non-button chrome.
+
+         One row, all controls, down to ~1100px — below that things drop out in
+         the order the design specifies (see `.app` media queries at the bottom
+         of this file). -->
+    <header
+      class="bar"
+      :class="[view, { 'menu-open': openMenu !== null }]"
+      data-tauri-drag-region="deep"
+    >
       <template v-if="view === 'trainer'">
-        <button class="ico" title="Back to lessons" aria-label="Back to lessons" @click="goHome">
+        <button class="ico" data-tip="Back to lessons" aria-label="Back to lessons" @click="goHome">
           ✕
         </button>
 
@@ -515,52 +1182,118 @@ function onVolume(e: Event) {
 
         <i class="divider" />
 
-        <!-- Drag up/down to scrub the tempo; arrow keys step it. -->
+        <!-- Drag up/down to scrub the tempo, click to type one, arrows step. -->
         <div
           class="field tempo"
+          :class="{ editing: tempoEditing }"
           role="slider"
           tabindex="0"
           :aria-valuenow="bpmLabel"
-          aria-valuemin="50"
-          aria-valuemax="160"
+          :aria-valuemin="TEMPO_MIN"
+          :aria-valuemax="TEMPO_MAX"
           aria-label="Tempo"
-          :title="`Tempo — ${bpmLabel} BPM. Drag to change.`"
+          :data-tip="`Tempo — ${bpmLabel} BPM. Click to type, drag to scrub.`"
           @pointerdown="onTempoDragStart"
           @keydown="onTempoKey"
         >
-          <span class="num tempo-val">{{ bpmLabel.toFixed(1) }}</span>
+          <input
+            v-if="tempoEditing"
+            ref="tempoInput"
+            v-model="tempoDraft"
+            class="num tempo-val tempo-input"
+            type="text"
+            inputmode="decimal"
+            aria-label="Tempo in BPM"
+            @keydown.enter.prevent.stop="commitTempoEdit"
+            @keydown.esc.prevent.stop="cancelTempoEdit"
+            @blur="commitTempoEdit"
+          />
+          <span v-else class="num tempo-val">{{ bpmLabel.toFixed(1) }}</span>
           <span class="unit">BPM</span>
         </div>
 
-        <div class="seg" role="group" aria-label="Practice options">
-          <button
-            class="seg-i"
-            :class="{ on: guide }"
-            :aria-pressed="guide"
-            title="Play the target part quietly as a guide"
-            @click="guide = !guide"
-          >
-            GUIDE
-          </button>
-          <button
-            class="seg-i"
-            :class="{ on: settings.metronome }"
-            :aria-pressed="settings.metronome"
-            title="Metronome click, count-in included"
-            @click="settings.metronome = !settings.metronome"
-          >
-            CLICK
-          </button>
-        </div>
-
-        <i class="divider" />
       </template>
 
-      <div v-if="view === 'trainer'" class="seg" role="group" aria-label="Note direction">
+      <!-- Drill a passage. Pressing it plants an eight-bar region at the
+           playhead — where you are when you press it is where it starts —
+           and the mini strip is where it is then moved and resized. Its
+           on-state is the amber the home screen rings a chosen card with,
+           which is the same colour the region is edged in. -->
+      <button
+        v-if="view === 'trainer'"
+        class="seg-i solo loop"
+        :class="{ on: loopOn }"
+        :aria-pressed="loopOn"
+        data-tip="Loop a stretch of the run to practise it — drag it on the strip above"
+        @click="setLoop(!loopOn)"
+      >
+        LOOP
+      </button>
+
+      <!-- Degrees are a statement about a scale, so both of these are piano
+           only, and neither means anything without the other: the key names
+           what 1 is, and without it a digit says nothing (handoff 11 §1.5). -->
+      <template v-if="view === 'trainer' && sheetAvailable">
+        <span ref="keyMenuRoot" class="seg-wrap keychip-wrap">
+          <button
+            class="field keychip"
+            :class="{ open: openMenu === 'key' }"
+            :aria-expanded="openMenu === 'key'"
+            :data-tip="settings.keyOverride === null
+              ? 'Key, read from the lesson\u2019s own notes'
+              : 'Key, set by hand'"
+            aria-label="Key"
+            @click="toggleMenu('key')"
+          >
+            <i class="k">KEY</i>
+            <b>{{ keyLabel }}</b>
+            <i class="caret">{{ openMenu === "key" ? "\u25b4" : "\u25be" }}</i>
+          </button>
+          <KeyMenu
+            v-if="openMenu === 'key'"
+            :value="settings.keyOverride"
+            :auto="keyFifths"
+            @pick="pickKey"
+          />
+        </span>
+
+        <!-- `DEGREE` in full, not `DEG` (handoff 12 §5): it was the one
+             control in the bar whose meaning was not self-evident. -->
+        <div class="seg" role="group" aria-label="Note naming">
+          <button
+            class="seg-i"
+            :class="{ on: settings.noteLabel === 'note' }"
+            data-tip="Name notes by letter"
+            @click="settings.noteLabel = 'note'"
+          >
+            NOTE
+          </button>
+          <button
+            class="seg-i"
+            :class="{ on: settings.noteLabel === 'degree' }"
+            data-tip="Name notes by their degree in the key"
+            @click="settings.noteLabel = 'degree'"
+          >
+            DEGREE
+          </button>
+        </div>
+      </template>
+
+      <!-- One slot, two pairs. Sheet has no direction to choose — notation has
+           no falling form — so rather than sit there dead the slot spends
+           itself on the choice sheet *does* have: hues or plain ink. Same
+           `.seg`, same two 20px icon buttons, so the bar's width does not
+           move and the window floor is untouched. -->
+      <div
+        v-if="view === 'trainer' && !sheetOn"
+        class="seg"
+        role="group"
+        aria-label="Note direction"
+      >
         <button
           class="seg-i icon"
           :class="{ on: settings.laneOrientation === 'vertical' }"
-          title="Notes fall top to bottom"
+          data-tip="Notes fall top to bottom"
           aria-label="Falling notes"
           @click="settings.laneOrientation = 'vertical'"
         >
@@ -569,7 +1302,7 @@ function onVolume(e: Event) {
         <button
           class="seg-i icon"
           :class="{ on: settings.laneOrientation === 'horizontal' }"
-          title="Notes scroll right to left"
+          data-tip="Notes scroll right to left"
           aria-label="Scrolling notes"
           @click="settings.laneOrientation = 'horizontal'"
         >
@@ -577,7 +1310,121 @@ function onVolume(e: Event) {
         </button>
       </div>
 
-      <div v-if="view === 'trainer'" class="seg" role="group" aria-label="Instrument">
+      <!-- Colour is not a binary (handoff 12 §1). The staff paints two
+           systems — the instrument hues before the playhead, the timing
+           colours after — and a player reading music may want to silence
+           them independently. Three cells on the arrow pair's own geometry,
+           each a miniature of the palette its state produces, so the icon is
+           a sample rather than an abstraction. -->
+      <div v-if="view === 'trainer' && sheetOn" class="seg" role="group" aria-label="Note colour">
+        <button
+          v-for="m in COLOUR_MODES"
+          :key="m.id"
+          class="seg-i swatch"
+          :class="{ on: settings.colourMode === m.id }"
+          role="menuitemradio"
+          :aria-checked="settings.colourMode === m.id"
+          :aria-label="m.label"
+          :data-tip="m.tip"
+          @click="settings.colourMode = m.id"
+        >
+          <span class="bars">
+            <i v-for="(c, ci) in m.bars" :key="ci" :class="c" />
+          </span>
+        </button>
+      </div>
+
+      <!-- Roll or notation. Piano only: a treble staff read by pitch, with a
+           keyboard under it, says nothing about a drum pad — so for a pads
+           lesson the pair is simply not there. -->
+      <div
+        v-if="view === 'trainer' && sheetAvailable"
+        class="seg"
+        role="group"
+        aria-label="Note display"
+      >
+        <button
+          class="seg-i"
+          :class="{ on: settings.laneMode === 'roll' }"
+          data-tip="Notes as a falling roll"
+          @click="settings.laneMode = 'roll'"
+        >
+          ROLL
+        </button>
+        <button
+          class="seg-i"
+          :class="{ on: settings.laneMode === 'sheet' }"
+          data-tip="Notes as notation on a staff"
+          @click="settings.laneMode = 'sheet'"
+        >
+          SHEET
+        </button>
+      </div>
+
+      <span v-if="view === 'home'" class="wordmark">MELODABLE</span>
+
+      <div class="spacer" />
+      <span v-if="view === 'trainer'" class="title">{{ lesson.name }}</span>
+      <div class="spacer" />
+
+      <span v-if="view === 'home'" class="count num">
+        {{ cardCount }}<i>LESSONS</i>
+      </span>
+
+      <!-- Home only: edit mode — names, descriptions, tempo, key, combining
+           lessons into a song and splitting one apart. Nothing of it is drawn
+           on home until this is on. A pencil in the icons' own terms (16-unit
+           box, 1.5 stroke, round ends); it is ours, not from a handoff. -->
+      <button
+        v-if="view === 'home'"
+        class="ico"
+        :class="{ on: editing }"
+        :aria-pressed="editing"
+        aria-label="Edit lessons"
+        data-tip="Edit lessons: names, tempo, key — combine into songs, or split them"
+        @click="editing = !editing"
+      >
+        <svg
+          viewBox="0 0 16 16"
+          width="11"
+          height="11"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M10.7 2.3 13.7 5.3 5.4 13.6H2.4V10.6Z" />
+          <path d="M9 4 12 7" />
+        </svg>
+      </button>
+
+      <span v-if="view === 'trainer'" class="scores">
+        <span class="score" :data-tip="runComplete ? 'Accuracy for the last run' : 'Accuracy so far'">
+          <i class="k">ACC</i>
+          <b class="num v-acc" :class="{ idle: !playing && !runComplete }">
+            {{ playing || runComplete ? accuracy : "—" }}
+          </b>
+        </span>
+        <span class="score" :data-tip="runComplete ? 'Best combo in the last run' : 'Current combo'">
+          <i class="k">CMB</i>
+          <b class="num v-cmb" :class="{ idle: !playing && !runComplete }">
+            {{ playing || runComplete ? combo : "—" }}
+          </b>
+        </span>
+        <span class="score best" data-tip="Best combo this session">
+          <i class="k">BEST</i>
+          <b class="num v-best">{{ bestCombo }}</b>
+        </span>
+      </span>
+
+      <i class="divider" />
+
+      <!-- Which instrument you practise is a decision made before a run, not
+           during one, so it lives on the home bar rather than the trainer's.
+           The trainer's freed width goes to the loop-overview strip. -->
+      <div v-if="view === 'home'" class="seg" role="group" aria-label="Instrument">
         <span ref="padMenuRoot" class="seg-wrap">
           <button
             class="seg-i"
@@ -587,7 +1434,7 @@ function onVolume(e: Event) {
             PADS <i class="caret">{{ padMenuOpen ? "▴" : "▾" }}</i>
           </button>
 
-          <div v-if="padMenuOpen" class="menu" role="menu">
+          <div v-if="padMenuOpen" class="menu" role="menu" data-tauri-drag-region="false">
             <div class="menu-head">PAD LAYOUT</div>
             <button
               v-for="opt in padLayouts"
@@ -615,63 +1462,58 @@ function onVolume(e: Event) {
         </button>
       </div>
 
-      <span v-if="view === 'home'" class="wordmark">MELODABLE</span>
+      <!-- Ableton Link sits with the external-gear group — it and the device
+           chip are both "what is plugged in" — and is home-only: joining a
+           session is a decision made before a run, like choosing the device.
+           It stays joined once you start; there is simply no toggle mid-run.
 
-      <div class="spacer" data-tauri-drag-region />
-      <span v-if="view === 'trainer'" class="title">{{ lesson.name }}</span>
-      <div class="spacer" data-tauri-drag-region />
-
-      <span v-if="view === 'home'" class="count num">
-        {{ lessons.lessons.length }}<i>LESSONS</i>
-      </span>
-
-      <span v-if="view === 'trainer'" class="scores">
-        <span class="score" :title="runComplete ? 'Accuracy for the last run' : 'Accuracy so far'">
-          <i class="k">ACC</i>
-          <b class="num v-acc" :class="{ idle: !playing && !runComplete }">
-            {{ playing || runComplete ? accuracy : "—" }}
-          </b>
-        </span>
-        <span class="score" :title="runComplete ? 'Best combo in the last run' : 'Current combo'">
-          <i class="k">CMB</i>
-          <b class="num v-cmb" :class="{ idle: !playing && !runComplete }">
-            {{ playing || runComplete ? combo : "—" }}
-          </b>
-        </span>
-        <span class="score best" title="Best combo this session">
-          <i class="k">BEST</i>
-          <b class="num v-best">{{ bestCombo }}</b>
-        </span>
-      </span>
-
-      <i class="divider" />
-
-      <!-- Ableton Link (M6) isn't in the redesign's control list; it sits with
-           the other external-gear controls. -->
+           Handoff 08 §3, path data verbatim, and it supersedes the diagonal
+           chain that was here. That one was rejected at true size rather than
+           on the drawing board: its hook gaps close up at 20px and the mark
+           turns to mush. This is two capsule halves meeting at a seam, and
+           the seam is drawn rather than implied — that stroke is what says
+           *linked* instead of *two pills*. -->
       <button
-        v-if="linkAvailable"
+        v-if="linkAvailable && view === 'home'"
         class="ico link"
         :class="{ on: linkOn }"
         :aria-pressed="linkOn"
-        :title="
+        :data-tip="
           linkOn
             ? `Ableton Link on — ${linkPeers} peer(s). Tempo and downbeat follow the session.`
             : 'Ableton Link — lock tempo and downbeat to Ableton'
         "
         @click="toggleLink"
       >
-        <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
-          <path d="M6.6 9.4 9.4 6.6" fill="none" stroke="currentColor" stroke-width="1.5"
-                stroke-linecap="round" />
-          <path d="M7.1 4.7 8.2 3.6a2.6 2.6 0 0 1 3.6 3.6l-1.1 1.1" fill="none"
-                stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-          <path d="M8.9 11.3 7.8 12.4a2.6 2.6 0 0 1-3.6-3.6l1.1-1.1" fill="none"
-                stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+        <svg
+          viewBox="0 0 16 16"
+          width="10"
+          height="10"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M7 5.2H4.3a2.8 2.8 0 0 0 0 5.6H7" />
+          <path d="M9 5.2h2.7a2.8 2.8 0 0 1 0 5.6H9" />
+          <path d="M5.6 8h4.8" />
         </svg>
         <i v-if="linkOn" class="peerbadge num">{{ linkPeers }}</i>
       </button>
 
+      <!-- Home-only, with the instrument switch, Link and import: what is
+           plugged in is a decision made before a run, not during one. The
+           chip has always been a pre-run control by that argument — the Link
+           toggle beside it says so — and was simply the last one still drawn
+           in both bars. The connection itself is untouched: it lives in Tauri
+           state (invariant 5) and the port stays open across the switch. Its
+           LED moves with it, so the trainer no longer reports whether a
+           device is connected; a run you can hear is the same fact, and the
+           bar is the one place tight for width. -->
       <DeviceMenu
+        v-if="view === 'home'"
         :open="openMenu === 'device'"
         :ports="ports"
         :connected-index="connectedIndex"
@@ -679,8 +1521,8 @@ function onVolume(e: Event) {
         :busy="midiBusy"
         :error="midiError"
         @refresh="refreshPorts()"
-        @connect="(i: number) => connect(i)"
-        @disconnect="disconnect()"
+        @connect="(i: number) => pickDevice(i)"
+        @disconnect="dropDevice()"
         @toggle="toggleMenu('device')"
         @close="openMenu = null"
       />
@@ -689,7 +1531,7 @@ function onVolume(e: Event) {
         <button
           class="seg-i"
           :class="{ on: settings.soundOutput === 'internal' }"
-          title="Melodable's built-in synth plays your hits"
+          data-tip="Melodable's built-in synth plays your hits"
           @click="settings.soundOutput = 'internal'"
         >
           SYNTH
@@ -697,7 +1539,7 @@ function onVolume(e: Event) {
         <button
           class="seg-i"
           :class="{ on: settings.soundOutput === 'external' }"
-          title="Silent: your DAW (Ableton) makes the sound while Melodable tracks timing"
+          data-tip="Silent: your DAW (Ableton) makes the sound while Melodable tracks timing"
           @click="settings.soundOutput = 'external'"
         >
           DAW
@@ -708,36 +1550,119 @@ function onVolume(e: Event) {
         <button
           class="ico"
           :class="{ on: volMenuOpen }"
-          :title="`Volume — ${Math.round(settings.volume * 100)}%`"
-          aria-label="Volume"
+          data-tip="Mixer — your notes, the guide part and the click"
+          aria-label="Mixer"
           :aria-expanded="volMenuOpen"
           @click="toggleMenu('volume')"
         >
-          <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
-            <path d="M3 6.2h2.3L8.4 3.6v8.8L5.3 9.8H3z" fill="currentColor" />
-            <path v-if="settings.volume > 0" d="M10.6 6a2.9 2.9 0 0 1 0 4" fill="none"
-                  stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-            <path v-if="settings.volume > 0.5" d="M12.4 4.3a5.4 5.4 0 0 1 0 7.4" fill="none"
-                  stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-            <path v-if="settings.volume === 0" d="M11 6.2 14 9.8M14 6.2 11 9.8" fill="none"
-                  stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+          <!-- Handoff 08 §1, path data verbatim. The two arcs are true circular
+               arcs on one shared centre (7.58, 8) at radii 2.7 and 5.6 — that
+               concentricity is the whole read, sound leaving a point, and it is
+               why they must not be rebuilt from `border-radius`, which gives
+               half-ellipses with square ends.
+
+               The arcs still come and go with the level, and the cross still
+               replaces them at silence: that is state the design's static mark
+               does not cover, and losing it would cost the only indication that
+               everything is muted. Its geometry is ours — see handoff 09. -->
+          <svg
+            viewBox="0 0 16 16"
+            width="13"
+            height="13"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.3"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M1.6 6.2h2.1L7 3.4v9.2L3.7 9.8H1.6z" fill="currentColor" />
+            <path v-if="loudestBus > 0" d="M9.5 6.1a2.7 2.7 0 0 1 0 3.8" />
+            <path v-if="loudestBus > 0.5" d="M11.7 4.2a5.6 5.6 0 0 1 0 7.6" />
+            <path v-if="loudestBus === 0" d="M9.8 6.2 13.4 9.8M13.4 6.2 9.8 9.8" />
           </svg>
         </button>
 
-        <div v-if="volMenuOpen" class="menu vol-menu">
-          <div class="menu-head">VOLUME <b class="num">{{ Math.round(settings.volume * 100) }}</b></div>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            aria-label="Volume"
-            :value="Math.round(settings.volume * 100)"
-            @input="onVolume"
-          />
+        <div v-if="volMenuOpen" class="menu vol-menu" data-tauri-drag-region="false">
+          <div v-for="row in MIXER" :key="row.bus" class="vol-row">
+            <div class="menu-head">
+              {{ row.label }}
+              <b class="num">{{ Math.round(settings[row.key] * 100) }}</b>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              :aria-label="row.label"
+              :value="Math.round(settings[row.key] * 100)"
+              @input="setBusVolume(row, $event)"
+            />
+          </div>
         </div>
       </span>
 
-      <button class="ico" title="Import a MIDI clip from Ableton" @click="openImport">⇪</button>
+      <!-- Home only: importing a clip adds a lesson to the library, which is
+           a thing you do while choosing one, not mid-run. `data-tip` is a
+           tooltip, not a name, so a glyph-only button still needs its own
+           `aria-label` now that `title` is gone.
+
+           Handoff 08 §2, path data verbatim. This was the `⇪` character, and
+           a character is at the mercy of whichever font in the stack happens
+           to carry it — which is exactly why it drifted from the drawing. The
+           arrow deliberately stops short of the tray (10.2 against 11.1): the
+           0.9 gap is what makes it read as motion rather than one glued
+           shape, so do not close it up. -->
+      <!-- Home only: calibration is a decision about the rig, made before a
+           run rather than during one. A metronome-and-stopwatch mark, the
+           needle sitting off centre because an offset is what it measures. -->
+      <button
+        v-if="view === 'home'"
+        class="ico"
+        :class="{ on: settings.latencyMs !== 0 }"
+        data-tip="Calibrate timing for your controller and audio"
+        aria-label="Calibrate timing"
+        @click="openCalibration"
+      >
+        <svg
+          viewBox="0 0 16 16"
+          width="11"
+          height="11"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M8 14.1a5.7 5.7 0 1 0 0-11.4 5.7 5.7 0 0 0 0 11.4Z" />
+          <path d="M8 8.4 10.7 5.7" />
+          <path d="M8 2.7V1.5" />
+        </svg>
+      </button>
+
+      <button
+        v-if="view === 'home'"
+        class="ico"
+        data-tip="Import a MIDI clip from Ableton"
+        aria-label="Import a MIDI clip"
+        @click="openImport"
+      >
+        <svg
+          viewBox="0 0 16 16"
+          width="11"
+          height="11"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M8 10.2V2.4" />
+          <path d="M4.9 5.5 8 2.4l3.1 3.1" />
+          <path d="M2.6 11.1v1.6a.9.9 0 0 0 .9.9h9a.9.9 0 0 0 .9-.9v-1.6" />
+        </svg>
+      </button>
       <input
         ref="fileInput"
         type="file"
@@ -746,13 +1671,16 @@ function onVolume(e: Event) {
         @change="onImportFile"
       />
 
-      <i class="divider" />
+      <i v-if="view === 'home'" class="divider" />
 
-      <div class="seg" role="group" aria-label="Theme">
+      <!-- Theme is not a run control, and it is already here on home — the
+           same argument that moved import and the instrument switch (handoff
+           11 §3.1). Dropping it from the trainer bar is a dedup, not a loss. -->
+      <div v-if="view === 'home'" class="seg" role="group" aria-label="Theme">
         <button
           class="seg-i icon"
           :class="{ on: settings.theme === 'dark' }"
-          title="Dark theme"
+          data-tip="Dark theme"
           aria-label="Dark theme"
           @click="settings.theme = 'dark'"
         >
@@ -761,7 +1689,7 @@ function onVolume(e: Event) {
         <button
           class="seg-i icon"
           :class="{ on: settings.theme === 'light' }"
-          title="Light theme"
+          data-tip="Light theme"
           aria-label="Light theme"
           @click="settings.theme = 'light'"
         >
@@ -772,7 +1700,7 @@ function onVolume(e: Event) {
       <button
         class="ico mon"
         :class="{ on: settings.monitorOpen }"
-        title="Show or hide the MIDI monitor"
+        data-tip="Show or hide the MIDI monitor"
         aria-label="Toggle MIDI monitor"
         @click="settings.monitorOpen = !settings.monitorOpen"
       >
@@ -786,12 +1714,30 @@ function onVolume(e: Event) {
         v-if="view === 'home'"
         :lessons="lessons.lessons"
         :current-index="lessons.currentIndex"
+        :courses="courses.courses"
+        :complete="songsComplete"
+        :editing="editing"
         @open="openLesson"
+        @open-song="openSong"
+        @combine="combineSong"
+        @edit-lesson="editLesson"
+        @edit-song="editSong"
+        @split="courses.split"
+        @done="editing = false"
         @import="openImport"
       />
 
       <section v-else class="stage">
-        <canvas ref="overviewCanvas" class="overview" />
+        <canvas
+          ref="overviewCanvas"
+          class="overview"
+          :class="{ loopable: loopOn, [`grab-${loopCursor}`]: loopOn && loopCursor !== null }"
+          @pointerdown="onStripDown"
+          @pointermove="onStripMove"
+          @pointerup="onStripUp"
+          @pointercancel="onStripUp"
+          @pointerleave="onStripHoverOut"
+        />
 
         <template v-if="!isPiano">
           <div class="lane-wrap">
@@ -802,10 +1748,12 @@ function onVolume(e: Event) {
 
         <!-- The keyboard rotates to the left edge when notes scroll sideways,
              so every semitone row still lines up with its own key. -->
-        <div v-else class="piano-stage" :class="settings.laneOrientation">
-          <canvas ref="laneCanvas" class="lane-canvas piano-canvas" />
+        <div v-else class="piano-stage" :class="sheetOn ? 'horizontal sheet' : settings.laneOrientation">
+          <canvas ref="laneCanvas" class="lane-canvas piano-canvas" @pointerdown="onLanePointer" />
           <PianoKeyboard
-            :rotated="settings.laneOrientation === 'horizontal'"
+            :rotated="!sheetOn && settings.laneOrientation === 'horizontal'"
+            :degrees="settings.noteLabel === 'degree'"
+            :key-fifths="keyFifths"
             :active="activeNotes"
             :low-note="pianoRange[0]"
             :high-note="pianoRange[1]"
@@ -816,12 +1764,53 @@ function onVolume(e: Event) {
           />
           <div v-if="toast" class="toast">{{ toast }}</div>
         </div>
+
+        <!-- Naming a bar by hand. Anchored on the block that was clicked
+             rather than dropped from the bar: the block is the subject, and
+             the stage has room under it that the 34px bar does not. -->
+        <div
+          v-if="chordMenu"
+          class="menu chord-menu"
+          role="menu"
+          :style="{ left: `${chordMenu.x}px`, top: `${chordMenu.y}px` }"
+        >
+          <div class="menu-head">BAR {{ chordMenu.bar + 1 }}</div>
+          <button
+            class="menu-row"
+            :class="{ on: chordOverrides[chordMenu.bar] === undefined }"
+            role="menuitemradio"
+            :aria-checked="chordOverrides[chordMenu.bar] === undefined"
+            @click="pickChord(null)"
+          >
+            AUTO<i>{{ chordMenuDerived ?? "—" }}</i>
+          </button>
+          <button
+            v-for="c in chordChoices"
+            :key="c.degree"
+            class="menu-row"
+            :class="{ on: chordOverrides[chordMenu.bar] === c.degree }"
+            role="menuitemradio"
+            :aria-checked="chordOverrides[chordMenu.bar] === c.degree"
+            @click="pickChord(c.degree)"
+          >
+            {{ c.roman }}<i>{{ c.name }}</i>
+          </button>
+        </div>
       </section>
 
       <aside v-if="settings.monitorOpen && view === 'trainer'" class="monitor">
         <MidiMonitor :rows="log" @clear="log = []" @collapse="settings.monitorOpen = false" />
       </aside>
     </main>
+
+    <SongLightbox
+      v-if="songMenuState && view === 'trainer' && !runComplete"
+      :song="songMenuState"
+      :instrument="lesson.instrument"
+      :sections="songMenuSections"
+      @step="playStep"
+      @lessons="goHome"
+    />
 
     <RunSummary
       v-if="runComplete && runResult && view === 'trainer'"
@@ -835,10 +1824,29 @@ function onVolume(e: Event) {
       :best-combo="runResult.bestCombo"
       :previous-best="runResult.previousBest"
       :tally="runResult.tally"
+      :holds="runResult.holds"
+      :wrong="runResult.wrong"
+      :attempts="runResult.attempts"
+      :step="runResult.step"
       :lanes="runResult.lanes"
-      :lane-order="isPiano ? lessonPitches : trainerLanes"
+      :base-bpm="lesson.bpm"
       @again="onPlay"
+      @step="playStep"
       @lessons="goHome"
+    />
+
+    <CalibrationDialog
+      v-if="calOpen"
+      :latency-ms="settings.latencyMs"
+      :active="calibration.active.value"
+      :lead-in="calibration.leadIn.value"
+      :taps="calibration.errors.value.length"
+      :result="calibration.result.value"
+      :has-device="connectedIndex !== null"
+      @start="calibration.start"
+      @stop="calibration.finishEarly"
+      @set="setLatency"
+      @close="closeCalibration"
     />
 
     <ImportDialog
@@ -852,6 +1860,10 @@ function onVolume(e: Event) {
       @confirm="confirmImport"
       @close="closeImport"
     />
+
+    <!-- Last, and outside the bar, so it is clipped by nothing and painted
+         over everything. It finds its own targets by `data-tip`. -->
+    <BarTooltip :suppressed="openMenu !== null" />
   </div>
 </template>
 
@@ -872,9 +1884,20 @@ function onVolume(e: Event) {
   display: flex;
   align-items: center;
   gap: var(--gap-bar);
-  padding: 0 10px 0 72px;
+  /* The trainer bar carries far more than home's and is the one that runs out
+     of width, so it runs tighter (handoff 11 §3.1). Home keeps 9px. */
+  /* Left inset clears the macOS traffic lights, which end around 66px. 72px
+     left the ✕ almost touching the zoom button; 84px gives it the same kind
+     of breathing room the controls have between themselves. */
+  padding: 0 10px 0 84px;
   background: var(--bar);
   border-bottom: 1px solid var(--bar-line);
+  /* This is a titlebar, so it never shows an I-beam and never selects — the
+     body rule covers the second part, this one restates it because the bar is
+     where it matters most. */
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
   /* One row, always — a second row would break the 34px titlebar. Note this
      must NOT clip: the pad-layout, device and volume dropdowns hang below the
      bar, and `overflow: auto` here would cut them off at 34px. Below the
@@ -882,7 +1905,7 @@ function onVolume(e: Event) {
      rather than wrapping. */
   flex-wrap: nowrap;
 }
-.bar > * { -webkit-app-region: no-drag; }
+.bar.trainer { gap: 7px; }
 .spacer { flex: 1; min-width: 0; }
 .divider {
   width: 1px;
@@ -903,7 +1926,23 @@ function onVolume(e: Event) {
   letter-spacing: 1.1px;
 }
 
+/* The reference draws ▤ a shade larger than the ✕ — it is an open outline
+   where the ✕ is a solid stroke, so it needs the extra pixel to carry the
+   same weight on screen. The import button used to share this rule; it is an
+   SVG now (handoff 08 §2) and sizes itself. */
+.ico.mon {
+  font-size: 10px;
+}
+
 .ico {
+  /*
+   * Regular, not the 500 the shared rule sets, matching the reference. These
+   * buttons hold Unicode symbols — ✕ ⇪ ◐ ☀ ▤ — that Geist Mono does not
+   * carry, so they come from a fallback face that has no medium weight and
+   * synthesises one. Same thickened-outline problem as a missing SemiBold,
+   * just at 9px.
+   */
+  font-weight: 400;
   width: 20px;
   height: 20px;
   flex: none;
@@ -920,6 +1959,9 @@ function onVolume(e: Event) {
   cursor: pointer;
 }
 .ico:hover { background: var(--hover); color: var(--txt); }
+/* Handoff 10 draws the disabled orientation at 0.32. */
+.seg-i:disabled { opacity: 0.32; cursor: default; }
+.seg-i:disabled:hover { background: none; }
 .ico:focus-visible,
 .transport:focus-visible,
 .seg-i:focus-visible,
@@ -965,15 +2007,69 @@ function onVolume(e: Event) {
   background: var(--track);
   box-shadow: var(--outline);
 }
+/* The key chip is the design's read-out with a way into the list added.
+   Handoff 11 §1.5 draws it as a plain `.field`: `gap: 5px`, `0 7px` padding,
+   `KEY` in `--txt3` beside the key in `--txt`. Those two numbers are the whole
+   look, and losing them is what made it read as a different kind of control —
+   `KEY` and the key ran together into `KEYC maj` inside a 2px inset.
+
+   They were lost to a split control that no longer exists: for one commit the
+   label half switched degree mode and the caret half opened the list, which
+   wanted its own geometry. `NOTE | DEGREE` came back and took that job with
+   it; the markup reverted and this did not.
+
+   One button, so the whole chip inverts when the menu is open — there is no
+   longer a half that means something different from the other. */
+.keychip { gap: 5px; cursor: pointer; border: none; color: inherit; }
+.keychip .k { font-family: var(--mono); font-size: 9.5px; letter-spacing: 1.2px; color: var(--txt3); }
+.keychip b { font-family: var(--mono); font-size: 9.5px; font-weight: 500; color: var(--txt); }
+.keychip:hover { background: var(--hover); }
+.keychip.open { background: var(--active); }
+.keychip.open .k { color: var(--active-txt); opacity: 0.65; }
+.keychip.open b,
+.keychip.open .caret { color: var(--active-txt); }
+.keychip .caret { font-size: 6.5px; font-style: normal; color: var(--txt3); opacity: 1; }
+.keychip:focus-visible { outline: 1px solid var(--head); outline-offset: 1px; }
+/* The dropdown hangs off the chip, so the wrapper must not clip it. */
+.keychip-wrap { position: relative; display: inline-flex; }
+/* Fifteen signatures is a long list for a 34px bar, so it scrolls. */
+.key-menu { width: 132px; max-height: 268px; overflow-y: auto; }
+
 .tempo {
   gap: 5px;
   cursor: ns-resize;
   touch-action: none;
 }
-.tempo-val { font-size: 9.5px; font-weight: 500; line-height: 1; color: var(--txt); }
+.tempo-val {
+  font-size: 9.5px;
+  font-weight: 500;
+  line-height: 1;
+  /* Untracked, as in the reference. The shared control rule adds 1.1px, which
+     on a numeric readout just spaces the digits out and widens the field. */
+  letter-spacing: normal;
+  color: var(--txt);
+  /* Pinned to the widest reading, "160.0". The readout used to size to its
+     content, so the whole bar shifted when the tempo crossed 100 — and the
+     window floor is measured against this width. Mono plus tabular numerals
+     means 5ch is exactly five digits, so the input can match it and opening
+     the field moves nothing. */
+  display: inline-block;
+  width: 5ch;
+  text-align: right;
+}
+.tempo-input {
+  padding: 0;
+  border: none;
+  background: none;
+  outline: none;
+  caret-color: var(--head);
+}
+.tempo.editing { cursor: text; }
 .tempo .unit {
   font-family: var(--mono);
   font-size: 9.5px;
+  /* Lighter than the value it labels — the reference leaves this at 400. */
+  font-weight: 400;
   letter-spacing: 1.2px;
   line-height: 1;
   color: var(--txt3);
@@ -986,7 +2082,10 @@ function onVolume(e: Event) {
 .ico.on { background: var(--active); color: var(--active-txt); }
 /* Right-anchored: this control sits near the window edge, so a left-anchored
    panel would hang off-screen. */
-.menu.vol-menu { left: auto; right: 0; width: 160px; padding: 4px 10px 10px; }
+.menu.vol-menu { left: auto; right: 0; width: 172px; padding: 4px 10px 10px; }
+/* Three faders stacked; the gap is what separates one row's label from the
+   row above it, so the reading belongs to the right slider. */
+.vol-row + .vol-row { margin-top: 9px; }
 .vol-menu .menu-head { display: flex; justify-content: space-between; padding-left: 0; padding-right: 0; }
 .vol-menu .menu-head b { color: var(--txt); font-weight: 500; font-size: 9.5px; }
 .vol-menu input {
@@ -1018,6 +2117,11 @@ function onVolume(e: Event) {
   box-shadow: var(--outline);
 }
 .seg-wrap { position: relative; display: inline-flex; }
+/* This wrapper sits inside the seg's 2px padding, so `.menu`'s top offset
+   starts 2px lower than it does for the device and mixer wrappers, which are
+   direct children of the bar. Pull it back so all three panels hang from the
+   same line. */
+.seg-wrap .menu { top: 23px; }
 .seg-i {
   height: var(--seg-item-h);
   display: inline-flex;
@@ -1032,12 +2136,63 @@ function onVolume(e: Event) {
   white-space: nowrap;
 }
 .seg-i.icon {
+  /* Regular, like `.ico`: these are Unicode symbols from a fallback face, and
+     a medium weight there is synthesised rather than drawn. */
+  font-weight: 400;
   width: 20px;
   padding: 0;
   justify-content: center;
   font-size: 9px;
   letter-spacing: 0;
 }
+/* The colour-mode cells: the arrow pair's geometry (20 x 16, 2px gap and
+   padding from `.seg`), holding three 2.5 x 9px bars 1.5px apart — a
+   miniature of the palette that state produces (handoff 12 §2). */
+/* A `seg-i` standing on its own rather than inside a `.seg` pair, so it has
+   to bring the group's own chrome with it. */
+.solo {
+  height: 20px;
+  flex: none;
+  padding: 0 8px;
+  border-radius: var(--r-field);
+  background: var(--track);
+  box-shadow: var(--outline);
+}
+/* The one control whose on-state is *not* the bar's inverted chip: looping is
+   a region you picked, and the app already has a colour for that — the amber
+   that rings a chosen card on the home screen, and that edges the region on
+   the strip. Reading the two as one thing is the point.
+
+   Named with `.seg-i` so it outranks `.seg-i.on`, which is declared later and
+   would otherwise win the tie on source order alone and give this the ordinary
+   inverted chip. */
+.seg-i.loop.on,
+.seg-i.loop.on:hover {
+  background: var(--led1);
+  color: var(--active-txt);
+  box-shadow: none;
+}
+
+/* The strip only invites a drag while there is a region to drag. */
+.overview.loopable { touch-action: none; }
+.overview.grab-edge { cursor: ew-resize; }
+.overview.grab-body { cursor: grab; }
+
+.swatch { width: 20px; padding: 0; justify-content: center; }
+.bars { display: flex; align-items: center; gap: 1.5px; }
+.bars i { display: block; width: 2.5px; height: 9px; border-radius: 0.5px; }
+.s-perfect { background: var(--rate-perfect); }
+.s-great { background: var(--rate-great); }
+.s-early { background: var(--led1); }
+.s-off { background: var(--swatch-off); }
+/* Selected takes the segment's normal fill *plus* a ring in the home screen's
+   selected-card accent — the first use of that accent inside a trainer
+   control, linking "the thing you picked" across the two screens. A solid
+   accent fill was drawn first and swallowed the amber bar inside the "all
+   colours" icon: the icon's own content collides with it (§3). */
+.swatch.on { background: var(--active); box-shadow: inset 0 0 0 1.5px var(--led1); }
+.swatch.on:hover { background: var(--active); }
+
 .seg-i:hover { background: var(--hover); }
 /* Light inverts on-state to a dark chip rather than lightening it — every
    surface is the same grey, so a lighter fill would read as nothing. */
@@ -1074,7 +2229,14 @@ function onVolume(e: Event) {
 }
 
 .title {
-  flex: none;
+  /* The one elastic thing in the bar. Every control is a fixed size, so the
+     lesson name is what has to give: `flex: none` let an imported clip with a
+     long name push the controls off the edge. Shrinking with an ellipsis
+     means no name can break the row, whatever it is called. */
+  flex: 0 1 auto;
+  /* Last to give, and never all the way: 36px still reads as a name that has
+     been cut rather than as an empty gap where a title should be. */
+  min-width: 36px;
   font-family: var(--sans);
   font-size: 11.5px;
   font-weight: 500;
@@ -1089,7 +2251,7 @@ function onVolume(e: Event) {
   flex: none;
   display: inline-flex;
   align-items: baseline;
-  gap: 11px;
+  gap: 8px;
 }
 .score { display: inline-flex; align-items: baseline; gap: 3px; }
 .score .k {
@@ -1108,7 +2270,12 @@ function onVolume(e: Event) {
 
 /* Link (M6) — the peer count is a badge so the control stays 20px wide. */
 .link { position: relative; }
-.link.on { color: var(--head); }
+/* Dark only. `.link.on` and `.ico.on` have equal specificity and this is the
+   later rule, so it replaces the on-chip's `--active-txt`; in light `--head`
+   IS `--active`, which painted the chain icon in the chip's own colour and
+   made it disappear exactly when Link was running. Light keeps
+   `--active-txt` from `.ico.on`. */
+:root[data-theme="dark"] .link.on { color: var(--head); }
 .peerbadge {
   position: absolute;
   top: -4px;
@@ -1171,6 +2338,26 @@ function onVolume(e: Event) {
 .menu-row .tick { width: 10px; flex: none; font-size: 8px; font-style: normal; color: var(--head); }
 .menu-row b { font-weight: 500; }
 .menu-row em { font-style: normal; color: var(--txt3); margin-left: 6px; font-size: 11.5px; }
+/* A row's trailing value — the key a choice spells, the chord a bar gets.
+   Pushed right and set in mono so the column reads down the list. */
+.menu-row i {
+  margin-left: auto;
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--txt3);
+}
+.menu-row.on i { color: var(--active-txt); opacity: 0.7; }
+
+/* Anchored on the block it names, not dropped from the bar, so it is
+   positioned in viewport coordinates and translated clear of the cursor. */
+.chord-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 168px;
+  transform: translate(-50%, calc(-100% - 10px));
+}
 
 /* ================================ body ================================ */
 
@@ -1224,6 +2411,11 @@ function onVolume(e: Event) {
 }
 /* Rows are semitones, so the keyboard stands on its side beside them. */
 .piano-stage.horizontal { flex-direction: row-reverse; }
+/* Sheet reads by staff position rather than by row, so the keyboard lies flat
+   under the staff and names the notes (handoff 10 §1.6) rather than lining up
+   with anything. It overrides `.horizontal`, which sheet also carries. */
+.piano-stage.sheet { flex-direction: column; }
+.piano-stage.sheet :deep(.keyboard) { flex: none; height: 108px; }
 .piano-canvas { flex: 1; min-height: 0; min-width: 0; }
 
 .toast {
@@ -1257,13 +2449,11 @@ function onVolume(e: Event) {
    Ableton Link toggle and volume). Verified single-row with no overflow from
    1400px down to 912px; below that the design's drop list is exhausted and
    the rightmost controls run past the window edge rather than wrapping. */
-@media (max-width: 1118px) {
-  .title { display: none; }
-}
-@media (max-width: 1018px) {
-  .bar :deep(.trigger .label) { display: none; }
-}
-@media (max-width: 956px) {
-  .scores .best { display: none; }
-}
+/* No responsive drop-outs any more. The window floor (`minWidth` in
+   tauri.conf.json) is set to the measured width at which every control fits
+   at its natural size, so nothing has to be hidden to keep the single row —
+   and the elastic title above absorbs any lesson name. The old rules hid the
+   title at 1118px, the device label at 1018px and BEST at 956px; all three
+   are below the floor now and could never fire. If the floor is ever lowered,
+   they need to come back. */
 </style>

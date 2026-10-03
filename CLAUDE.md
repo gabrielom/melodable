@@ -10,7 +10,7 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
 
 ## How to work
 
-- **One milestone at a time.** M0–M5 are already complete. Start at **M6**. Build it, stop, let me verify, then commit before moving on.
+- **One milestone at a time.** M0–M7 — the plan's whole roadmap — are complete, and nothing is queued behind them. Work from here is whatever I ask for next: build it, stop, let me verify, then commit before moving on.
 - Don't scaffold future milestones ahead of time. No placeholder files for M6–M7.
 - After each milestone, state plainly what to click to verify it against the plan's acceptance criteria.
 - Run `npm test` and `npm run build` before declaring a milestone done.
@@ -30,31 +30,1162 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
 - Vue 3 Composition API with `<script setup lang="ts">`; Pinia for state; `@/` aliases `src/`.
 - Design tokens live in **two places that must stay in step**: `src/styles.css` (CSS custom properties, for the DOM) and `src/engine/theme.ts` (the same values as data, because canvas can't read custom properties). Change one, change the other. Don't introduce a new palette. These now supersede the palette in `build_plan.html`, which predates the trainer redesign.
 - Two themes, `dark` and `light`, swapped by `data-theme` on `<html>` from `settings.theme`. Light is one flat grey, so on-states **invert** to a dark chip and every field needs the `--outline` hairline — a lighter fill reads as nothing.
-- Rating colors live in the palette: `PALETTE[theme].rating[r]` (`src/engine/theme.ts`). Renderers read that, never a hardcoded rating colour. Dark: perfect = cyan, great = blue, good = amber, miss = red.
+- **Two colour languages, and a note wears exactly one.** The **instrument hues** name a lane or a pitch — *what* to hit. The **rating** colours name a result — *how well*. They share no value, so a dimmed target can never be misread as a judgement. `noteInk` (`src/views/lane-geometry.ts`) is the single place that decides, and every renderer goes through it. The switch is `resolved`, not which side of the playhead a note is on: a note sitting on the playhead has no result yet. During the count-in nothing is judged, so everything shows its tint.
+- Rating colors live in the palette: `PALETTE[theme].rating[r]` (`src/engine/theme.ts`). Renderers read that, never a hardcoded rating colour.
+- **Colour on the staff is three states, and they take the two systems away
+  one at a time** (handoff 12, middle state reversed). `settings.colourMode` is
+  `all | results | mono` and sets `LaneFrame.colourMode`; `noteInk` is still
+  the single place that decides. `all` is the trainer's normal behaviour, both
+  systems on. `results` drops the **hues** and keeps the **judgement**: plain
+  `palette.txt` ahead of the playhead, timing colours behind it — what is
+  coming reads as notation and nothing else, and how it went still reads at a
+  glance, which is the state to sight-read in. `mono` drops both.
+  **Scoring is untouched in every state**: the score row, the summary and the
+  run history do not know this setting exists. `tests/note-ink.test.ts` pins
+  all three in both themes, including that an unplayed note in `results`
+  carries *no* lane tint in any strength.
+  **The middle state is deliberately the opposite of what §1 describes.** The
+  handoff calls it "targets only" — hues kept, judgement dropped — and it was
+  built that way; the user has now said three times that what they want
+  silenced on a staff is the pitch tint, not the mark. Their sentence is the
+  spec: *"all the notes to the right of the playhead should have no colour,
+  after the playhead they should all have timing colours."* Don't "restore"
+  the handoff's reading without asking. `all` was checked at the same time and
+  is **unchanged** — dimmed hues ahead, timing colours behind.
+  Old keys migrate: `sheetInk: colour` → `all`, `sheetInk: mono` → `mono`, and
+  `colourMode: targets` → `results` (same slot on the toggle).
+- **The colour toggle's icon is a sample, not an abstraction** (§2). Three
+  cells on the arrow pair's geometry, each holding three 2.5×9px bars drawn
+  from the palette that state keeps: timing colours for `all`, the off grey
+  for `mono`, and for `results` **one timing colour then two greys** — read
+  the bars as three notes in time and the playhead sits a third along
+  (`PLAYHEAD_FRAC`), so one bar in three is literally the coloured part of the
+  staff. The handoff's own middle icon (two hues and a grey) went with the
+  middle state's old reading, and `--swatch-blue`/`--swatch-violet` went with
+  it: that state has no hue left to sample. Selected takes the segment's
+  normal fill **plus a 1.5px ring in `--led1`**, the home screen's
+  selected-card accent, and the first use of that accent inside a trainer
+  control. **Not a solid accent fill** — drawn that way first, the amber
+  background swallowed the amber bar inside the `all` icon (§3). The bar
+  colours live in `styles.css` beside `--led*` rather than in `theme.ts`:
+  they are chrome that samples the palettes, and the grey is a different text
+  token in each theme.
+- **The falling views never leave `all`** — strip a lane stack of its hues and
+  nothing is left to tell one lane from another — which is why the toggle is
+  sheet-only.
 - **A lesson is a finite run, not an endless loop.** The pattern plays
   `lesson.repeats` times (built-ins are 16 bars, 39-55s) and then ends; the run
   is scored as a whole, and clearing one clean run advances the library.
   `lessonRepeats` derives a count for imported clips that don't state one.
   The overview strip spans the whole run, which is what makes its viewport
   rectangle a meaningful slice rather than the entire width.
-- Lane identity uses the fixed 8-colour LED set (`ledOf`/`ledUpcoming`), indexed by the lane's position on screen — not a hash of the pad number, so a lane keeps its colour between lessons. Notes still to come are the LED at 33% (`UPCOMING_ALPHA`).
+- Lane identity is a **hue from the fourteen** (`hueOf`), indexed by the lane's position on screen — not by pad number or pitch, so a lane keeps its colour between lessons. Pads walk the list in order; piano starts on the cool end (blue, violet, bronze, teal) so a chord reads as separate voices. The **dimmed** value is derived, never authored: `mix(hue, field, 0.60)` in dark against `#0d0d0e`, `0.35` in light against `#cccccc`. That reproduces the design's own dimmed column for all fourteen in both themes, and `tests/theme.test.ts` pins it. A lane's strip, its lit mini-grid cell and its unplayed notes are all that same dim tint; full strength means the lane is sounding *now*. This supersedes the old 8-colour LED set, three of which doubled as rating colours.
+- `--led0..2` in `styles.css` are **not** lane identity — they are chrome accents (the device dot, the resume flag, the monitor's source dots) and are deliberately not mirrored in `theme.ts`. **One exception**: `--led1` is mirrored as `palette.accent`, because the loop region is edged in it on the overview's canvas and canvas cannot read a custom property. Keep the two in step like every other token.
 - Respect `prefers-reduced-motion`; keep controls keyboard-focusable.
-- **Everything lives in the one transport bar**, which is also the macOS titlebar (`data-tauri-drag-region`, left padding clears the traffic lights). It is 34px tall with every control 20px, and must stay a single row down to ~1100px — measure it, don't assume (see the responsive block at the bottom of `App.vue`; currently verified clean to 912px). No second toolbar row, no in-stage header.
+- **A strike that hits nothing is a wrong note, and it is charged.** One rule
+  covers both cases: a lane the lesson never asks for has no targets at all,
+  and a lane it does ask for struck far from any of them has none near enough.
+  `Scorer.hit` returns `hit | wrong | ignored`. A wrong note adds to the
+  accuracy denominator with no points and breaks the combo, and is counted
+  **outside `tally`** for the same reason holds are — the tally answers how the
+  *lesson's* notes went, and this was not one of them. **`WRONG_GRACE` is what
+  stops one mistake being billed twice:** a note struck 150ms late grades as
+  nothing and its target is swept as a miss a moment later, so calling the
+  strike wrong as well would take two zeros for one error. Inside the grace the
+  strike is `ignored` and costs nothing — **but it still draws its dot.** The
+  grace is a scoring rule, not a reason to hide the strike: the eye wants to
+  know *where* it landed, and for an attempt that is the gap between the dot
+  and the notehead beside it — the timing error, drawn. The check looks at targets *regardless of
+  `resolved`*, because by the time a late strike lands its target has usually
+  been swept already — that is the case the grace exists for. A consequence
+  worth knowing: in a lane whose notes are closer together than twice the
+  grace, no strike can ever be wrong, which is right — "completely out of time"
+  has to mean completely.
+- **A song is lessons combined into steps, and the steps stay lessons.**
+  **Edit mode — the pencil on the home bar — is where songs are made and
+  unmade**, and **nothing of it is drawn on home until it is on** (the user's
+  rule, first for a `COMBINE` text button, which then became this icon at
+  their request: a symbol, not a word). The pencil is ours, drawn in the bar
+  icons' own terms (16-unit box, 1.5 stroke, round ends), and takes the
+  standard `.ico.on` chip. With it off, home is pixel-identical to what it was
+  before songs existed (checked against the old build side by side). In the
+  mode every card becomes a form — see the next entry — and a lesson card is
+  picked from the **dashed slot in its top-right corner**; once something is
+  picked the head offers a song name and `COMBINE · N`. The order cards are
+  picked in is the order they are learned, and the **last
+  one picked is the full song** — which is why the picks relabel live: each
+  wears an amber **corner stamp** (`A`–`D`, and `FULL` on the newest) and a
+  `PICK n` / `LAST PICK` tag beside its instrument, and picking another card
+  moves `FULL` to it. Labels are positional (`stepLabel`), never read off the
+  lessons' names, because imported clips' names say nothing reliable about
+  which part they are. One song is one instrument, so the other kind drops to
+  `opacity` 0.42 (0.7 in dark) and loses its slot after the first pick; a
+  lesson belongs to one song at most. The name follows the last pick until it
+  is typed in. **Designed in handoff 14 (11l)**; the corner slot and stamp sit
+  on `z-index: 1` because the instrument row is positioned (it anchors
+  `SPLIT`) and, coming later in the card, otherwise took the slot's clicks.
+  The rules are pure in `engine/course.ts`, kept in `stores/courses.ts`
+  (`courses` and `courseProgress`, two keys because one is what the player
+  built and the other what they did with it). **The trainer, the scorer and
+  the run history never learn a lesson is a step** — `finishRun` records
+  progress beside history and the summary is handed a `StepReport`; nothing
+  else changes.
+  **A pass is stored, never re-derived from history.** History keeps the last
+  `MAX_ATTEMPTS` runs, so a passing run would eventually fall out of it and
+  the step would quietly re-lock. `courseProgress` keeps the best
+  *qualifying* run per step, and it only goes up.
+  **Qualifying means the lesson's own tempo or faster** (`qualifies`, the same
+  rule `AdvanceTracker` uses) — the user's decision. A slower run is recorded
+  in history like any other and says `PASSES COUNT AT <bpm> BPM` rather than
+  a bare "try again", because the fix is different.
+  **The mark is judged on the number shown** (`passes`): the summary rounds, so
+  79.6% reads `80`, and refusing it beside a mark of 80 would have the screen
+  arguing with itself.
+  **Nothing is locked; 80% only marks a section complete** — the user's
+  rule. The first version opened steps one at a time behind the one before;
+  they asked to move between sections freely, so `StepState` is `passed |
+  todo` and there is no locked state anywhere. The song's order decides one
+  thing only: the **suggestion** (`suggestedStep`), the first section not yet
+  complete — ringed in amber, and what the main buttons offer. Don't bring
+  gating back without asking.
+  **Opening a song puts its section picker up first** (`SongLightbox`, the
+  user's rule): the trainer loads the suggested section behind it, any row
+  plays its section, `PLAY <suggestion>` plays that one, `✕ LESSONS` goes
+  home. It comes down when a run starts any way at all — a row, Space, START
+  behind it — because `watch(playing)` clears `songMenu`; and when the view
+  leaves the trainer. **Handoff 14 (11m) made it a list**: one 38px row per
+  part — chip, length, best bar with the amber 80% tick, score, status, play
+  mark — and the full song under its own rule, because five tiles already
+  filled the width and rows hold eight or ten without shrinking. The summary
+  says the same things as a stepper (`SongProgress`); the three states and
+  the sheet are shared, so the two read as one family. **Eight sections fit
+  at the 1050×620 floor** (seven parts and the full song, measured); the
+  sheet is capped at `calc(100% - 68px)` so it stays centred clear of the
+  bar, and past that the list scrolls while the header and buttons hold.
+  That cap needs the scrim to be **flex, not grid**: a grid item in an
+  auto-sized track has nothing to resolve a percentage max-height against,
+  and the sheet silently grew past the window.
+  On home a song stands where its first step would be and its steps are not
+  drawn. **A song's card is its full song's card, unchanged** — no strip, no
+  step count, no progress line; that was built and removed at the user's
+  request, and the card was checked pixel-identical to the full song's card
+  before combining, **except that it carries the song's own name, and its
+  description once one is written** in edit mode. Where it leads changes too:
+  it opens the song's picker.
+  Progress is shown in the two lightboxes and nowhere else. The bar's
+  `LESSONS` figure counts cards, so a song once. In the summary `SONG
+  PROGRESS` sits **under** the run-history chart, never in place of it — the
+  user's rule: every section is a lesson with a history of its own, and
+  whether you are getting better at *this part* is still the question. (It
+  replaced the chart at first.) Since handoff 14 it is a **stepper**: a dot per
+  section on a track filled as far as the suggestion, the label, the best run
+  and a status (`PASSED`, `JUST PASSED`, `N TO GO` in amber, `NOT PLAYED`).
+  The tallest summary — a song section, three weakest lanes, a full tally —
+  is **531px** at the 1050×620 floor, and `useSheetFit` warns in the dev
+  console the moment a lightbox sheet outgrows the room under the bar, so
+  anything added to it gets measured whether or not anyone remembers to.
+  Completing a section
+  (`PART C COMPLETE`, or `SONG COMPLETE` for the last one, whichever that is)
+  outranks `NEW BEST` in the header. **`NEXT` is always on offer**: the main
+  button once this section is complete, and beside `RUN … AGAIN` until then.
+  It selects the next section and plays it, after `nextTick` so the
+  lesson-change reset has run first; any stepper node plays its section. Inside a song
+  the library's own auto-advance is off, and outside one `advance` skips over
+  steps, which are reached only through their song.
+  **Neither the section states nor the flags wear a rating colour**: green
+  and red judge a *run*, and a complete section is not one. Complete inverts
+  to the dark chip, the suggestion wears the current card's `--led1` ring,
+  the rest are the plain hairline; the header's song flags are `--led1` too.
+  **`SPLIT`** on a song's card in edit mode takes it apart: its sections
+  return to the grid as lessons of their own, and **its progress is dropped**
+  — which sections of a song were complete means nothing once there is no
+  song, and a song made again from the same lessons starts fresh.
+- **Edit mode edits a card's name, description, tempo and key** (the user's
+  list), in place: the card turns into fields where its text sits, at its
+  size, so it keeps its shape. It is a `div` while editing, since a `button`
+  cannot hold fields. **Every field commits when it is left, or on Enter** —
+  not per keystroke, which would rebuild the trainer on every letter. The
+  rules are pure in `engine/lesson-edit.ts`: a name cannot be emptied (a
+  nameless card cannot be told apart), a description can; tempo is rounded
+  and clamped to `TEMPO_MIN`..`TEMPO_MAX`; key is fifths -7..7, or `AUTO`,
+  which hands it back to the notes and names what it would read them as.
+  The notes, bars and instrument are the material and are **not** editable.
+  **An edit replaces the lesson object**, and the trainer now resets on the
+  lesson's identity rather than its id — a new tempo only reaches the
+  transport through `resetForLesson`, so resetting on the id alone left an
+  edited lesson playing at its old tempo. Edits happen only on home, where
+  nothing is playing, so the reset costs nothing.
+  **A built-in is edited by overlay** (`builtinEdits`, laid over the code's
+  lesson on every launch, since built-ins do not live in the store); an
+  import is simply saved as edited.
+  **A song's name and description are its own** (`Course.name`, `.hint`), and
+  its card shows them — the full song's card otherwise, as before. Its
+  **tempo and key are its sections'**: the trainer plays and grades each
+  section by its own lesson, so setting either on the song sets it on every
+  section. Tempo is also what a pass is judged at, so lowering it makes a
+  section easier to complete; that is the player's call.
+  **The key a lesson is read in**: the trainer's `KEY` chip override if one
+  is set, else the key set in edit mode (`authoredKey`), else the one read off
+  the notes. The chip stays a global reading preference; the edited key is a
+  fact about the material, so it lives on the lesson.
+  **Designed in handoff 14 (11l)**: fields are outline only (no fill, the
+  hairline still required in light), the one filled field on the screen is
+  the head's song-name box, BPM moves to the footer beside the key, and the
+  key is **the trainer's `KEY` chip with its caret**, opening the same list —
+  `KeyMenu`, one component for both, so they cannot offer different choices.
+  A card's menu goes through a `Teleport` to the body and is placed in the
+  viewport, opening upwards when there is no room below: the grid scrolls and
+  would clip it, and a greyed card's opacity would dim a menu drawn inside it.
+  **`SPLIT` is a one-second hold** in the song card's corner, with a caption
+  under the footer saying so; letting go early cancels, and there is no
+  dialog — the hold is the confirmation. The amber fills the button left to
+  right while it is held: the designer's suggested feedback (handoff 14's
+  open question 2), not a drawn frame. Space or Enter held on the focused
+  button is the same hold.
+- **LOOP is practice, and a region is played as a pattern of its own.**
+  Pressing it plants an eight-bar region (`LOOP_BARS`) at the playhead — where
+  you are when you press it is where it starts, which is why it needs no
+  default position and is not persisted — and the mini strip is where it is
+  then moved and resized. **It never ends**: `play` gives the transport
+  `totalLoops: Infinity`, so `pos.finished` never comes true, so `finishRun` is
+  never reached, so there is no summary, nothing written to history and no
+  clearing a lesson by drilling its easy eight bars. That one value is the
+  whole of "practice, not a run" — don't add a second gate for it.
+  **The timing engine learns nothing about this.** `engine/loop-region.ts`
+  flattens the region into a pattern rebased to beat 0 and hands it to an
+  ordinary `Transport` and `Scorer`; nothing in either has to run backwards,
+  and none of the scheduling, sweeping or pruning — all of which assume a
+  playhead that only moves forward — is reconsidered. What that buys is paid
+  for in translation: the strip still draws the **whole run**, so it keeps the
+  lesson's own `loopBeats`/`totalLoops` (never the transport's, which would
+  describe an eight-bar run repeating for ever), maps the playhead back with
+  `runBeatOf`, and puts each rating on the run's own note through the
+  `sources` list `regionTargets` returns beside its targets.
+  **Toggling it, or letting go of a drag, restarts the run** while playing —
+  count-in and all. Swapping the pattern under a running transport is exactly
+  the surgery the derived-pattern approach avoids, and the count-in is fair
+  warning that the music is about to jump. A drag commits once, on pointer-up;
+  committing on every pixel would be unusable.
+  **The two clamp rules differ on purpose.** Moving keeps the length and lets
+  the position give way at the ends (`clampRegion`) — a length set by hand is a
+  decision, a position out of room is only a limit. Resizing clamps the
+  *dragged edge* to the run in the handler instead, because `clampRegion`'s
+  rule would haul the far edge along behind it. Whole bars throughout.
+  Loop mode drops on a lesson change: a region is placed in *this* run's bars
+  and means nothing in another's. The ribbon and the chord overrides are
+  region-aware — the ribbon describes the region, since that is the pattern
+  under the playhead, and an override is still stored against the *lesson's*
+  bar (`patternBarToLesson`) so it survives being looked at through a region
+  starting anywhere.
+  **The region is edged in `palette.accent`**, which is `--led1`, the amber the
+  home screen rings a chosen card with — and the LOOP button's on-state is the
+  same amber rather than the bar's usual inverted chip, so the control and the
+  thing it made read as one. That on-state needs `.seg-i.loop.on` to outrank
+  `.seg-i.on`, which is declared later and would otherwise win on source order.
+  The region's tint goes *under* the dots and the strip outside it is **not
+  dimmed** — the dots are never veiled, this is a minimap and all of it has to
+  read.
+- **Stop holds the run's last frame; Start is what goes back to the top.**
+  Three states, not two: running, **held**, and parked. Stopping part-way
+  freezes the lane exactly where it was — played notes in their rating
+  colours, upcoming ones ahead, the wrong-note dots, the ribbon's current bar —
+  and the next Start returns to the beginning of the exercise with the
+  count-in, which is what `play` already did. **The held frame is drawn
+  against a stored clock**, captured with the position in `stop`: every note's
+  place on screen is `(inst.time - f.now) / secPerBeat` beats from the
+  playhead, so drawing it against the live clock lets it scroll on with no
+  transport behind it — the same trap the dots fell into, `now` advancing
+  whether the transport does or not. Read the position *before* `transport.stop()`;
+  a stopped transport reports beat 0.
+  **Nothing is held out of a count-in.** That runs before the exercise, so
+  there is no place on the timeline to pause at, and a frozen countdown sits
+  mid-ring still reading `ESC TO STOP` — an instruction for a run that is no
+  longer going. `stop` refuses to hold one and the lane parks, which is what
+  it was showing a moment earlier anyway.
+  `stop` **does not clear `wrongMarks`** any more: they belong to the run and
+  the run is being held rather than thrown away. What keeps them off a parked
+  lane is still the gate in `drawFrame` — that is the mechanism and always was.
+  The hold ends at `play`, at a lesson change, and at `park()`, which `goHome`
+  calls so that re-opening a lesson shows what you are about to play rather
+  than where you left off last sitting. A *finished* run does not hold: the
+  summary covers the lane, and dismissing it should leave the lesson ready.
+  Verified in the browser rather than by unit test — the check is that the
+  canvas fingerprints identically across seconds while held, differs from the
+  parked preview, and returns to the parked one after leaving.
+- **The wrong-note mark is a small dot, and it scrolls with the music.** Not a
+  flash at the playhead: that would be gone before you could look at it and
+  would say only *that* something was wrong, never *where*. Left in the
+  timeline where it was struck, the played-out half of the lane becomes a
+  record — three dots crowding one beat says you are rushing that beat — and it
+  scrolls away like everything else, pruned off the renderer's own `behind`
+  window. **A mark belongs to a run**, so the frame gates them on the same
+  `pos` that chooses between live instances and the parked preview. Clearing
+  them in each stop path instead is what shipped first, and `stop()` was
+  missed: the dots stayed on the idle lane and went on scrolling, because
+  `now` advances whether the transport does or not. Both it and a missed note are red, because both are results and the
+  rating language has one red; **size is what separates them**, and `paintWrong`
+  rings the dot in the bed colour so it still reads sitting on a missed note of
+  the same red. All five draw paths have it (pads and piano in both
+  orientations, sheet). A lane the view cannot show — an unused pad, a pitch
+  outside the roll's range — gets **no mark and still scores**; drawing it at a
+  clamped edge would name a note the player did not play. Sheet is never in
+  that position, notation having a place for every pitch.
+- **A note can have a length.** `NoteEvent.duration` is in beats; anything under `HOLD_MIN_BEATS` is an ornament and normalised to zero by `lessonTargets`. A held note is judged twice and independently: the onset rating is unchanged and alone decides the colour, and the sustain is measured from the note's *written* onset so a late strike is not charged twice. Overholding is not an error — the fraction clamps at 1, and a hold still open at the written end closes itself, which is also what stops a controller that never sends note-off from scoring every hold as dropped. Combo breaks on a dropped hold, survives a short one. Pads carry no duration on import (a drum has decayed before you could let go), though the renderers support pad holds if a lesson authors them.
+- **Everything lives in the one transport bar**, which is also the macOS titlebar (left padding clears the traffic lights). It is 34px tall with every control 20px, and stays a single row with nothing hidden. No second toolbar row, no in-stage header.
+- **The window floor is what keeps the bar intact**: `minWidth` in `tauri.conf.json` is **1050**, measured as the narrowest width where every control fits at natural size — **both bars**, taking the larger. The binding case is **piano in sheet** (1036px) — `KEY`, `NOTE | DEGREE`, the colour toggle and `ROLL | SHEET` at once; piano in roll needs 1014, pads 763, and the home bar only 596, so the longest *pads* title stopped being the constraint at handoff 11. **A plain browser understates the floor** — the device chip reads "NO DEVICE" at 91px rather than its 116px cap, and `linkAvailable` is false so the Link toggle is absent, so force the widest label when measuring (`scratchpad/floor13.mjs` does). Both now bite on the *home* bar only, which is 500px clear of the floor, so neither can decide it any more. The bar's 84px left inset is part of the budget too; the frames use 72, and the extra 12 is ours (72 left the ✕ almost touching the zoom button). Below the floor **nothing is pushed out** — handoff 11 §3.2's shrink order takes over: the spacers collapse, then the lesson title truncates (min 36px). The device name was the step between them (min 46px, keeping the LED and the caret) and still is, on the home bar, which never gets near the floor. It rose 16px when the `KEY` chip got the design's own `gap: 5px` / `0 7px` back (67.7 → 83.7px) — that spacing is the chip, so the width was paid rather than shaved — and then fell 123px when the device chip became home-only and another 103px when `GUIDE | CLICK` went, then rose 48px for `LOOP`. Handoff 12 §4 names the next lever if it is ever needed: compress the colour cells from 20px to 14px (−18px) before truncating anything. The bar's own symptom is silent, so the check is `bar.scrollWidth <= bar.clientWidth`; jsdom has no layout, so that is a browser measurement and not a unit test.
+- The bar carries **`data-tauri-drag-region="deep"`**, not the bare attribute. Tauri's shim walks up from the clicked node and stops at the first interactive element, so controls opt out of dragging by themselves; the bare form only catches direct hits on the header, which at this density is gaps and nothing else. Anything non-interactive that hangs off the bar — the dropdowns — needs `="false"` so a click on its own chrome doesn't drag the window. `-webkit-app-region` is Electron-only and does nothing here.
+- Dragging also needs **`core:window:allow-start-dragging`** in `src-tauri/capabilities/default.json`. `core:default` does *not* include it, and the shim swallows the rejection, so the failure is silent and looks like a CSS problem: the window still moves on the click that focuses it (AppKit handles that one) and double-click-zoom still works (`internal-toggle-maximize` *is* in the default set). Don't drop that grant.
+- Keep `-webkit-user-select: none` alongside the unprefixed rule. WKWebView only honours the plain property from Safari 17, and a live text selection beats the drag on the same mousedown.
+- **The name macOS shows in dev is the binary's filename, not `productName`.**
+  `tauri dev` runs the cargo output directly — there is no `.app` — so the Dock
+  hover and cmd-tab read the executable, which was `rhythm-trainer` long after
+  everything else had been renamed. Fixed with a `[[bin]] name = "Melodable"`
+  target in `src-tauri/Cargo.toml`, which is what Tauri's own docs point at;
+  `mainBinaryName` is applied at bundle time and so never reaches dev. The
+  crate stays lowercase `melodable`. A *bundled* build takes its name from
+  `productName` and was always right — if a built app still shows the old one,
+  that is the LaunchServices cache, not the bundle.
+- **App icons**: `npm run icons` renders the PNGs full-bleed for Windows/Linux and builds `icon.icns` inset to Apple's grid (824 of 1024). macOS needs that inset or the icon renders visibly larger than every other app in the Dock; the other platforms don't. In `tauri dev` on macOS there is no `.app`, so the Dock icon comes from the icns embedded into the binary by `generate_context!` — `src-tauri/build.rs` carries a `rerun-if-changed=icons` because tauri-build doesn't emit one, and without it an icon change never recompiles and the old artwork stays baked in.
+- **The run-history chart fills its axis at any count.** `stepFor` divides the
+  number of attempts, not `MAX_ATTEMPTS`: six runs span the same width as
+  twenty-eight, oldest at the left and this run hard right. It used to divide
+  the capacity so the spacing never changed and dots marched rightwards, which
+  left a short history huddled in the left fifth of an empty chart. The trade
+  is that the chart rescales as history accumulates — a dot moves when the next
+  run lands — and that is accepted, not overlooked. It also retires the
+  label-collision rule: `THIS RUN` is now always hard right, so the centred
+  attempt count can never be pushed aside.
+- **Weakest lanes are back, on the history chart's own axis** — the user
+  missed them after handoff 09 took them out, chose "beside the chart" from
+  three layouts, and handoff 14 (11i) then drew that as **one figure**: a
+  620×166 SVG whose left 424 units are the run history and whose right are up
+  to `WEAKEST_LANES` (3) bars on the same `y = 132 − 1.1v` scale, with a
+  dashed line carrying this run's score from its dot across them — a bar
+  under the line fell short of the run. Lowest first, each in the lane's own
+  dimmed hue (`hueOf` at its place in `hueOrder`, so it reads as that lane),
+  its value above, its name and which way it leant below — `EARLY`/`LATE` in
+  the rating's colour, `—` when neither. A lane reading 100 is left out,
+  judged on the number shown like `passes`; a clean run has none, and then
+  the divider, lanes, dashed line and key go and the plot runs the **whole
+  width, exactly as before**. `laneBars` and `PLOT_END` in
+  `components/run-history.ts` are the geometry, pinned in the tests. A long
+  pad name (`CLOSED HAT` is a whole bar pitch at 9px) is set smaller rather
+  than colliding — the frame's lesson is piano, so that case was ours.
+  **The figures are the whole run's.** `Scorer.laneStats` is counted as notes
+  resolve (`countLane`, beside `counts`, in `hit` and `sweepMisses`). The
+  first version read the surviving instances at the end, and `pruneBefore`
+  had dropped every earlier repeat — it described the last few repeats, not
+  the run; `tests/scoring.test.ts` pins the pruned case. Wrong notes are in no
+  lane's figure, for the reason they are outside `tally`.
+  **Nothing shrinks any more.** The first build squeezed the chart to about
+  336px beside a panel of lanes and its type shrank with it; the figure is
+  now exactly the sheet's content width — **the sheet is 668px border-box**,
+  the design's 620 being a content-box figure — so every label is drawn at
+  the size written. Only the plot's end moves (424 or 614).
+- **The chart's scores are on hover, and BEST is always drawn.** Hovering a
+  run names its score below the dot. The pointer answers to a **strip per
+  run** (`hitStrips`), halfway to each neighbour and the height of the plot —
+  not the 12px circles it had, which overlapped once dots were closer than 24
+  units (28 runs puts them 22 apart) and, the later one winning, named the
+  neighbour of the run pointed at; the user saw it. The **BEST badge is
+  permanent** — the user's call, after it had been hover-only for a while on
+  the argument that the header's `NEW BEST` already said it: a flag you have
+  to find by pointing at the right dot is one nobody sees. It sits on the
+  highest attempt wherever it is (earliest on a tie), not only on this run,
+  in handoff 14's own box and place — 42×14, up and to the left of the dot,
+  `(x − 44, y − 20)`, mirrored to the right for a dot too near the left edge —
+  and not on a lone first run, which is trivially its own best.
+- **The score chip never wears the badge's colour.** `badgeAt` and `tipAt`
+  place them; the chip is the larger of the two on purpose (it was enlarged to
+  be read at the cursor; the badge is the design's, read at rest). Green is
+  `--rate-perfect`, a *rating*, so a 62% run wearing it would read as a
+  judgement of that run — the score chip takes `--bar` with the standard
+  hairline instead. It stands `gap` off the dot rather than tucked against
+  it, because the **mouse cursor hangs down and to the right of what it is
+  over** and a chip any closer sits under the arrow pointing at it — which is
+  also why the badge is up and to the left, where the arrow never is; that
+  clearance is ~21 viewBox units, measured against a 19px arrow, and since
+  handoff 14 the figure is drawn 1:1 so a unit is a pixel;
+  `tests/run-history.test.ts` pins it. Under about 18% there is no room below
+  without covering the footer labels (inside the figure now), so the chip
+  **flips above**, centred higher than the badge reaches, so the two never
+  meet — the test walks every score. Clamping to the floor instead would lay
+  the chip across the dot it names. With lanes shown, both stop short of the
+  divider (`chipRight`).
+- **Handoff 14 is built: the summary (11i), edit mode (11l) and the section
+  picker (11m).** It changed those three screens and nothing else. Two things
+  in it went further than its table says, both on purpose: the summary's
+  **score row and legend now match the frame** — `PREV` (the previous best)
+  rather than `BEST`, a `%` after the score, labels stacked over their
+  numbers, a sentence-case legend — which the build had never matched since
+  handoff 10 drew it, though the handoff calls it unchanged; and **`NEW BEST`
+  is `--flag-best`**, the indigo from the fourteen hues, neither a rating nor
+  a song flag. Its new chrome values live in `styles.css` as `--scrim`,
+  `--bed`, `--on-led1`, `--mark`/`--mark-ink` (a complete section's mark,
+  light grey in dark because a 2px line in the on-chip vanishes there),
+  `--todo`, `--chart-line`/`--chart-grid`, `--flag-best` and `--field-fill`.
+  **DOM-only, like `--led*`, and not mirrored in `theme.ts`** — no canvas
+  draws any of them. Open with the designer: `--led1` and `EARLY` are the same
+  hex in dark (their question 1). Their permanent BEST badge was left out at
+  first and is now built, on the user's word, on the best run rather than
+  only this one.
+- **Sheet is a third trainer mode, not a third instrument** (handoff 10 §1).
+  `ROLL | SHEET` swaps the renderer under the same transport and scorer —
+  invariant 4 still holds, and `SheetStaff` is a renderer plus a pitch→staff
+  mapping like the other two. It is **horizontal only** (notation has no
+  vertical form, so the `↓` control is disabled, not hidden) and **piano
+  only**: a treble staff read by pitch with a keyboard under it says nothing
+  about a drum pad, and no percussion staff was ever drawn. Six of the seven
+  built-ins are pads, so for most of the library the pair is simply absent —
+  `sheetAvailable` is the gate.
+- **The bass clef appears only for music that needs it, and the threshold is
+  the ledger count, not the clef's range.** `needsBassStaff` asks for the
+  grand staff once a lesson reaches past **two ledgers either side** of the
+  treble staff — below A3 (-4) *or* above C6 (12). A melody that merely dips
+  is better read with a couple of ledger lines than split across two staves,
+  so A3 is deliberately the limit and the imported No One, which bottoms out
+  on exactly A3, stays on one staff. **The high half is not decoration**: a
+  two-hand piece whose left hand never goes low climbs off the *top* instead,
+  and the low-only rule drew a montuno spanning B3 to G6 on one staff with
+  four ledgers above and three below. One guard on top: the split must leave
+  **each staff something to hold**, so music living entirely above the treble
+  staff keeps its ledgers rather than gaining an empty bass clef. Everything
+  else about a single-staff lesson is **untouched** by the grand staff: the
+  gutter is the same 92px, the clef sits at the same x, and the staff is
+  centred in the same field.
+- **Where the hands divide is derived, and middle C is only the default.**
+  `handSplit` reads the line off the music; `onBassStaff(step, split)` applies
+  it. Middle C is the textbook answer and is wrong for a great deal of real
+  music: the mambo montuno plays `G3 B3 C4 D4` in the left hand against
+  `G4 B4 C5 D5 G5` in the right, so splitting at C4 sends the left hand's own
+  C4 and D4 up onto the treble staff — a grand staff that still reads like one
+  crowded one, which is exactly what the user reported as "worse".
+  **No ledger-line argument finds the real line either**, and that is the
+  thing to understand before changing this: C4 and D4 sit perfectly
+  comfortably on the treble staff, so a cost function counting ledgers is
+  indifferent. What finds it is that the hands **sound together** — every
+  onset of that montuno is one low note against one high one, and the gap
+  between them is never crossed. Each simultaneity votes for the splits inside
+  its own widest gap, and the winner is the line the music never crosses.
+  A gap under `MIN_HAND_GAP` (a fifth) is a chord, not two hands, so a triad
+  is never split down the middle; a clip with no simultaneities is a melody
+  and keeps middle C; ties go to middle C too. Bounded to A3..G4, the band
+  both staves can still reach. Derived from the **whole lesson** and passed in
+  as `LaneFrame.staffSplit`, never recomputed per frame — a note that changed
+  staff as the music scrolled would be unreadable.
+  What is pinned in the tests is the **division**, not the number: several
+  lines separate the montuno's hands identically and which one comes back is a
+  tie-break, not a fact about the music.
+  The two staves are not one continuous ladder — E4 and A3 are four diatonic steps apart but a whole staff height
+  apart on the page — so `GRAND_STEP_OFFSET` (12 steps, E4 over G2) rebases
+  every bass note into its own staff's coordinates and *everything* under a
+  note then works there unchanged: ledgers, the accidental, the degree row's
+  collision test. The whole system is **centred as one**, so adding the bass
+  staff lifts the treble rather than pushing the music off the bottom.
+  **A stem belongs to one staff.** Two hands strike together constantly, so
+  keying a column on the beat alone made those notes one chord: a single stem
+  ran from the right hand's head down through the gap into the left hand's,
+  and a beam joined them across it. `columnsOf` is now run per staff and only
+  the **degree row spans both**, because it names what is *sounding* and not
+  what is written where — a two-hand unison rightly shows both digits.
+  Barlines and the playhead span the system; beat hairlines do too, which is
+  why a grand staff can look "continuous" in a screenshot when the staves are
+  in fact a clean `GRAND_GAP` apart. Measure before believing it.
+  The bass signature is the treble's written a third lower
+  (`bassSignatureMarks`), which keeps every accidental on the staff up to six
+  either way; the seventh flat lands a space under the bottom line and is left
+  there, no lesson having ever derived it.
+- **Three more numbers measured off Noto Music, and one of them is a bearing.**
+  The bass clef is seated on the **midpoint of its two dots** (`0.6445em`) —
+  the dots straddle the F line, and that is the font saying where the clef
+  points; reusing the notehead centre would have put it half a staff out. The
+  brace **fills its em box exactly** (0 to 1 about the baseline), so sizing it
+  by the system's height drops it on both outer staff lines with no fudge. The
+  third is the trap: `BRACE_INK_EM.x0` is the glyph's **left bearing**. Its ink
+  is `0.161em` wide but starts `0.05em` right of the pen, so budgeting the
+  width alone after the pen position put the system rule and the clef straight
+  through the brace. For the same reason the key signature clears
+  `CLEF_INK_EM`, which is **not the same for the two clefs** (`0.661em` treble,
+  `0.742em` bass) — a grand staff's signature, and the gutter behind it, sit a
+  few pixels further right, and `SIG_X0` is now derived rather than the hand-
+  written 58 it reproduces. All of these live in `engine/notation.ts` beside
+  the notehead metrics, where `tests/notation.test.ts` pins them; replace the
+  font and re-measure.
+- **The key signature is derived from the lesson, not authored on it.** An
+  imported clip carries no key, and asking the player to name one before they
+  can read the staff is a worse trade than reading it off the notes.
+  `keySignatureFor` costs every signature by the only measure that shows on the
+  page — how many *notes* fall outside its scale — and takes the cheapest, with
+  a tie going to the simpler signature. So a bare triad, which is diatonic to
+  three keys, is written in the plainest of them rather than an arbitrary one,
+  and **a lesson that uses only part of a scale will honestly get a smaller
+  signature**; that is the rule working, not a bug. Major and relative minor
+  share a signature, so there is no mode to guess. `spell` then places and
+  inks each note against it: bare in the key, a natural where the signature
+  would alter it, a sharp or flat outside it — which is what makes flat keys
+  spell as flats instead of the sharp equivalents the key-less pair gave them.
+  `spell(p, 0)` reproduces `staffStep`/`accidentalFor` exactly, and
+  `tests/notation.test.ts` pins that plus a full round trip over every key and
+  every pitch.
+- **The `KEY` chip is the design's read-out with a way into the list added.**
+  Handoff 11 §1.5 draws a plain `.field`: `gap: 5px`, `0 7px` padding, `KEY` in
+  `--txt3` beside the key in `--txt`, 68.4px wide — measured off the frame. Ours
+  is that plus a caret, because the design's chip only reports the key and ours
+  also picks it. **Those two spacing numbers are the whole look**: for one
+  commit the chip was a split control (label switches degrees, caret opens the
+  list) and carried `gap: 0; padding: 2px` to suit; `NOTE | DEGREE` came back
+  and took the switch job with it, the markup reverted, and the CSS did not —
+  which is how it came to read `KEYC maj` inside a 2px inset. One button now,
+  so the whole chip inverts when the menu is open. `DEG` in the pair is spelled
+  `DEGREE` in full (handoff 12 §5).
+- **Degree mode is a relabelling and nothing else** (handoff 11 §1). The chip
+  swaps what a note is *called* — colour, geometry, the grid and every
+  timing rule are the same run either way. Piano only, like the key chip and
+  sheet: a degree is a statement about a scale and a drum pad is not in one.
+  `degreeOf` reads the letter out of `spell`, so the two labellings can never
+  disagree about which note they are naming. Its alteration is **not** the
+  notation accidental: it is measured against the scale's own version of that
+  degree, so an F♮ in E major is written with a natural sign and called `♭2`.
+  Roll puts the digit inside the notehead where the letter was, and a degree on
+  every white key of the rotated gutter with the note name pushed to the edge
+  facing the roll — the name stays because it is still the key you press.
+  Sheet has nowhere to put a label inside 17px of solid ink, so the digits go
+  on their own row under the staff.
+- **The key chip is derived by default and overridable.** `keySignatureFor`
+  already reads a key off the notes; `settings.keyOverride` is the escape
+  hatch, because a clip that uses only part of a scale honestly derives a
+  smaller signature and only the player knows what it is really in. Majors
+  only in the list: a signature names a major and its relative minor equally,
+  and handoff 11 leaves which one a lesson is in open (its question 2).
+- **A degree digit's ink is derived, never picked** (§1.3). A dimmed
+  instrument tint on staff paper fails contrast outright — 2.27:1 light,
+  1.61:1 dark — so `readableInk` walks the hue toward black on light paper or
+  white on dark and stops at the first step clearing 4.5:1. Smallest shift
+  that works, so the hue stays recognisable.
+- **Everything under a notehead is anchored on `NOTEHEAD_EM_DX`, never on ink
+  bounds** (§1.2). An eighth note's flag reaches right, so an ink-centred label
+  lands pixels off a note whose head is exactly where a quarter's is. The whole
+  note's `0.257em` is measured off the font and matches the handoff exactly;
+  the stemmed `0.2006em` is the handoff's, corroborated against the half note.
+  `SheetStaff.headHalfWidth` was a single fudged `0.13em` before this, which
+  put every glyph-drawn note about 5px right of the bare heads a chord or a
+  beamed group draws — the two paths disagreed about the same beat.
+- **The chord ribbon is derived, and it is a map rather than a score.**
+  `chordsForLoop` costs every diatonic triad by how much of a bar it accounts
+  for — a note on a chord tone counts for it, one off it counts against — and
+  a tie goes to the triad whose **root the bar leans on hardest**, then to the
+  one rooted on the bar's lowest note, which is what a bass line is for, and
+  only then to the lower degree. Root weight comes first because a melody has
+  no bass line, so "lowest note" says nothing there: B D♯ F♯ G♯ keeps three of
+  its four notes under both `V` and `iii`, and only the weight on B tells them
+  apart. Notes are weighted by **length × metrical position**, not
+  counted: an imported clip is usually a melody with no chord track, and a
+  melody states its harmony in its long notes and on its strong beats while
+  filling the gaps with passing tones that belong to no chord at all. Counting
+  every note equally lets a run of semiquavers outvote the crotchet the bar is
+  built on. It reads from `lesson.notes` rather than `targets` for the same
+  reason — `lessonTargets` zeroes any length under the hold floor, which would
+  flatten the weighting it depends on. **Extra tones are additions to a chord
+  already named**, never candidates of their own, and each earns its label only
+  at a fifth of the bar's weight (`EXTRA_SHARE`); below that it is a passing
+  note, and calling every triad a seventh would say less than calling none of
+  them one. The seventh is one such addition; the **added second, fourth and
+  sixth** (`ADDED_STEPS`) are the others, which is how Hooktheory's own reading
+  of No One's second bar — `V(add6)`, printed `B6` — comes out of the melody
+  alone. **At most one added tone**, the one the bar leans on hardest: a bar
+  brushes several non-chord tones in passing and naming them all would say less
+  than naming none. A sixth is written into the absolute name as a **figure**
+  (`B6`) because that is how the symbol has always been spelled; the second and
+  fourth have no such shorthand and keep the word. Same trade as
+  `keySignatureFor`, and it fails the same honest
+  way: an ambiguous bar is named confidently and may be named wrong.
+  **Three things beyond note content decide a bar, and each exists because
+  content alone provably cannot.** (1) *A bass line states the root.* A bar
+  spanning `BASS_SPAN` semitones has two registers, and notes within
+  `BASS_BAND` of the bottom vote a second time for the triad rooted on them —
+  self-limiting, since the vote is the bass note's own weight, so a held root
+  decides and a passing one does not. A single-register bar gets no such vote:
+  a melody's lowest note is just its lowest note, which is why the root-weight
+  tie-break exists at all. (2) *A prior on what songs contain.*
+  `FUNCTION_FREQUENCY` is the shape of Hooktheory's major-key corpus and
+  `PRIOR_STRENGTH` is how hard it leans, as a share of the bar. **Its window is
+  narrow and was measured, not chosen**: on the imported No One, bar 2 prefers
+  `iii` over `V` by 18.9% of the bar, so below 0.3 the prior never reaches it
+  and at 0.5 it swamps the notes and every bar collapses toward `I`. 0.35 is
+  the centre. This is the only thing that can separate candidates of identical
+  pitch content, and that case is common: **B6 and G♯m7 are the same four pitch
+  classes**, as are E6 and C♯m7. (3) *A chord's root must sound in its bar* —
+  the guard the prior needs, or a bar of G♯ B D♯ F♯ gets called `I` in E major
+  with no E anywhere in it. If nothing's root sounds the rule lifts, because a
+  bar with notes always gets an answer.
+  **Timing is read with `BEAT_TOLERANCE`, both for the metre and for which bar
+  a note is in.** A clip that was played rather than drawn never lands on the
+  grid — No One's beats sit at 1.99 and 3.98 — and an exact test threw the
+  metrical weighting away on all of it. The two must use the same tolerance:
+  split, a note 0.02 before a bar line was filed in the bar before *and*
+  weighted there as a downbeat, and that one pickup note called No One's third
+  bar `IV` instead of `vi`.
+  `tests/harmony.test.ts` carries the clip itself as a fixture and pins the
+  whole reading — `I`, `V(add6)`, `vi7`, `IV`, which is Hooktheory's, off the
+  melody alone.
+- **Calibration note: the harmony constants were tuned against one song, and
+  `PRIOR_STRENGTH` against one bar of it.** n = 1. Treat every number in the
+  block above as provisional until more clips have been through it, and
+  re-measure rather than assume when they are.
+  **What the clip's loose timing did and did not cause is worth keeping
+  straight**, because it is easy to file all of this under "bad MIDI" and it
+  is not. The clip was played, not drawn — its beats sit at 1.99, 2.99, 3.51.
+  That caused exactly one thing: nothing at all, until `BEAT_TOLERANCE` was
+  added, at which point a pickup note 0.02 beats early started weighing triple
+  in the wrong bar and called bar 3 `IV`. **That failure was created by the
+  fix and repaired by the other half of it** (`barOf` using the same
+  tolerance), so it never existed in shipped code. Quantise the same clip
+  perfectly and bar 2 is *still* read as `iii`, by 15.4% of the bar against
+  18.9% as recorded — so **the wrong chord was never a timing problem**, and a
+  drawn clip would have had it too. It is the pitch content being genuinely
+  ambiguous, which no amount of timing accuracy touches.
+  So a perfectly drawn clip does not make `PRIOR_STRENGTH` unnecessary; it
+  makes `BEAT_TOLERANCE` inert, which is harmless — an exact onset is inside
+  any tolerance.
+  **The prior is the constant that can make other songs worse**, and it is the
+  one to suspect first. It is not evidence from the notes; it is a standing
+  bet that a bar is more likely `I`, `V`, `IV` or `vi` than `ii`, `iii` or
+  `vii°`, worth up to a third of the bar's weight. A song genuinely built on
+  the rare degrees gets that bet held against it in every close bar. The guard
+  is `tests/harmony.test.ts`'s "the prior may lean, and may not decide": clean
+  `ii`, `iii` and `vii°` bars, and the same with a passing note borrowed from a
+  common chord, must all survive. If a change to the prior breaks those, the
+  prior has stopped being a lean.
+  **When more clips arrive, sweep rather than nudge.** The measurement that
+  chose 0.35 was: take the clip, score every bar against the reading you want,
+  and record the **margin as a share of the bar's weight** — then vary
+  `PRIOR_STRENGTH` and find the range where every bar lands right. On this song
+  that range is 0.30-0.40 as recorded and 0.30-0.45 quantised, and 0.35 is the
+  centre of the overlap. Reproduce it by editing the constant and running the
+  suite; the clip is already in the tree as the `NO_ONE` fixture, so a second
+  song only needs adding beside it. Don't keep a standalone harness that
+  re-implements the scoring — one was written for this and it would drift from
+  `chordsForLoop` the moment either changed.
+  **If a future clip's window excludes 0.35, do not just move the number.** A
+  per-chord prior that cannot satisfy two songs at once is the wrong shape, and
+  the answer is to cost *progressions* rather than chords — what actually makes
+  `V` likely in No One's second bar is that it sits between `I` and `vi`, which
+  a per-chord frequency cannot express. That is a bigger change and it was not
+  built. Until then the honest escape hatch is the manual override, which is
+  why it exists.
+  **And it can still be wrong, so a bar can be named by hand.** Click its block
+  and pick from the key's seven triads, or `AUTO` to hand it back;
+  `stores/chords.ts` keeps that **per lesson**, because a chord is a fact about
+  the material, unlike `settings.keyOverride` which is a reading preference and
+  rightly global. An override replaces the derived chord outright, extras
+  included: `V(add6)` is a reading of the notes, and once the chord itself is
+  disputed that reading is not evidence for anything. A named bar is marked
+  with a **dot, not a different colour** — the block's fill is the chord's
+  function and has to go on saying that. The hit geometry is recorded by
+  `paintRibbon` and read back through `LaneRenderer.ribbonBarAt`, for the same
+  reason `visibleBeats` is recorded rather than recomputed: the blocks scroll,
+  so working it out again a frame later names the wrong bar. **Not designed** —
+  built in the dropdowns' existing language, like the calibration dialog, and
+  it wants drawing. Shown only
+  with degrees on, because the ribbon is the harmonic half of that reading;
+  empty means **hide the strip**, never draw empty blocks (§1.5). It **never
+  takes a timing colour** — history is a 3px top rule and the current bar a 2px
+  inner border, both in the playhead's colour, because an earlier design draft
+  dimmed past chords and they read as disabled. §1.4 names four of the seven
+  function hues (I blue, IV teal, V bronze, vi violet); ii, iii and vii° are
+  ours, taken from the same palette. It is drawn on the lane's own canvas from
+  the lane's own `xOfBeat`, so the blocks and the bar lines above them cannot
+  drift — which is what lets the playhead run straight through it. The roll has
+  no label column inside its canvas (the keyboard owns that column, outside
+  it), so `CHORD` appears only in sheet, whose clef gutter is on-canvas.
+- **Notation comes from Noto Music, vendored in `src/assets/fonts`** — never
+  drawn by hand and never fetched from a CDN. Two numbers are measured off the
+  font binary rather than estimated, and `tests/notation.test.ts` pins both: a
+  notehead is `0.252em` tall (so `fontSize = staffSpace / 0.252`) and its
+  centre sits `0.134em` above the alphabetic baseline. Replace the font and
+  re-measure; do not assume they carry over. The accidentals add a third set,
+  measured the same way but from each glyph's **counter** — the hole it
+  encloses, which is the part an engraver lines up with the note. The sharp's
+  and the natural's land on the notehead centre to three decimals, which is the
+  font saying they are drawn to sit level with a head; the flat's is `0.1175em`
+  and does not, because its bowl hangs below a stem that rises out of the way.
+  The clef's ink runs to `0.661em`, which is what `SIG_X0` clears so the key
+  signature does not sit on top of it. **Canvas cannot wait for a
+  webfont** — `ctx.font` falls back silently and the frame is already painted
+  — so `useNotationFont` loads it and the sheet renderer is not built until it
+  is in.
+- **Beamed groups are assembled; a lone note is one glyph.** Handoff 10 §1.4
+  and handoff 12's own notation set both say it: *"Beamed groups have no glyph
+  at all and must be assembled"* — bare heads, a 1.8px stem each, a 4.2px beam
+  per subdivision stacked at 6.4px, and a half-length stub for a broken group.
+  **The catalogued notation set is the reference for every figure**, decided
+  with the user, and it outranks the trainer staff drawn beside it: that staff
+  happens to hold no group short enough to need a beam, so its all-glyph
+  content is an accident of the music in it and says nothing about the rule.
+  Beaming was deleted once on exactly that misreading and the notation stopped
+  being correct — don't repeat it. A **chord** shares one stem too, because
+  stacking a glyph per notehead stacks a stem per head and reads as a smear.
+  Since the stem-direction work, a **lone note is assembled as well** and the
+  composed glyphs are down to the whole note — see the stem entry below. The
+  catalogue is still the reference for what each figure looks like; it is only
+  the means of drawing it that changed.
+- **A bare head is the glyph's head, measured, and one function places the
+  stem** — `NOTEHEAD_EM_HALF_WIDTH` (`0.1464em`, rasterised at the drawn size)
+  for the head's radius *and* for where the stem attaches, `SPACE / 2` for its
+  height. They were fudged multiples of the staff space before, 3% wide and 5%
+  short of the glyph beside them. **`stemX` is that one function and both
+  callers go through it**: two copies of the offset is the actual bug here —
+  `beamGroup` kept its own `headHalfWidth(size) * 0.92`, which tracked the
+  *glyph seating* rather than the head, and when that seating became per-figure
+  every beamed stem stood 2.3px clear of the head it belonged to. That is what
+  "the stem doesn't connect" was, and it is a two-copies bug, never a reason to
+  stop beaming.
+- **What the font does not give you** (§1.4): the augmentation dot is a
+  combining mark with no advance width, so it is drawn. The composed figures
+  are stem-**up** only, which the frames accepted and which is **no longer
+  what ships** — see the next two entries.
+- **Stems point the way notation points them, and that meant giving up the
+  composed glyphs.** A note below the middle line takes its stem up, one on or
+  above it takes it down, and what decides a chord or a beamed group is the
+  note **furthest** from the middle line — ties going down, the convention for
+  the ambiguous case. `stemsUp` is that rule and it reads each note's place on
+  **its own** staff, so the two hands of a grand staff answer separately.
+  Every stem went up before this, whatever the note, which was the single
+  thing that most kept the staff from reading like a piano part: the user put
+  a real engraved score beside a screenshot and asked for the score.
+  The font cannot do it — `GLYPH` is stem-up — so everything but the whole
+  note is **assembled**: a bare head, a drawn stem, and a combining flag
+  (`FLAG`, U+1D16E…) mirrored about the tip when the stem is down. The whole
+  note keeps its glyph, having no stem to point and a head a good deal wider
+  than a stemmed one. An up-stem leaves the head's right edge and a down-stem
+  its left; `stemX` takes the direction and is still the one place that offset
+  lives.
+  Two numbers come off the font with the rest: the quarter's ink stops at
+  `1.009em` and the notehead centre is at `0.134em`, so `STEM_EM_LEN` is the
+  difference — `0.875em`, 3.47 staff spaces, the 3.5 every manual asks for.
+  The drawn stems used a flat **32px**, under two spaces, so a chord's stem
+  was little over half the one on the single note beside it; one number now,
+  and an assembled note is the glyph's twin. `FLAG_EM_TIP` is where a flag
+  meets that same tip.
+- **A stem's length is measured from the head it starts at, never the far
+  one** (`tipOf`). Which head that is, is the whole of the rule: a stem-up
+  chord rises out of its *lowest* note, so it is a full stem above **that**,
+  and the notes above are passed on the way. Measured from the far head
+  instead — which is what shipped first — every stem gains the chord's own
+  span: a chord spanning a fifth got three and a half spaces plus a fifth, a
+  beamed group spanning an octave got three and a half plus an octave, and on
+  a grand staff those stems and their beams sprawled out of the staff into the
+  gap and tangled with the other hand's ledger lines. **That was the "still
+  looks really bad" against the printed Lavoe transcription, and it was worth
+  measuring rather than guessing**: the horizontal spacing was the suspect and
+  it is *not* the problem — the score's tightest pair is 1.20 staff spaces
+  (29px against a 23.7px space at 300dpi) and `MIN_NOTE_GAP_PX` is 1.29, so
+  ours is already the more generous. Every stem simply being half again too
+  long was. The clamp is the other half: a chord wider than a stem is long
+  still has to pass its far head, so it grows to `STEM_MIN_PAST` past it and
+  no further.
+  A **single** note is unaffected either way — one head is both ends — which
+  is why this survived the check that an assembled note matches the glyph.
+- **The beam's weight is the printed page's; every other rule on the staff is
+  not.** `BEAM_H` is `0.553` of a staff space, measured off the Lavoe
+  transcription at 600dpi where its space is 47px and its beams are 26px. It
+  was `4.2px` — `0.247`, under half — which is why a beamed bar read as a
+  tangle of hairlines rather than one stroke. `BEAM_GAP` is beam-to-beam: the
+  beam plus the standard `0.25` separation, that separation being the one
+  number not measurable here, since the piece is quavers throughout and has no
+  stacked beams.
+  **The staff lines, stems, barlines, ledgers and notehead rim were changed to
+  match the page too, and that was reverted at the user's request** — they want
+  the existing line weights kept and only the beams adjusted. Don't re-apply
+  it: `LINE_W` 1.4, `STEM_W` 1.8, `BARLINE_W` 1.8, `LEDGER_W` 2.6 and the
+  2.2px head rim are deliberate, and so is the absence of any device-pixel
+  snapping. The measurements are in the history if they are ever wanted
+  (staff line, stem and barline all measure `0.128` on the page, ledger
+  `0.213`), but the decision went the other way.
+  Three treatments were rendered against the Lavoe MIDI and **A was chosen**:
+  print-weight beams at the existing note spacing. B added the page's own
+  2.4-space spacing and more stem clearance but cost a bar of lookahead; C
+  kept the beams lighter at 0.40.
+- **A beam stack is reserved inside the stem, not added on top of it**
+  (`tipOf`'s `reserve`). The clamp that keeps a stem clear of the nearest head
+  measures to the stem's *tip*, and for a beamed group the beam then grows
+  back **toward** the notehead — so thickening the beam ate the very clearance
+  the clamp existed to keep: at one space past the head a `0.553` beam leaves
+  `0.45` of visible stem, and the group reads as heads stuck to a slab. That
+  is what "on no one it looked odd with the notes that were close to the
+  glyph" was. `beamGroup` passes the whole stack's depth — `BEAM_H +
+  (beams - 1) * BEAM_GAP`, so a semiquaver group clears as well as a quaver
+  one — and the clear stem is then the same whatever the beam weighs.
+- **Beams run to the half-bar for plain eighths, and to the beat for
+  everything else.** Beaming by the beat is what `beamGroups` builds, and it
+  is correct — but a running quaver passage engraved that way comes out as a
+  row of two-note groups, where printed music beams it in fours. `joinEighths`
+  is a pass over the finished groups that merges adjacent ones sharing a
+  half-bar. Deliberately a post-pass and deliberately narrow: **only plain
+  eighths join**, so a sixteenth keeps its group on the beat where the
+  subdivision has to read, and a broken group — the dotted eighth against a
+  sixteenth that the beam stubs exist for — is never swept into a longer beam.
+  Only in a metre the half-bar divides, so 3/4 stays on the beat. The
+  consequence is that **a beam now crosses the beat line** and the old test
+  saying it never does is gone; what it may not cross is the half-bar.
+  A run of one is carried as far as the join and dropped after it, which is
+  how two eighths straddling beat 1 come to be beamed at all.
+- **The augmentation dot was inside its own notehead.** `DOT_GAP` was 7px from
+  the head's **centre** and a head's half-width is 9.88px at this staff size.
+  It is measured off the head's right edge now (`DOT_CLEAR`). Nothing caught
+  it because a dotted figure needs an onset gap of exactly 1.5 beats and no
+  built-in lesson has one — it took a probe written for the stem work.
+- **The degree row's drop is derived too, and its clearance is read off the
+  design's own number.** Handoff 11 §1.2 puts the row 35px below the bottom
+  staff line, which is right until the music goes under the staff: A3 puts its
+  notehead *centre* 34px down, a pixel off the row's centre, so the note and
+  the digit naming it are drawn on top of each other. `degreeRowDrop` keeps 35
+  unless the lesson's lowest note would collide, then moves the smallest amount
+  that clears — the same trade `sheetPxPerBeat` makes. **`DEGREE_CLEAR` is
+  3.5px because that is the gap 35 already leaves at C4**, one ledger down and
+  much the commonest note under the staff; deriving it that way means every
+  lesson the design drew stays exactly where it drew them, and the built-in
+  `First Chords` bottoms out on precisely C4 and does not move. Off the
+  *lesson's* lowest note (`hueOrder[0]`), never the lowest on screen: the row
+  has to hold still while the music scrolls, and one that jumped whenever a low
+  note came into view would be worse than one sitting on a notehead.
+- **What a note is worth on the staff comes from its written length, never
+  from the gap to the next onset.** `TargetNote` carries **two** lengths:
+  `duration`, which answers "is this a hold and how long must I keep it down"
+  and is zeroed below `HOLD_MIN_BEATS` because a short note is not a hold; and
+  `written`, the length the clip actually carries. `engraveOnsets` reads
+  `written`.
+  It used to read `duration` and fall back to the **gap** whenever that was
+  zero — which is every quaver at every tempo, since the hold floor is 0.75
+  beats. Wherever a note is shorter than its slot the fallback is simply
+  wrong: in the imported Lavoe montuno, onsets at `0, 0.5, 1.5, 2.0` are all
+  quavers, but the one at 0.5 is a quaver *and a quaver rest*, so the gap made
+  it a **crotchet**. Crotchets carry no beam, so a passage printed as beamed
+  fours was drawn as alternating quavers and crotchets — and **no amount of
+  fixing the beaming rules could have reached it**, because by then the figure
+  was already wrong. The gap survives only for a note with no length at all: a
+  pad hit, or a clip whose note-offs never arrived.
+  This is the same trap the chord ribbon already names — it reads
+  `lesson.notes` rather than `targets` for exactly this reason. The staff
+  cannot do that, because a loop region rebases the beats, so both lengths
+  travel on the target instead and neither is re-derived.
+- **Silences are drawn, and a rest belongs to a staff.** `restsFor` derives
+  them from the same `written` lengths the figures come from: the gap between
+  a note's written end and the next onset, plus anything before the first
+  onset and after the last.
+  **Per staff, never per system** — the two hands rest independently and
+  constantly. In the imported Lavoe the right hand has 14 silences and the
+  left 38 and almost none coincide, so one set derived from the merged onsets
+  would find only what both hands happen to share. The corollary bit on the
+  way in: on **one** staff there is no bass half to ask for, and asking
+  anyway hands `restsFor` an empty note set, which correctly answers "a bar
+  rest for every bar" — silence for a staff carrying the whole lesson.
+  `useTrainer` splits only when `needsBassStaff` says there are two staves.
+  Two engraving rules shape the decomposition and both are in `fillSilence`:
+  a rest **never crosses a barline**, and never crosses a metrical boundary
+  coarser than itself — enforced by only placing a value on a multiple of
+  itself, so a silence from beat 0.5 to 2 is a quaver rest then a crotchet
+  rest and never one dotted crotchet on an offbeat. No dotted rests at all.
+  A silence covering a whole bar is **one whole rest** whatever the metre;
+  4/4 reaches that by the greedy fill anyway, 3/4 would not. A length no
+  undotted figure can spell — a tuplet — draws **nothing**, because the
+  nearest figure would misstate the rhythm.
+  **A beam stops at a rest.** `beamGroups` takes the staff's rest beats and
+  breaks a run across them, and `joinEighths` will not merge across one
+  either. Without it the half-bar rule swept a beam straight over the quaver
+  rest in the Lavoe's opening bar, which reads as a run of notes that is not
+  there; the printed score breaks its beam either side.
+  Seating is measured, not guessed (`REST_SEAT`). A **whole** rest hangs from
+  the fourth line, a **half** sits on the middle line — the two occupy the
+  same space and are told apart by hanging against sitting, which is why they
+  need different anchors — and everything shorter is centred on the middle
+  line, which the font confirms by measuring the quarter, eighth and
+  sixteenth ink centres within a thousandth of each other. Verified by
+  rasterising: the whole lands on steps 6→5, the half on 4→5, the rest on 4.
+  A rest takes `palette.txt` and never a timing colour: a silence is notation,
+  not a result, so it stays outside both colour languages.
+- **An imported clip is put back on a grid, and `lessonTargets` is where.**
+  `engine/quantize.ts` finds the grid (`gridFor`) and snaps onsets and note
+  ends onto it; `lessonTargets` applies it, and `lesson.notes` keeps the raw
+  timing — the chord ribbon still reads that, for the reason it gives.
+  **That seam is the whole of the design**: it is the single funnel the
+  scorer, the transport and all four renderers come through, so the beat a
+  note is drawn on and the beat it is graded on are the same number.
+  Quantising further downstream would separate them, and the playhead is the
+  grading line.
+  **What it fixes is not cosmetic.** A clip that was played rather than drawn
+  — the imported Ave Maria arpeggiates at 0, 0.5, 0.99, 1.469, 1.979 — has no
+  grid at all, and `sheetPxPerBeat` scales the staff so the *closest* pair of
+  onsets clears `MIN_NOTE_GAP_PX`. Its closest pair is a melody note landing
+  0.031 beats before the chord under it, which asks for **1090 pixels a
+  beat**: the sheet drew an empty staff and nothing else. `restsFor` and
+  `beamGroups` were wrong on the same clip for the same reason. The chord
+  ribbon's own `BEAT_TOLERANCE` is this problem solved once, locally, for one
+  reader; this is it solved upstream for all of them, and the ribbon's
+  workaround stays because it reads the raw notes.
+  **The grid is found by fit and paid for by fineness**, and both halves are
+  needed. Fit alone: each candidate in `GRIDS` is scored by the mean distance
+  from a moment to its nearest grid point *as a share of that grid's
+  spacing* — normalised, or a fine grid wins by being near everything. On the
+  Ave that runs 21.2% at the beat, **8.7% at the quaver**, 23.2% at the
+  triplet, 15.2% at the semiquaver: a real trough at the value the piece is
+  in, which is why this is a search for the best fit and not the coarsest fit
+  inside a tolerance. A *maximum* offset cannot do it — that clip sits at ~50%
+  against every grid, because a sung line genuinely is off-grid in places.
+  But a finer grid is **never a worse fit**, so an outlier buys one: a clip of
+  plain crotchets with one expressive note at 6.37 is exactly on every grid
+  but that note, and 6.37 is a hair off 6.375, so the semiquaver grid scores
+  0.4% against the beat's 3.1% on the strength of the one note that is not in
+  time. `FINENESS_COST` (0.03 a step) is the charge that stops it. Its window
+  was measured from both ends: under 0.125 keeps the Ave's quaver, over 0.009
+  keeps the expressive clip on the beat.
+  **A clip already exactly on a grid is taken at its word** and never scored
+  at all — that is the first loop in `gridFor`, and it is the whole library.
+  It is a separate question from the one above, not a shortcut past it: an
+  authored dotted quaver sits *on* a sixteenth grid where an expressive note
+  merely lands near one, and only exactness tells them apart. Without it the
+  fineness charge rounds a 0.75 hold up to a full beat, which is a different
+  exercise. `tests/quantize.test.ts` pins every built-in as unmoved.
+  **Both ends of a note are moments** (`momentsOf`), because a length can be
+  finer than the onsets around it — whole notes on the beat with one dotted
+  quaver among them read as a one-beat grid from the onsets alone. And a
+  length is snapped by moving the note's **end** onto the grid, not by
+  rounding the length: a note struck early and released late is wrong at both
+  ends, and rounding the length leaves the release off the beat it was aimed
+  at.
+  The cost is that a clip played with swing or rubato is graded as though it
+  were even. For a trainer that is the right way round — the exercise is to
+  play in time, not to reproduce someone else's wobble.
+- **`MIN_NOTE_GAP_PX` is two staff spaces, and it was measured.** Taking every
+  adjacent pair of note columns across the three pages of a printed piano
+  transcription and normalising by its own staff space (23.7px at 300dpi):
+  52% of 471 pairs land between 2.0 and 2.5 spaces, median 2.47, and the tail
+  under 1.5 is chords containing a second, drawn head-beside-head, rather than
+  successive notes. Ours was **22px — 1.29 spaces**, about half the page, which
+  on a montuno of continuous quaver chords left two pixels of air between one
+  notehead and the next. Note that the *minimum* is a red herring: the printed
+  minimum is 1.2 spaces and ours was 1.29, so a min-to-min comparison says we
+  were fine. It is the **mode** that matters.
+  Two spaces is the floor of the printed band rather than its median, and the
+  difference is paid in lookahead — on that piece 2.0 shows four bars where
+  1.29 showed five and 2.4 would show three and a third. A scrolling trainer
+  has to keep something on screen to read into, so it takes the bottom of what
+  print considers normal.
+- **Sheet's zoom is derived, not fixed.** §1.7 leaves it open: at 60px per beat
+  a sixteenth falls 15px after its neighbour while a notehead is 19px wide.
+  `sheetPxPerBeat` keeps the roll's five bars unless the lesson's closest pair
+  would collide, then zooms in until it clears — so nothing is ever drawn
+  colliding and nothing zooms further than it must.
+- The **window floor stays 1052** after adding the `ROLL | SHEET` pair. It was
+  re-measured, per the rule above: the piano-plus-sheet bar fits at 1026px,
+  inside the existing floor, because the floor is set by the longest *pads*
+  title ("Syncopated Groove") and pads never show the pair.
+- **One tempo range, `TEMPO_MIN`/`TEMPO_MAX` in `engine/types.ts`, and both
+  controls read it.** There were two: the transport readout clamped to 50-160
+  while the import dialog offered 40-240, so a clip could enter the library at
+  a tempo the bar could not express. The imported Lavoe montuno is 200 BPM and
+  *displayed* as 200, because a lesson sets `bpm` directly and nothing clamps
+  it — but the first touch of the readout, a drag or an arrow key or a typed
+  number, ran it through `applyTempo` and snapped it to 160 with **no way back
+  up**. Importing must not be a one-way door, so the ceiling covers anything
+  the importer will take.
+  The built-in lessons run 70-98, which is why 160 was never felt. The aria
+  bounds on the readout were a third copy of the numbers and are bound now.
+  `Transport.setBpm` has never clamped and still doesn't — `applyTempo` is the
+  one gate, which is what made this a single-line fault with a two-file cause.
+- **The bar's icons are SVG paths, not characters.** Volume, import and Ableton Link carry path data copied verbatim from handoff 08. They were a system glyph (`⇪`) and hand-built curves before, and that is exactly why they drifted from the drawings — a character is at the mercy of the font stack and the platform's rasteriser. **Do not substitute a font character, an emoji, an icon-set component, or rebuild the curves from `border-radius`.** They ink from `currentColor`, which `.ico` sets to `--txt2` — the same value handoff 08 names for both themes.
+- **A fader at zero is the switch; there is no `GUIDE | CLICK` pair.** Both
+  were gates on *scheduling audio* and nothing else — neither touched the
+  scorer, the frame or the run — and each already had its own bus fader in the
+  mixer, so the pair was a second way to say the same thing in the one row that
+  is tight for width. `useTrainer` now gates on `settings.volGuide > 0` and
+  `settings.volMetronome > 0`, still skipping the scheduling rather than
+  playing into a silent bus. Don't reintroduce the toggles.
+  **`volGuide` defaults to 0**, because the pair's own default was off: the
+  guide's toggle was session state that began every run off, so nobody has
+  ever heard the guide without asking for it in that sitting, and a fader
+  defaulting to 0.6 would start playing the lesson at them. `busLevelsFrom`
+  is the migration and is pure so it can be tested: an old store is recognised
+  by its `metronome` flag still being there, and restores to what it *sounded*
+  like — click silent if the flag was false whatever its level, guide silent
+  always. That costs a returning player a guide level they never actually
+  used, which is the price of not surprising them with sound.
+- **Home-bar-only controls**: the instrument switch, the Ableton Link toggle, the import button and the **MIDI device chip**. All four are decisions made *before* a run — what to play, what is plugged in, what is in the library — and the trainer bar is the one that is tight for width. Link stays joined once you start; there is simply no toggle mid-run, and the device is the same. The chip was the last one still drawn in both bars, which the Link toggle's own comment had already argued against. The connection is untouched by the move: it lives in Tauri state (invariant 5) and the port stays open across the screen change. Its LED goes with it, so **the trainer no longer reports whether a device is connected** — a run you can hear is the same fact, and the monitor is there for the detail. `openMenu` is cleared on any view change, because half the bar's menus belong to one screen and the flag also lifts the bar and suppresses every tooltip while it is set.
+- **The MIDI device is remembered by name and reopened at launch.**
+  `settings.midiDevice` holds the port picked from the menu — by name, since
+  an index is only a position in today's list. `portToOpen`
+  (`engine/midi-port.ts`) is the rule: the remembered name if it is present;
+  nothing at all after Disconnect (`null`), which is a request and must not be
+  undone behind the player's back; otherwise, and on first run, the first port
+  that is not a controller's **DAW port**. A Launchkey lists two — MIDI (keys,
+  pads, wheels) and DAW (the control-surface conversation with Live or Logic)
+  — and only the first is playing. An automatic pick is never written back, so
+  a remembered device that is unplugged today still wins when it returns.
+  While nothing is open, `autoConnect` rescans quietly every 3s, which is what
+  catches a controller plugged in after launch; it stops once a port is open.
+  **Its DAW port is opened too, for drum pads only** (`dawCompanion`, and
+  `open_midi_companion` in `midi.rs`, held in `MidiState.companion` beside
+  the main connection — invariant 5 applies to both). A Launchkey's pads
+  leave the MIDI port for the DAW port the moment a DAW takes the controller
+  over — Ableton's script does as soon as Live opens, and Novation's guide
+  says Drum mode then reports on the DAW port, channel 10 — so the user's
+  pads went silent in Melodable whenever Ableton was running, while the keys
+  (which stay on the MIDI port) worked. Only **note on/off on channel 10**
+  from it reaches the trainer (`isDrumPadNote`): the rest of that port is the
+  control-surface conversation (encoders, session pads, buttons), which would
+  arrive as wrong notes. **The monitor shows the port whole**, each row marked
+  with a green ring rather than the amber dot, and a notice row says whether
+  the port opened, failed, or was not found — because with the companion in
+  place the user's pads *still* went silent under Ableton, and nothing on
+  screen could say which of those it was. The filter lived in Rust at first;
+  it moved up so the traffic it drops could be seen. **Still open**: read the
+  monitor with Ableton running before changing the filter. macOS lets both apps read the port; Windows
+  opens ports exclusively, so there the companion may fail while Live holds
+  it, and the failure is only logged. Type-checked against stubbed
+  `midir`/Tauri signatures — this container cannot build the Tauri crate —
+  and not yet run on the user's hardware.
+  **Not handled**: a device unplugged *while* open — midir reports nothing,
+  the connection stays in `MidiState` looking alive, and re-plugging needs a
+  pick from the menu.
+- **The controller is a transport button: the four-corner gesture.** Hold
+  the **two lowest and two highest keys**, or the **four corner pads**, and a
+  run that is going stops (holding its frame, as `stop` does) while one that
+  is not starts from the top — Space's job, where Space works (the trainer,
+  no import sheet), from the summary and the song picker too. Melodics has the
+  same gesture; the user asked for it for their Launchkey MK4, on both keys
+  and pads, and for every controller. The rule is pure in
+  `engine/edge-gesture.ts` and is **written in shapes, never note numbers**,
+  because no controller reports its size, octave or pad bank: the keyboard's
+  edges are two tight pairs at least an octave apart (a 25-key's sit 22
+  apart), each a **semitone or a whole tone** — the outermost keys counting
+  the black one (C C♯), or the outermost *white* keys (C D), which is where
+  the user's hand actually landed on the Launchkey: C3 D3 and B6 C7, read off
+  the MIDI monitor, refused by the first, semitone-only rule; a pad bank is
+  any four held pads whose lowest and highest are **exactly 15 apart** — a
+  sixteen-pad bank's first and last notes, which every layout puts on two of
+  its corners. The first version listed three layouts (MPC 4×4, two 2×8s)
+  and the gesture did nothing on the user's Launchkey MK4 pads: they send
+  36–51 on channel 10, but Novation's guide draws the grid only as a picture,
+  so the layouts were a guess. **The pad notes the user pressed were never
+  seen** — if the span-15 rule also fails, ask for the MIDI monitor while
+  holding the corner pads before changing it again. Holding only what every layout shares cost a little
+  precision — four held pads including the bank's two ends fire it, whatever
+  the other two — and pads are struck and let go, so four held at once is a
+  grab, not a groove.
+  **What stops it firing mid-song**: all four must land within
+  `GESTURE_WINDOW` (1.5s) with nothing else struck in it still held, and the
+  pad shape counts only from pads — channel 10 or a pads lesson — because a
+  doubled minor triad on the keys *is* the 4×4 shape. It fires once per grab and
+  rearms when all four are released; a note struck again counts as released,
+  so one lost note-off cannot disarm it for the sitting. The gesture's notes
+  are real strikes until the fourth lands, so stopping with it takes their
+  wrong-note dots back (`forgetMarksSince`) — otherwise the held frame shows
+  three mistakes nobody made. The window was 0.5s first and the user
+  reported the gesture "not working"; a two-handed grab that sets one pair
+  down before the other can take longer, and since only held notes count the
+  width costs nothing. **Every recognised gesture logs a `corners` row in the
+  MIDI monitor**, acted on or not — so a failure can be split into "the
+  notes never arrived", "they arrived and were not recognised" (read their
+  numbers and channels off the rows above) and "recognised, but not where
+  Space works" (on home, say). Verified with MIDI faked through the Tauri
+  bridge, not yet on the user's hardware.
+- **The computer keyboard is a piano, and a text field outranks it.**
+  `PIANO_KEY_MAP` claims fifteen letters (`a`-`l` on the home row, the black
+  keys above) on a **window-wide** listener, and its `preventDefault` swallows
+  every one it plays. `typingInto` sends a keystroke aimed at a text input,
+  textarea or contenteditable straight to the field. Without it the song-name
+  box took Backspace — which is no note — and almost nothing else: typing
+  "El Día de Mi Suerte" landed as `" í  Mi r"`, reproduced before the fix
+  and gone after it. The import dialog's name field had the same fault
+  unnoticed, because its default name is usually kept. `onKeyUp` releases only
+  a key that actually played (`heldKeys.delete`), so a letter typed into a
+  field sends no note-off. Inputs and textareas are also the one exception to
+  the body's `user-select: none`, so a field's text can be selected and
+  replaced. **Test a field by typing into it** — the combine flow shipped with
+  a check that read the auto-filled name and never typed a key.
+- **Bar tooltips are `data-tip`, never `title`.** WKWebView's native tooltip is not dependable in the titlebar — late, often absent, sometimes a flash — so `BarTooltip.vue` draws them from one delegated listener. A control opts in by carrying the attribute. **Do not leave `title` on the same element**: the platform would draw its own on top, which is the thing being replaced. `data-tip` is a tooltip and not a name, so a glyph-only button still needs its own `aria-label`. Dialogs and the monitor keep plain `title` — they are ordinary page content and behave normally.
 - Don't add code for a future milestone "while you're there". If something is unused today, it doesn't belong in the tree.
 
 ## Where things stand
 
-**M0–M6 are complete.** M6 (Ableton Link) shipped: `src-tauri/src/link.rs` behind the
+**M0–M7 are complete — the plan's whole roadmap.** M6 (Ableton Link) shipped: `src-tauri/src/link.rs` behind the
 `link` cargo feature, `useLink.ts`, a chain-icon toggle with a peers badge, and a
 follower in `useTrainer` that drives tempo via `Transport.setBpm` and phase via
 `Transport.anchorTo`. `docs/ableton-playalong.md` documents it, including the
 MIDI-Clock alternative if CMake ever becomes a problem.
 
-The **trainer redesign** has landed in two handoffs. Handoff 02 (turn 10) is the
-current design and supersedes 01 wherever they disagree — note that its own
+**Link alignment is session phase, and only session phase.** Phase comes from
+the session's own beat grid, so following it can never put the loop off the
+beat. The peer's *transport start* is the tempting alternative — with start/stop
+sync it is the one thing Link says about where their loop begins — but
+`time_for_is_playing` is the time of an event, not of a beat, so a transport
+started off the grid drags our whole loop off it. That was built (Rust reporting
+`playing`/`beatsSinceStart`, a follower counting from their downbeat) and
+**reverted**: it bought the right bar at the cost of the right beat, which is
+the worse trade. Don't rebuild it.
+
+**Start always starts.** A version that armed and waited for the peer's next
+transport start also shipped and was reverted — a loop already running never
+produces one, so the app sat in the count-in for ever.
+
+What survives from that round is the one thing that was measured rather than
+inferred: **`Transport.start` takes a `StartGrid`** so beat 0 is pinned to Link's
+grid instead of being yanked onto it a frame later. That yank was up to half a
+loop and it ate the count-in it landed in — measured at 1.427s to 2.317s against
+a 2.15s bar — and `anchorTo` moved the scheduling window with it, so the skipped
+clicks never sounded. `tests/link-sync.test.ts` simulates a session and pins it.
+
+**Build the `AblLink` on join, never at startup, and drop it on leave.** When
+two Link sessions meet the longer-running one wins the merge and its timeline —
+tempo included — is adopted by everyone else, and Link measures that from the
+instance's *construction* (`initXForm` maps construction to ghost time 0;
+`Sessions.hpp` prefers the larger ghost time). Held open from app launch, ours
+was older than the one inside a DAW opened later, so we won and shoved our seed
+tempo of 120 onto the user's running set the moment they enabled the toggle.
+`LinkHandle.link` is a `Mutex<Option<AblLink>>` for exactly this reason — don't
+"simplify" it back to an eager field.
+
+**Link's quantum is one bar (`linkQuantum`), not the lesson's loop.** Link
+carries no loop length, so which bar of a 4-bar Ableton set a 2-bar lesson
+starts on is not knowable — but with a one-bar quantum it becomes the player's
+to choose, because `gridAtOrAfter` steps by the bar: the count-in occupies the
+bar after the press and the run starts the bar after that, so pressing two bars
+before the wanted downbeat lands on it. Stepping by the loop instead (the
+original) made every candidate start a whole loop apart and therefore all of one
+parity, so the other bars of a longer set were unreachable however the press was
+timed. Don't put the quantum back to `loopBeats`, and don't add a bars-per-cycle
+setting without asking — that was offered and declined in favour of this.
+
+The **trainer redesign** has landed across several handoffs. **Handoff 05 (turn
+11) is the current design** and supersedes everything before it where they
+disagree; 02 (turn 10) still governs anything 05 does not mention, and its own
 §§16-29 reverse several of its earlier sections, so read those last. Every
-screen now has a drawn state: home, both instruments in both orientations, the
+screen has a drawn state: home, both instruments in both orientations, the
 monitor, count-in, import, summary and the dropdowns.
+
+Handoff 05 is built: sustained notes end to end (model, importer, scorer,
+input, and the bar drawn in all four views), the fourteen instrument hues with
+the target/result colour split, the 33px overview strip, and the instrument
+switch moved to the home bar. Three deliberate divergences, each argued in the
+code where it bites:
+
+- The design's **34px minimum bar** is a scrolling-axis figure. Applied
+  verbatim it makes a hold undrawable in the falling views, whose time axis
+  has a third of the pixels — yet `11c` and `11f` plainly draw them, against a
+  roll where a beat is ~32px rather than our ~16. The falling axis uses a
+  structural floor instead (`holdFloor`). **This is the one number here that is
+  ours, not the design's** — worth settling with them.
+- **§1.5 vs §1.4** on whether a bar may cross the playhead in pads horizontal.
+  §1.4 wins; hiding the bar around the crossing would flicker.
+- The piano pitch→hue order follows §2.2's *prose* (1st blue, 2nd violet, 3rd
+  bronze, 4th teal). The frames disagree with the prose **and with each other**
+  — `11e` gives G4 steel and C5 indigo, `11f` gives G4 violet — so they are not
+  usable as the source here.
+
+Not built from 05, and worth asking about: `11a` draws the pad-layout panel
+with a third `1x8` layout and right-aligned row hints, neither of which the
+prose asks for; and the app's home bar still carries the volume and monitor
+buttons that `11a` does not draw (which predates this handoff).
 
 Undrawn edge cases — no MIDI device connected, an empty lesson list, a failed
 import — are **not designed**; ask before inventing them.
@@ -65,13 +1196,86 @@ that does not exist. The app icon's 16px variant is also not generated — §15
 asks for hand-tuned geometry there rather than a mechanical downscale, so
 `npm run icons` starts at 32px.
 
-### Next up: M7 — persistence
+### M7 — polish & package (done)
 
-From the plan: SQLite (or the Tauri store) for practice history — per-lesson bests,
-streaks, a session log. Notes:
+**Timing calibration.** `src/engine/calibration.ts` is the pure half: `tapError`
+places a strike against the nearest click on a fixed grid, `summarizeTaps`
+reduces a set to a median and a median absolute deviation. Median throughout —
+two ragged taps out of sixteen are certain on a first run and must move the
+answer by nothing. The spread is reported so a loose set is *called* loose
+rather than quietly applied. `useCalibration` runs the click on a plain
+interval queued onto the audio clock: no transport, no scorer, so the only
+thing measured is the gap between click and strike. **Taps are fed
+`rawHitTime`, not `hardwareHitTime`** — applying the offset under test would
+report only its residual. `settings.latencyMs` is then subtracted from every
+*hardware* strike; a mouse click or a computer key carries no offset, having no
+rig to cancel.
 
-- Settings and the last lesson already persist through `src/stores/persist.ts`
-  (Tauri store plugin). Invariant 7 still holds: no `localStorage`.
-- `AdvanceTracker` (`src/engine/adaptive.ts`) already tracks the lesson-clear streak
-  in memory — that is the natural thing to persist first.
+**Persistence.** Settings, last lesson and per-lesson history already persisted;
+M7 added `latencyMs` and, the real gap, **imported clips**. They used to live
+for the session, which left `history` holding runs for a lesson that no longer
+existed. `src/engine/library.ts` validates what comes back out of the store —
+a lesson with no notes does not fail at the store, it fails three screens later
+inside the scorer. Invariant 7 still holds: no `localStorage`.
+
+The plan's "streaks, a session log" were **not** built. `AdvanceTracker` resets
+every `play()` and clears at a streak of one, so persisting it would persist a
+number that is always zero; a session log nothing reads is dead weight. Say so
+rather than building either — and if a streak is wanted, it needs a reason to
+exist first.
+
+**Focus and motion.** `styles.css` now carries one global `:focus-visible` rule,
+because per-component rings meant the dialogs' buttons had none. `useFocusTrap`
+keeps Tab inside a modal — `aria-modal` marks the page behind inert for a
+screen reader and does *nothing* to the Tab key. Both dialogs take focus on open
+and hand it back on close. Reduced motion is one global `* { animation: none
+!important; transition: none !important; }`; don't repeat it per component.
+
+**Packaging.** `docs/packaging.md` is the reference. Signing credentials come
+from environment/secrets only, never a checked-in file, and the release workflow
+completes without them by producing unsigned artefacts. `src-tauri/Info.plist`
+is merged automatically by tauri-bundler and carries
+`NSLocalNetworkUsageDescription` — from macOS 15, Link without it is denied the
+LAN silently, which looks exactly like Link being broken.
+
+The app is **Melodable** everywhere now — `productName`, the window title, the
+page title, the npm package, and the MIDI client name other apps see in their
+port lists. The bundle identifier is `io.github.gabrielom.melodable`, changed
+once from the `com.local.rhythmtrainer` placeholder while the only data at risk
+was the author's. **Don't change it again without a migration**: it decides
+where the Tauri store lives, so a new one reads as a fresh install — settings,
+calibration, history and imported clips all gone. `build_plan.html` still says
+"Rhythm Trainer" and is left alone, being the original spec rather than a live
+document.
+
+**The calibration dialog is not in any design handoff.** It is built in the
+dialogs' existing language rather than inventing one, and wants drawing.
+
 - Don't reintroduce automatic tempo changes; tempo stays hand-set on the bar.
+
+### The intermittent input delay: closed
+
+There was an M8 here, parked as a troubleshooting milestone: *"there is once
+again a delay when I am playing the notes, sometimes it happens. sometimes
+not."* The user reports it has stopped happening, and asked for it to be
+dropped. **Don't reopen it speculatively, and don't "fix" it in passing.**
+
+Two findings from that round are still worth keeping, because they are
+measurements rather than guesses:
+
+- **The render loop is not a plausible cause.** Measured with a worker posting
+  messages into the running app at an irregular cadence — the same shape of
+  arrival a MIDI event has. It waits 2-4ms at p99 to be picked up, in all four
+  views, and no frame exceeded 32ms.
+- An earlier round was "fixed" by cutting per-frame canvas cost and the delay
+  went. Given the measurement above, that is **unexplained, not a precedent.**
+
+If it ever returns: start with data, not with a fix. A whole commit of
+plausible-sounding changes was written and reverted for exactly that reason.
+Log every incoming message's kind and its arrival gap (`audio.now` minus the
+midir timestamp mapped through `HostClock`) while it is happening, and ask
+first whether it is the *sound* arriving late or the flash and the grade — the
+two have different causes. `midir`'s `Ignore::All` filters only sysex, clock and
+active sensing, so continuous aftertouch shares the queue with note-ons; if that
+turns out to matter, thin the stream — **do not drop those messages, the user
+wants aftertouch.**

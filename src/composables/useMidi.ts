@@ -8,12 +8,18 @@
 
 import { ref, onUnmounted } from "vue";
 import type { MidiMessage } from "@/engine/types";
+import { dawCompanion } from "@/engine/midi-port";
 
 /** True when running inside the Tauri shell (rather than a plain browser tab). */
 export const isTauri = (): boolean =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-export function useMidi(onMessage: (m: MidiMessage) => void) {
+/**
+ * `onNotice` hears what became of the DAW port, in words, for the MIDI
+ * monitor: opened, failed, or not there. It is the one part of connecting that
+ * could fail without anything on screen saying so.
+ */
+export function useMidi(onMessage: (m: MidiMessage) => void, onNotice: (text: string) => void = () => {}) {
   const ports = ref<string[]>([]);
   const connectedIndex = ref<number | null>(null);
   const connectedName = ref<string>("");
@@ -31,21 +37,31 @@ export function useMidi(onMessage: (m: MidiMessage) => void) {
     return { invoke, listen };
   }
 
-  async function refreshPorts(): Promise<void> {
-    error.value = "";
+  /**
+   * `quiet` is the background scan that waits for a device to be plugged in:
+   * it leaves `busy` and `error` alone, so an open menu doesn't flicker to
+   * "scanning…" every few seconds or lose an error the player is reading.
+   */
+  async function refreshPorts(quiet = false): Promise<void> {
+    if (!quiet) error.value = "";
     if (!isTauri()) {
       ports.value = [];
-      error.value = "Run inside Tauri (npm run tauri dev) to see MIDI devices.";
+      if (!quiet) error.value = "Run inside Tauri (npm run tauri dev) to see MIDI devices.";
       return;
     }
     try {
-      busy.value = true;
+      if (!quiet) busy.value = true;
       const { invoke } = await api();
-      ports.value = await invoke<string[]>("list_midi_ports");
+      const next = await invoke<string[]>("list_midi_ports");
+      // Same list, same array: nothing downstream re-renders for a scan
+      // that found what was already there.
+      if (next.length !== ports.value.length || next.some((p, i) => p !== ports.value[i])) {
+        ports.value = next;
+      }
     } catch (e) {
-      error.value = String(e);
+      if (!quiet) error.value = String(e);
     } finally {
-      busy.value = false;
+      if (!quiet) busy.value = false;
     }
   }
 
@@ -58,6 +74,19 @@ export function useMidi(onMessage: (m: MidiMessage) => void) {
       const name = await invoke<string>("open_midi_port", { index });
       connectedIndex.value = index;
       connectedName.value = name;
+
+      // The device's DAW port too, for its drum pads: a DAW taking the
+      // controller over moves them there (see `dawCompanion`). Best effort —
+      // the keys and everything else still come through the port just opened.
+      const companion = dawCompanion(ports.value, name);
+      if (companion !== null) {
+        await invoke<string>("open_midi_companion", { index: companion }).then(
+          (daw) => onNotice(`DAW port open · ${daw}`),
+          (e) => onNotice(`DAW port failed · ${String(e)}`),
+        );
+      } else {
+        onNotice(`no DAW port beside ${name}`);
+      }
 
       if (!unlisten) {
         unlisten = await listen<MidiMessage>("midi://message", (e) => onMessage(e.payload));

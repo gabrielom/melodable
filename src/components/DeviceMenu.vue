@@ -61,7 +61,7 @@ onUnmounted(() => {
     <button
       class="trigger"
       :class="{ live: connectedIndex !== null, open }"
-      :title="connectedIndex !== null ? `Connected: ${connectedName}` : 'Choose a MIDI input'"
+      :data-tip="connectedIndex !== null ? `Connected: ${connectedName}` : 'Choose a MIDI input'"
       @click="toggle"
     >
       <i class="dot" />
@@ -69,7 +69,7 @@ onUnmounted(() => {
       <span class="chev">{{ open ? "▴" : "▾" }}</span>
     </button>
 
-    <div v-if="open" class="menu" role="menu">
+    <div v-if="open" class="menu" role="menu" data-tauri-drag-region="false">
       <div class="mhead">
         <span>MIDI INPUT</span>
         <button class="rescan" :disabled="busy" @click="emit('refresh')">
@@ -106,12 +106,44 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.wrap { position: relative; }
+/*
+ * `inline-flex`, not the default block. As a block this wrapper laid its
+ * button out on a text baseline, so the line box added descender space under
+ * it: 22px tall for a 20px control, and the button rode 1px below every other
+ * control in the bar. The volume wrapper next door already does this, which
+ * is why only this one drifted.
+ */
+/* Shrinks before the lesson title does (handoff 11 §3.2): under width
+   pressure the device *name* is the first thing that may give, and a higher
+   shrink factor is what puts it ahead of the title in that queue. Never below
+   46px, which still shows the connection LED and the caret — the two parts
+   that are a control rather than a label.
+
+   No `overflow: hidden` here, ever. The menu hangs off this wrapper — it is
+   the positioning parent — so clipping the wrapper to its own 20px box
+   deletes the dropdown outright and the control reads as simply broken. The
+   trigger below clips its own label, which is the only thing that needed
+   clipping. */
+.wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 2 auto;
+  min-width: 46px;
+}
 
 /* Face chip: 20px like every other bar control, LED dot showing connection. */
 .trigger {
   height: 20px;
-  max-width: 112px;
+  /* Sized so "SELECT DEVICE" — the longest label the control writes itself —
+     is never ellipsised. Measured at 116px for the 8.5px mono with its 1.1px
+     tracking; 112px clipped it by 4px. Port names longer than this still
+     ellipsise, which is the point: the chip has a fixed cost in the bar's
+     width budget, and a device can be called anything. */
+  max-width: 116px;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -128,6 +160,18 @@ onUnmounted(() => {
   cursor: pointer;
 }
 .trigger:hover { background: var(--hover); color: var(--txt); }
+
+/* Connected: the port name reads at full strength. This must come *before*
+   the open state — `.trigger.live` and `.trigger.open` have equal specificity,
+   so whichever is declared last wins, and on light `--txt` is near-black while
+   the open chip is dark: a connected device's name vanished into the chip the
+   moment you opened the menu. Dark got away with it only because `--txt` and
+   `--active-txt` happen to be the same value there. */
+.trigger.live { color: var(--txt); }
+
+/* Open wins over both hover and live — the chip inverts, so everything on it
+   has to switch with it. The dot is the exception: it stays the connection
+   LED, because that is what it means. */
 .trigger.open { background: var(--active); color: var(--active-txt); }
 .trigger.open .chev { color: var(--active-txt); }
 .trigger:focus-visible { outline: 1px solid var(--head); outline-offset: 1px; }
@@ -140,7 +184,6 @@ onUnmounted(() => {
   background: var(--txt3);
 }
 .trigger.live .dot { background: var(--led0); }
-.trigger.live { color: var(--txt); }
 
 .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chev { flex: none; font-size: 6.5px; color: var(--txt3); }

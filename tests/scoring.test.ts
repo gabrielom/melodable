@@ -1,14 +1,28 @@
+import type { HitResult } from "@/engine/scoring";
 import { describe, it, expect } from "vitest";
 import {
   Scorer,
   classify,
   lessonTargets,
   lessonRepeats,
+  visibleLoopSpan,
+  previewInstances,
+  weakestLanes,
+  WEAKEST_LANES,
+  type LaneStat,
   type TargetNote,
 } from "../src/engine/scoring";
 import { TIMING_WINDOWS } from "../src/engine/types";
 import { noteToPad } from "../src/engine/gm";
 import type { Lesson } from "../src/engine/types";
+
+/**
+ * A strike now answers with what it turned out to be, so these unwrap it. A
+ * `null` rating here means "hit nothing", which is what the old `null` return
+ * meant — except that it is now scored.
+ */
+const rate = (r: HitResult) => (r.kind === "hit" ? r.rating : null);
+const inst = (r: HitResult) => (r.kind === "hit" ? r.instance : null);
 
 describe("classify", () => {
   it("grades the tight windows by absolute offset, in either direction", () => {
@@ -58,17 +72,17 @@ describe("lessonTargets", () => {
   it("routes pitches to lanes, drops unmapped, sorts by beat", () => {
     const targets = lessonTargets(lesson, noteToPad);
     expect(targets).toEqual([
-      { lane: 12, beat: 0 },
-      { lane: 13, beat: 1 },
+      { lane: 12, beat: 0, duration: 0, written: 0 },
+      { lane: 13, beat: 1, duration: 0, written: 0 },
     ]);
   });
 });
 
 // one kick lane note per beat, spb = 0.5 (times 0, 0.5s style via timeOf below)
 const targets: TargetNote[] = [
-  { lane: 12, beat: 0 },
-  { lane: 12, beat: 1 },
-  { lane: 13, beat: 2 },
+  { lane: 12, beat: 0, duration: 0, written: 0 },
+  { lane: 12, beat: 1, duration: 0, written: 0 },
+  { lane: 13, beat: 2, duration: 0, written: 0 },
 ];
 const timeOf = (loop: number, beat: number) => 10 + loop * 2 + beat * 0.5;
 
@@ -87,32 +101,121 @@ describe("scorer", () => {
     s.spawnLoop(0, timeOf);
 
     const res = s.hit(12, 10.01);
-    expect(res?.rating).toBe("perfect");
-    expect(res?.instance.beat).toBe(0);
+    expect(rate(res)).toBe("perfect");
+    expect(inst(res)!.beat).toBe(0);
     expect(s.combo).toBe(1);
 
     // second hit near beat 1 grades against the remaining kick note
     const res2 = s.hit(12, 10.55);
-    expect(res2?.rating).toBe("great");
-    expect(res2?.instance.beat).toBe(1);
+    expect(rate(res2)).toBe("great");
+    expect(inst(res2)!.beat).toBe(1);
     expect(s.combo).toBe(2);
     expect(s.bestCombo).toBe(2);
   });
 
-  it("ignores strays: wrong lane or outside the good window", () => {
+  it("counts a strike that hits nothing as a wrong note", () => {
     const s = new Scorer(targets);
     s.spawnLoop(0, timeOf);
-    expect(s.hit(13, 10.0)).toBeNull(); // snare lane note is at 11
-    expect(s.hit(12, 10.25)).toBeNull(); // 0.25s from either kick note
+    // Two ways to hit nothing, and one rule covers both: a lane whose only
+    // note is a second away, and a lane of the lesson struck a second past
+    // its last note.
+    expect(s.hit(13, 10.0).kind).toBe("wrong");
+    expect(s.hit(12, 11.5).kind).toBe("wrong");
+    expect(s.wrongCount).toBe(2);
+    // Charged like a note asked for and not played: no points, but counted.
+    expect(s.accuracy).toBe(0);
     expect(s.combo).toBe(0);
-    expect(s.accuracy).toBe(1); // strays don't count in v1
+    // And it stays out of the tally, which answers a different question —
+    // how the *lesson's* notes went. None of them has been touched.
+    for (const r of ["perfect", "great", "early", "late", "miss"] as const) {
+      expect(s.tally[r]).toBe(0);
+    }
+  });
+
+  it("breaks a combo that was running", () => {
+    const s = new Scorer(targets);
+    s.spawnLoop(0, timeOf);
+    s.hit(12, 10.0);
+    s.hit(13, 11.0);
+    expect(s.combo).toBe(2);
+    s.hit(13, 14.0);
+    expect(s.combo).toBe(0);
+    expect(s.bestCombo).toBe(2);
+  });
+
+  it("dilutes accuracy in proportion, not to zero", () => {
+    const s = new Scorer(targets);
+    s.spawnLoop(0, timeOf);
+    s.hit(12, 10.0); // perfect
+    s.hit(13, 11.0); // perfect
+    expect(s.accuracy).toBe(1);
+    s.hit(13, 14.0); // wrong
+    // Two notes played perfectly and one strike that was not a note: three
+    // events, two points.
+    expect(s.accuracy).toBeCloseTo(2 / 3, 9);
+  });
+
+  it("does not charge a sloppy strike twice", () => {
+    // The trap: a note struck 150ms late grades as nothing, and the note it
+    // was aimed at is swept as a miss a moment later. Counting the strike as
+    // a wrong note as well would take two zeros for one mistake.
+    const s = new Scorer(targets);
+    s.spawnLoop(0, timeOf);
+    expect(s.hit(12, 10.15).kind).toBe("ignored");
+    expect(s.wrongCount).toBe(0);
+    expect(s.accuracy).toBe(1); // nothing charged yet
+    s.sweepMisses(10.4);
+    // Exactly one charge, and it is the note's own miss.
+    expect(s.tally.miss).toBeGreaterThanOrEqual(1);
+    expect(s.wrongCount).toBe(0);
+  });
+
+  it("keeps that grace after the note has already been swept", () => {
+    // The grace is about *aim*, not about the note still being available —
+    // and by the time a late strike lands, the note it was aimed at has
+    // usually been swept already. That is the case it exists for.
+    const s = new Scorer(targets);
+    s.spawnLoop(0, timeOf);
+    s.sweepMisses(10.4); // beat 0 is a miss now
+    expect(s.hit(12, 10.15).kind).toBe("ignored");
+    expect(s.wrongCount).toBe(0);
+  });
+
+  it("charges once the strike is beyond any note's reach", () => {
+    const s = new Scorer(targets);
+    s.spawnLoop(0, timeOf);
+    // Kick notes sit at 10.0 and 10.5. Exactly a grace away from the second
+    // is still an attempt at it; a hair further is not.
+    expect(s.hit(12, 10.75).kind).toBe("ignored");
+    expect(s.hit(12, 10.76).kind).toBe("wrong");
+    expect(s.wrongCount).toBe(1);
+  });
+
+  it("cannot call a strike wrong where the lane's notes are close together", () => {
+    // Kick notes half a second apart leave no instant between them further
+    // than the grace from both — so in a busy lane, being off the beat is a
+    // bad attempt at a note and never an invented one. That is the rule
+    // working: "completely out of time" has to mean completely.
+    const s = new Scorer(targets);
+    s.spawnLoop(0, timeOf);
+    for (const t of [10.2, 10.25, 10.3, 10.4]) {
+      expect(s.hit(12, t).kind).not.toBe("wrong");
+    }
+    expect(s.wrongCount).toBe(0);
+  });
+
+  it("has nothing to say about a run with no wrong notes", () => {
+    const s = new Scorer(targets);
+    s.spawnLoop(0, timeOf);
+    s.hit(12, 10.0);
+    expect(s.wrongCount).toBe(0);
   });
 
   it("does not double-resolve a note", () => {
     const s = new Scorer(targets);
     s.spawnLoop(0, timeOf);
-    expect(s.hit(13, 11.0)?.rating).toBe("perfect");
-    expect(s.hit(13, 11.02)).toBeNull(); // nothing left in the lane
+    expect(rate(s.hit(13, 11.0))).toBe("perfect");
+    expect(rate(s.hit(13, 11.02))).toBeNull(); // nothing left in the lane
   });
 
   it("sweeps overdue notes as misses and resets the combo", () => {
@@ -184,9 +287,9 @@ describe("scorer", () => {
 describe("chord grading (piano)", () => {
   // A C-major triad on beat 0: three lanes (pitches) sharing the same time.
   const chord: TargetNote[] = [
-    { lane: 60, beat: 0 },
-    { lane: 64, beat: 0 },
-    { lane: 67, beat: 0 },
+    { lane: 60, beat: 0, duration: 0, written: 0 },
+    { lane: 64, beat: 0, duration: 0, written: 0 },
+    { lane: 67, beat: 0, duration: 0, written: 0 },
   ];
   const timeOf = (loop: number, beat: number) => 5 + loop + beat * 0.5;
 
@@ -194,9 +297,9 @@ describe("chord grading (piano)", () => {
     const s = new Scorer(chord);
     s.spawnLoop(0, timeOf); // all three at t=5
 
-    expect(s.hit(60, 5.0)?.rating).toBe("perfect");
-    expect(s.hit(64, 5.05)?.rating).toBe("great"); // 50ms late → great window
-    expect(s.hit(67, 5.0)?.rating).toBe("perfect");
+    expect(rate(s.hit(60, 5.0))).toBe("perfect");
+    expect(rate(s.hit(64, 5.05))).toBe("great"); // 50ms late → great window
+    expect(rate(s.hit(67, 5.0))).toBe("perfect");
     expect(s.combo).toBe(3);
     expect(s.accuracy).toBeGreaterThan(0.9);
   });
@@ -257,10 +360,10 @@ describe("lessonRepeats", () => {
 describe("run breakdown", () => {
   // two lanes, three notes each, so a lane can drift one way
   const two: TargetNote[] = [
-    { lane: 12, beat: 0 },
-    { lane: 12, beat: 1 },
-    { lane: 13, beat: 2 },
-    { lane: 13, beat: 3 },
+    { lane: 12, beat: 0, duration: 0, written: 0 },
+    { lane: 12, beat: 1, duration: 0, written: 0 },
+    { lane: 13, beat: 2, duration: 0, written: 0 },
+    { lane: 13, beat: 3, duration: 0, written: 0 },
   ];
   const at = (loop: number, beat: number) => 10 + loop * 4 + beat;
 
@@ -274,30 +377,204 @@ describe("run breakdown", () => {
     expect(s.tally).toEqual({ perfect: 1, great: 1, early: 0, late: 1, miss: 1 });
   });
 
-  it("reports each lane's accuracy and which way it drifts, worst first", () => {
-    const s = new Scorer(two);
-    s.spawnLoop(0, at);
-    s.hit(12, 10.0); // perfect
-    s.hit(12, 11.0); // perfect
-    s.hit(13, 11.92); // early (80ms ahead)
-    s.hit(13, 12.92); // early
-
-    const stats = s.laneStats();
-    expect(stats).toHaveLength(2);
-    // lane 13 only managed the loose band, so it sorts first
-    expect(stats[0].lane).toBe(13);
-    expect(stats[0].accuracy).toBeCloseTo(0.4);
-    expect(stats[0].early).toBe(2);
-    expect(stats[0].late).toBe(0);
-    expect(stats[1].lane).toBe(12);
-    expect(stats[1].accuracy).toBeCloseTo(1);
-  });
-
-  it("counts a swept note as a miss in both the tally and the lane", () => {
+  it("counts a swept note as a miss in the tally", () => {
     const s = new Scorer(two);
     s.spawnLoop(0, at);
     s.sweepMisses(20);
     expect(s.tally.miss).toBe(4);
-    expect(s.laneStats().every((l) => l.accuracy === 0)).toBe(true);
+  });
+});
+
+describe("visibleLoopSpan", () => {
+  // The case that motivated it: a one-bar pattern in a five-bar lane. The
+  // playhead is centred, so the lane reaches 10 beats either way and touches
+  // five repeats at once — "current and next" covered two of them.
+  const BEHIND = 10;
+  const AHEAD = 10;
+
+  it("covers every repeat the lane can see, not just the next one", () => {
+    const s = visibleLoopSpan(20, 4, BEHIND, AHEAD);
+    expect(s.first).toBe(2); // beat 10 falls in repeat 2
+    expect(s.last).toBe(7); // beat 30 falls in repeat 7
+  });
+
+  it("keeps the trailing edge on screen", () => {
+    // Anything pruned before `first` is off the left edge of the lane.
+    const s = visibleLoopSpan(20, 4, BEHIND, AHEAD);
+    const oldestVisibleBeat = 20 - BEHIND;
+    expect(s.first * 4).toBeLessThanOrEqual(oldestVisibleBeat);
+  });
+
+  it("does not run off the start of the run", () => {
+    const s = visibleLoopSpan(2, 4, BEHIND, AHEAD);
+    expect(s.first).toBe(0);
+  });
+
+  it("still includes the current and next repeat when the window is unknown", () => {
+    // First frame, or audio-only: the renderer has not drawn yet. This is the
+    // behaviour the fixed `[loopIndex, loopIndex + 1]` used to guarantee, and
+    // grading a strike just before a repeat's first note depends on it.
+    const s = visibleLoopSpan(9, 4, 0, 0);
+    expect(s.first).toBe(2);
+    expect(s.last).toBe(3);
+  });
+
+  it("spawns the first repeat during the count-in, when absBeat is negative", () => {
+    const s = visibleLoopSpan(-4, 4, BEHIND, AHEAD);
+    expect(s.first).toBe(0);
+    expect(s.last).toBeGreaterThanOrEqual(1);
+  });
+
+  it("handles a pattern longer than the lane", () => {
+    // Eight-bar clip, lane sees ten beats: only the current repeat and its
+    // neighbour are ever in view.
+    const s = visibleLoopSpan(40, 32, BEHIND, AHEAD);
+    expect(s.first).toBe(0);
+    expect(s.last).toBe(2);
+  });
+
+  it("never returns an inverted range", () => {
+    for (const absBeat of [-8, -1, 0, 3, 17, 100]) {
+      for (const loopBeats of [1, 4, 16]) {
+        const s = visibleLoopSpan(absBeat, loopBeats, BEHIND, AHEAD);
+        expect(s.last).toBeGreaterThanOrEqual(s.first);
+        expect(s.first).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+});
+
+describe("previewInstances", () => {
+  // Two lanes, notes on beats 0 and 2 of a 4-beat pattern.
+  const pattern: TargetNote[] = [
+    { lane: 12, beat: 0, duration: 0, written: 0 },
+    { lane: 13, beat: 2, duration: 0, written: 0 },
+  ];
+  const SPB = 0.5; // 120bpm
+
+  it("parks beat 0 exactly on the playhead", () => {
+    const out = previewInstances(pattern, 4, 8, SPB, 100, 10);
+    expect(out[0].beat).toBe(0);
+    expect(out[0].time).toBeCloseTo(100);
+  });
+
+  it("lays later notes out ahead of it, at the lane's scroll rate", () => {
+    const out = previewInstances(pattern, 4, 8, SPB, 100, 10);
+    const at = (loop: number, beat: number) =>
+      out.find((i) => i.loopIndex === loop && i.beat === beat)!;
+    expect(at(0, 2).time).toBeCloseTo(101); // 2 beats * 0.5s
+    expect(at(1, 0).time).toBeCloseTo(102); // one repeat later
+    expect(at(2, 0).time).toBeCloseTo(104);
+  });
+
+  it("stops at the edge of what the lane can show", () => {
+    const out = previewInstances(pattern, 4, 8, SPB, 100, 5);
+    // beat 6 is past a 5-beat window; beat 4 is not.
+    expect(out.some((i) => i.loopIndex === 1 && i.beat === 0)).toBe(true);
+    expect(out.some((i) => i.loopIndex === 1 && i.beat === 2)).toBe(false);
+  });
+
+  it("never runs past the end of a short run", () => {
+    const out = previewInstances(pattern, 4, 1, SPB, 100, 40);
+    expect(out.every((i) => i.loopIndex === 0)).toBe(true);
+  });
+
+  it("survives an endless run without hanging", () => {
+    const out = previewInstances(pattern, 4, Infinity, SPB, 100, 40);
+    expect(out.length).toBeGreaterThan(0);
+    expect(out.every((i) => i.loopIndex === 0)).toBe(true);
+  });
+
+  it("produces nothing resolved — the preview is never graded", () => {
+    const out = previewInstances(pattern, 4, 8, SPB, 100, 10);
+    expect(out.every((i) => !i.resolved && i.rating === null)).toBe(true);
+  });
+
+  it("is empty for a lesson with no notes", () => {
+    expect(previewInstances([], 4, 8, SPB, 100, 10)).toEqual([]);
+  });
+});
+
+describe("per-lane figures", () => {
+  /**
+   * The bug the first version had: it read the surviving instances at the end
+   * of the run, and `pruneBefore` had long since dropped every earlier repeat —
+   * so it described the last few repeats, not the run.
+   */
+  it("covers the whole run, including repeats that were pruned away", () => {
+    const s = new Scorer(targets);
+    s.spawnLoop(0, timeOf);
+    s.hit(12, 10);
+    s.hit(12, 10.5);
+    s.sweepMisses(11.5); // lane 13's note in loop 0 goes by unplayed
+    s.spawnLoop(1, timeOf);
+    s.hit(12, 12);
+    s.hit(12, 12.5);
+    s.hit(13, 13);
+    s.pruneBefore(1);
+
+    const byLane = new Map(s.laneStats().map((l) => [l.lane, l]));
+    expect(byLane.get(12)).toMatchObject({ accuracy: 1, total: 4 });
+    // One miss and one perfect across the run — not the perfect alone.
+    expect(byLane.get(13)).toMatchObject({ accuracy: 0.5, total: 2 });
+  });
+
+  it("weights a lane the way the run is weighted", () => {
+    const s = new Scorer(targets);
+    s.spawnLoop(0, timeOf);
+    s.hit(12, 10.045); // great
+    s.hit(12, 10.58); // late
+    const l12 = s.laneStats().find((l) => l.lane === 12)!;
+    expect(l12.accuracy).toBeCloseTo((0.75 + 0.4) / 2);
+    expect(l12.late).toBe(1);
+    expect(l12.early).toBe(0);
+  });
+
+  it("leaves wrong notes out of every lane, as they are left out of the tally", () => {
+    const s = new Scorer(targets);
+    s.spawnLoop(0, timeOf);
+    s.hit(12, 10);
+    expect(s.hit(40, 10.2).kind).toBe("wrong");
+    const lanes = s.laneStats().map((l) => l.lane);
+    expect(lanes).toEqual([12]);
+    expect(s.laneStats()[0].accuracy).toBe(1);
+  });
+});
+
+describe("weakestLanes", () => {
+  const stat = (lane: number, accuracy: number, early = 0, late = 0, total = 10): LaneStat => ({
+    lane,
+    accuracy,
+    early,
+    late,
+    total,
+  });
+
+  it("names the weakest three, lowest first, with the side each leant to", () => {
+    const got = weakestLanes([
+      stat(3, 0.83, 2, 2),
+      stat(1, 0.64, 1, 5),
+      stat(4, 0.9),
+      stat(2, 0.76, 4, 1),
+    ]);
+    expect(WEAKEST_LANES).toBe(3);
+    expect(got.map((l) => [l.lane, l.drift])).toEqual([
+      [1, "late"],
+      [2, "early"],
+      [3, null],
+    ]);
+  });
+
+  it("has nothing to show for a clean run", () => {
+    expect(weakestLanes([stat(1, 1), stat(2, 1)])).toEqual([]);
+  });
+
+  it("leaves out a lane that reads 100, judged on the number shown", () => {
+    expect(weakestLanes([stat(1, 0.996), stat(2, 0.994)]).map((l) => l.lane)).toEqual([2]);
+  });
+
+  it("breaks a tie toward the lane with more notes, then the lower lane", () => {
+    const got = weakestLanes([stat(5, 0.7, 0, 0, 4), stat(2, 0.7, 0, 0, 12), stat(1, 0.7, 0, 0, 4)]);
+    expect(got.map((l) => l.lane)).toEqual([2, 1, 5]);
   });
 });

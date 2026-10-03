@@ -14,9 +14,28 @@
  */
 
 import { RADIUS } from "@/engine/theme";
-import { paintCountIn, paintGrid, paintVeil, pxPerBeat, ROW_INK } from "@/views/lane-geometry";
+import {
+  HOLD_CLEARANCE,
+  holdFill,
+  holdFloor,
+  holdLength,
+  noteInk,
+  paintCountIn,
+  paintGrid,
+  paintHold,
+  paintVeil,
+  pxPerBeat,
+  RIBBON_H,
+  type RibbonHits,
+  ROW_INK,
+  WRONG_DOT_R,
+  paintRibbon,
+  ribbonBarAt,
+  paintWrong,
+} from "@/views/lane-geometry";
 import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
-import { countWhiteKeys, isWhiteKey, keyGeometry, noteName, pitchClass } from "@/engine/pitch";
+import { countWhiteKeys, isWhiteKey, keyGeometry, pitchLetter, pitchClass } from "@/engine/pitch";
+import { degreeLabel } from "@/engine/notation";
 
 /**
  * No gutter: the rotated keyboard sits beside the roll and names the pitches,
@@ -29,15 +48,104 @@ const MONO = '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
 const SANS = '"Geist", ui-sans-serif, system-ui, sans-serif';
 /** Semitone beds: black-key rows sit a shade darker than white-key rows. */
 const ROW_BLACK = { dark: "#0d0d0e", light: "#c4c4c4" } as const;
+/**
+ * Diameter of a falling note, in both orientations. It is a circle, so this
+ * governs both axes at once — no separate width cap against wide key columns,
+ * and no separate height to clear a thin row. Whichever axis carries time, it
+ * covers a little under a quarter note at the five-bar zoom, so consecutive
+ * eighths still touch.
+ */
+const NOTE_DIAMETER = 26;
+/**
+ * Vertical: distance from the bottom of the roll to the hit line — the same
+ * shape of rule the pads view uses, and taken from the handoff's `10f piano
+ * vertical` frame, where the roll is 319px tall and the line sits at 211,
+ * i.e. 108 up from its bottom. It is deliberately not centred: a falling-note
+ * view needs most of its height for what is coming, and only a landing strip
+ * for what has just gone.
+ *
+ * A fixed offset rather than a fraction, so the landing strip stays the same
+ * size whatever the window height — which is also how the pads view reads its
+ * own `HIT_FROM_BOTTOM`. Every handoff frame is 500px tall, so the drawings
+ * cannot distinguish the two; this follows the existing convention.
+ */
+const HIT_FROM_BOTTOM = 108;
+/**
+ * Size of the letter inside the note. Large enough to be read at a glance
+ * rather than squinted at — it is the one piece of text that tells you which
+ * key to press.
+ */
+const LABEL_SIZE = 17;
+/**
+ * The sharp beside it, and how it sits: smaller than the letter and raised,
+ * the way an accidental is set in type. It qualifies the letter rather than
+ * standing beside it as an equal, and at full size "C#" nearly fills the
+ * circle it is written in.
+ */
+const ACCIDENTAL_SIZE = 11;
+const ACCIDENTAL_GAP = 1;
+const ACCIDENTAL_RISE = 4;
+/**
+ * Below this the letter is dropped rather than spilled outside the circle.
+ * The widest label is a sharp: 10.2px of letter, the 1px gap and 6.6px of
+ * accidental, so 17.8px, and 22 leaves a couple of pixels either side. It was
+ * 25 while the sharp was a second full-size character at 20.4px — setting the
+ * accidental smaller bought back the room. In practice this only bites on an
+ * imported clip wide enough to squeeze the black keys.
+ */
+const LABEL_MIN_W = 22;
+/**
+ * A hold's bar across the axis that isn't time: narrower than the 26px head
+ * it grows from, so the head still reads as the note and the bar as its tail.
+ */
+const BAR_ACROSS = 18;
+const BAR_RADIUS = 4;
+/**
+ * How far the slot reaches back behind its own head. The head is a 26px
+ * circle, so 12 sits inside it — the cap is never seen, and without it the
+ * head would show the slot's 2px channel through its middle.
+ */
+const HEAD_CAP = 12;
+/**
+ * The letter written on a note. One ink per theme, whatever the note's own
+ * colour — the hues and the ratings are all mid-tone enough to carry it, and
+ * a per-note ink would be one more thing that could disagree with itself.
+ * Dark is a blue-black rather than a neutral one, which sits better on the
+ * cool end of the hue list.
+ */
+const INK = { dark: "#08131a", light: "#f2f2f2" } as const;
+
+/**
+ * What a note is called: its letter, or its degree in the key.
+ *
+ * One function so the two orientations cannot drift apart, and so the shape of
+ * the string is the same either way — a character and an optional mark, which
+ * is exactly what `label` already knows how to set.
+ */
+function noteLabelOf(f: LaneFrame, pitch: number): string {
+  return f.labelMode === "degree" ? degreeLabel(pitch, f.keyFifths) : pitchLetter(pitch);
+}
 
 export class PianoRoll implements LaneRenderer {
   private ctx: CanvasRenderingContext2D;
   private dpr = 1;
   /** Timeline on screen at the last draw, for the overview's viewport rect. */
   private window: VisibleWindow = { behind: 0, ahead: 0 };
+  /** Label widths, measured once — the two sizes are constants. */
+  private metrics: { letter: number; sharp: number } | null = null;
+  /** Accidentals from this frame's notes, drawn together in `endLabels`. */
+  private sharps: Array<{ x: number; y: number; mark: string }> = [];
 
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext("2d")!;
+  }
+
+
+  /** Where the ribbon's blocks landed in the last paint. */
+  private ribbon: RibbonHits | null = null;
+
+  ribbonBarAt(x: number, y: number): number | null {
+    return ribbonBarAt(this.ribbon, x, y);
   }
 
   visibleBeats(): VisibleWindow {
@@ -76,11 +184,11 @@ export class PianoRoll implements LaneRenderer {
     const low = f.lowNote;
     const high = f.highNote;
     const whiteWidth = W / Math.max(1, countWhiteKeys(low, high));
-    // Centred, like the pads view: half the visible span either side.
-    const hitY = Math.round(H / 2);
+    // Low in the field, like the pads view — not centred. More of the roll
+    // is given to what is coming than to what has just passed.
+    const hitY = Math.round(Math.max(0, H - HIT_FROM_BOTTOM));
     const beatPx = pxPerBeat(H, f.beatsPerBar);
-    const halfBeats = H / 2 / beatPx;
-    this.window = { behind: halfBeats, ahead: halfBeats };
+    this.window = { behind: (H - hitY) / beatPx, ahead: hitY / beatPx };
     const pxPerSec = beatPx / f.secPerBeat;
 
     for (let note = low; note <= high; note++) {
@@ -102,8 +210,8 @@ export class PianoRoll implements LaneRenderer {
     paintGrid(ctx, {
       theme: f.theme,
       instrument: "piano",
-      from: f.absBeat - halfBeats,
-      to: f.absBeat + halfBeats,
+      from: f.absBeat - this.window.behind,
+      to: f.absBeat + this.window.ahead,
       beatsPerBar: f.beatsPerBar,
       posOf: (beat) => hitY - (beat - f.absBeat) * beatPx,
       axis: "horizontal-lines",
@@ -113,29 +221,71 @@ export class PianoRoll implements LaneRenderer {
       h: H,
     });
 
-    if (!f.playing) {
-      ctx.fillStyle = f.palette.head;
-      ctx.fillRect(0, hitY - 1, W, 2);
-      return this.idle(f, W / 2, hitY - 40);
+    // Bars first, all of them, so every head sits above every slot.
+    for (const inst of f.instances) {
+      if (inst.duration <= 0) continue;
+      if (inst.lane < low || inst.lane > high) continue;
+      const y = hitY - (inst.time - f.now) * pxPerSec;
+      if (y < -NOTE_DIAMETER || y > H + NOTE_DIAMETER) continue;
+      const g = keyGeometry(inst.lane, low, whiteWidth);
+      const d = Math.min(NOTE_DIAMETER, g.width - 2);
+      const bw = Math.min(BAR_ACROSS, d);
+      const len = holdLength(
+        inst.duration * beatPx,
+        this.roomAhead(f, inst, low, whiteWidth, (i) => hitY - (i.time - f.now) * pxPerSec, d, true),
+        y - d / 2 < 0 || y + d / 2 > H,
+        holdFloor("falling", HEAD_CAP),
+      );
+      if (len === null) continue;
+      paintHold(this.ctx, {
+        x: g.x + (g.width - bw) / 2,
+        y: y - len,
+        w: bw,
+        h: len,
+        headEnd: "bottom",
+        headCap: HEAD_CAP,
+        radius: BAR_RADIUS,
+        colour: noteInk(f, inst, this.rankOf(f, inst.lane)),
+        fill: holdFill(inst, f.now),
+      });
     }
 
+    this.beginLabels(LABEL_SIZE);
     // Two passes: white-key notes first so sharps sit above their neighbours.
     for (const blackPass of [false, true]) {
       for (const inst of f.instances) {
         const black = !isWhiteKey(inst.lane);
         if (black !== blackPass) continue;
         if (inst.lane < low || inst.lane > high) continue;
-        if (f.countIn && inst.time < f.now) continue;
+        // §2.4: notes behind the playhead stay on screen during the count-in. They
+        // simply wear their tint like everything else — nothing has been judged.
         const y = hitY - (inst.time - f.now) * pxPerSec;
-        if (y < -30 || y > H + 30) continue;
+        // Cull on the note's own size, so a larger note is not clipped off
+        // the edge before it has fully left the field.
+        if (y < -NOTE_DIAMETER || y > H + NOTE_DIAMETER) continue;
         const g = keyGeometry(inst.lane, low, whiteWidth);
-        // A slim block on the key's own column; the keyboard below names the
-        // pitches this lesson uses, so the note doesn't have to carry a label.
-        this.note(f, g.x + 1, y - 4, g.width - 2, 8, inst, 4);
+        // A circle centred on the key's own column. It shrinks to the key
+        // when the key is narrower than the diameter, so a clip spanning the
+        // whole board still keeps its notes inside their own columns. The
+        // keyboard says where the key is; the letter says which one, without
+        // having to trace down the column.
+        const d = Math.min(NOTE_DIAMETER, g.width - 2);
+        const x = g.x + (g.width - d) / 2;
+        this.note(f, x, y - d / 2, d, d, noteInk(f, inst, this.rankOf(f, inst.lane)), d / 2);
+        // Skipped when the circle is too small to hold the text.
+        if (d >= LABEL_MIN_W) this.label(f, noteLabelOf(f, inst.lane), x + d / 2, y);
       }
     }
+    this.endLabels();
 
-    paintVeil(ctx, f.palette.lane, [0, H], [0, hitY], [0, hitY, W, H - hitY]);
+    for (const m of f.wrongMarks) {
+      if (m.lane < low || m.lane > high) continue;
+      const g = keyGeometry(m.lane, low, whiteWidth);
+      paintWrong(ctx, g.x + g.width / 2, hitY - (m.time - f.now) * pxPerSec,
+        WRONG_DOT_R, f.palette.rating.miss, f.palette.lane);
+    }
+
+    if (f.playing) paintVeil(ctx, f.palette.lane, [0, H], [0, hitY], [0, hitY, W, H - hitY]);
 
     ctx.fillStyle = f.palette.head;
     ctx.fillRect(0, hitY - 1, W, 2);
@@ -145,7 +295,12 @@ export class PianoRoll implements LaneRenderer {
 
   // ----------------------------------------------------------- horizontal
 
-  private drawHorizontal(f: LaneFrame, W: number, H: number): void {
+  private drawHorizontal(f: LaneFrame, fullW: number, fullH: number): void {
+    // The ribbon takes a band off the bottom, so the note field is what is
+    // left. Nothing else in here needs to know it is there.
+    const ribbon = f.chords.length > 0 ? RIBBON_H : 0;
+    const W = fullW;
+    const H = fullH - ribbon;
     const ctx = this.ctx;
     const low = f.lowNote;
     const high = f.highNote;
@@ -187,43 +342,161 @@ export class PianoRoll implements LaneRenderer {
       h: H,
     });
 
-    if (!f.playing) {
-      ctx.fillStyle = f.palette.head;
-      ctx.fillRect(Math.round(hitX) - 1, 0, 2, H);
-      return this.idle(f, trackX + trackW / 2, H / 2);
-    }
-
-    // The blob is deliberately taller than a row so the note name fits — rows
-    // get thin over a three-octave range. Neighbours overlap slightly, which
-    // is how Melodics reads too.
-    const noteW = 16;
-    const h = 26;
     ctx.save();
     ctx.beginPath();
     ctx.rect(trackX, 0, trackW, H);
     ctx.clip();
+
+    // Bars under every head, so a bar reaching a neighbour passes behind it.
     for (const inst of f.instances) {
+      if (inst.duration <= 0) continue;
       if (inst.lane < low || inst.lane > high) continue;
-      if (f.countIn && inst.time < f.now) continue;
       const x = hitX + (inst.time - f.now) * pxPerSec;
       if (x < trackX - 50 || x > W + 50) continue;
-      const y = rowY(inst.lane) + (rowH - h) / 2;
-      // Deliberately taller than a row, with a full pill radius, so the note
-      // name always fits — rows get thin over a three-octave range.
-      this.note(f, x - noteW / 2, y, noteW, h, inst, h / 2);
-      this.label(f, noteName(inst.lane), x, y + h / 2, 8.5);
+      const cy = rowY(inst.lane) + rowH / 2;
+      const len = holdLength(
+        inst.duration * beatPx,
+        this.roomAheadRows(f, inst, rowY, rowH, (i) => hitX + (i.time - f.now) * pxPerSec),
+        x - NOTE_DIAMETER / 2 < trackX || x + NOTE_DIAMETER / 2 > W,
+        holdFloor("scrolling", HEAD_CAP),
+      );
+      if (len === null) continue;
+      paintHold(ctx, {
+        x,
+        y: cy - BAR_ACROSS / 2,
+        w: len,
+        h: BAR_ACROSS,
+        headEnd: "left",
+        headCap: HEAD_CAP,
+        radius: BAR_RADIUS,
+        colour: noteInk(f, inst, this.rankOf(f, inst.lane)),
+        fill: holdFill(inst, f.now),
+      });
+    }
+
+    this.beginLabels(LABEL_SIZE);
+    for (const inst of f.instances) {
+      if (inst.lane < low || inst.lane > high) continue;
+      // §2.4: notes behind the playhead stay on screen during the count-in. They
+      // simply wear their tint like everything else — nothing has been judged.
+      const x = hitX + (inst.time - f.now) * pxPerSec;
+      if (x < trackX - 50 || x > W + 50) continue;
+      // Centred on its row, the same circle the vertical view draws. It is
+      // deliberately bigger than a row — rows get thin over two octaves — so
+      // neighbouring semitones overlap slightly, which is how Melodics reads
+      // too, and it keeps the note legible with its letter inside.
+      const cy = rowY(inst.lane) + rowH / 2;
+      const d = NOTE_DIAMETER;
+      this.note(f, x - d / 2, cy - d / 2, d, d, noteInk(f, inst, this.rankOf(f, inst.lane)), d / 2);
+      this.label(f, noteLabelOf(f, inst.lane), x, cy);
+    }
+    this.endLabels();
+
+    for (const m of f.wrongMarks) {
+      if (m.lane < low || m.lane > high) continue;
+      paintWrong(ctx, hitX + (m.time - f.now) * pxPerSec, rowY(m.lane) + rowH / 2,
+        WRONG_DOT_R, f.palette.rating.miss, f.palette.lane);
     }
     ctx.restore();
 
-    paintVeil(ctx, f.palette.lane, [trackX, 0], [hitX, 0], [trackX, 0, hitX - trackX, H]);
+    if (f.playing) {
+      paintVeil(ctx, f.palette.lane, [trackX, 0], [hitX, 0], [trackX, 0, hitX - trackX, H]);
+    }
 
+    if (ribbon > 0) {
+      this.ribbon = paintRibbon(ctx, {
+        chords: f.chords,
+        beatsPerBar: f.beatsPerBar,
+        absBeat: f.absBeat,
+        fromBeat: f.absBeat - halfBeats,
+        toBeat: f.absBeat + halfBeats,
+        keyFifths: f.keyFifths,
+        overridden: f.chordOverrides,
+        xOfBeat: (beat) => hitX + (beat - f.absBeat) * beatPx,
+        palette: f.palette,
+        theme: f.theme,
+        x: trackX,
+        w: trackW,
+        y: H,
+        // No label column: the keyboard already owns the column to the left
+        // of this canvas, so there is nowhere inside it for one to go.
+        gutter: 0,
+      });
+    }
+
+    // The playhead runs the whole height, ribbon included, so the strip and
+    // the field can never look like they disagree about where you are.
     ctx.fillStyle = f.palette.head;
-    ctx.fillRect(Math.round(hitX) - 1, 0, 2, H);
+    ctx.fillRect(Math.round(hitX) - 1, 0, 2, fullH);
 
     this.countIn(f, W, H);
   }
 
   // ---------------------------------------------------------------- parts
+
+  /**
+   * Where a pitch sits in the lesson's own low-to-high order, which is what
+   * picks its hue. A chord then reads as distinct voices rather than one
+   * block of colour. Falls back to the first hue for a pitch the lesson never
+   * asks for — an imported clip can put one on screen.
+   */
+  private rankOf(f: LaneFrame, pitch: number): number {
+    return Math.max(0, f.hueOrder.indexOf(pitch));
+  }
+
+  /**
+   * Vertical: room a hold has before the next head it would run into.
+   *
+   * "Whose band it would cross" is a real test here, not just a pitch match —
+   * a sharp's column overlaps its neighbours', so a bar running up the C#
+   * column can collide with a head on C or D. Compares the drawn columns.
+   */
+  private roomAhead(
+    f: LaneFrame,
+    inst: LaneFrame["instances"][number],
+    low: number,
+    whiteWidth: number,
+    posOf: (i: LaneFrame["instances"][number]) => number,
+    headSize: number,
+    reverse: boolean,
+  ): number {
+    const mine = keyGeometry(inst.lane, low, whiteWidth);
+    const here = posOf(inst);
+    let room = Infinity;
+    for (const other of f.instances) {
+      if (other === inst || other.time <= inst.time) continue;
+      const theirs = keyGeometry(other.lane, low, whiteWidth);
+      if (theirs.x + theirs.width <= mine.x || theirs.x >= mine.x + mine.width) continue;
+      const gap = reverse ? here - posOf(other) : posOf(other) - here;
+      room = Math.min(room, gap - headSize / 2 - HOLD_CLEARANCE);
+    }
+    return room;
+  }
+
+  /**
+   * Horizontal: the same test against rows. The 26px circle is taller than a
+   * row once the range opens past an octave or so, so a note genuinely
+   * overlaps its neighbours and an exact-row check would miss the collision.
+   */
+  private roomAheadRows(
+    f: LaneFrame,
+    inst: LaneFrame["instances"][number],
+    rowY: (pitch: number) => number,
+    rowH: number,
+    posOf: (i: LaneFrame["instances"][number]) => number,
+  ): number {
+    const myTop = rowY(inst.lane) + rowH / 2 - BAR_ACROSS / 2;
+    const myBottom = myTop + BAR_ACROSS;
+    const here = posOf(inst);
+    let room = Infinity;
+    for (const other of f.instances) {
+      if (other === inst || other.time <= inst.time) continue;
+      const theirTop = rowY(other.lane) + rowH / 2 - NOTE_DIAMETER / 2;
+      if (theirTop + NOTE_DIAMETER <= myTop || theirTop >= myBottom) continue;
+      room = Math.min(room, posOf(other) - here - NOTE_DIAMETER / 2 - HOLD_CLEARANCE);
+    }
+    return room;
+  }
 
   private note(
     f: LaneFrame,
@@ -231,14 +504,12 @@ export class PianoRoll implements LaneRenderer {
     y: number,
     w: number,
     h: number,
-    inst: LaneFrame["instances"][number],
+    colour: string,
     radius?: number,
   ): void {
     const ctx = this.ctx;
     const r = radius ?? RADIUS[f.theme].note;
-    // Piano has no pad LEDs, so everything still to come takes one instrument
-    // colour; only what has been played wears a rating.
-    ctx.fillStyle = inst.resolved ? f.palette.rating[inst.rating!] : f.palette.instrument;
+    ctx.fillStyle = colour;
     if (r <= 0) ctx.fillRect(x, y, w, h);
     else {
       this.roundRect(x, y, w, h, r);
@@ -246,29 +517,76 @@ export class PianoRoll implements LaneRenderer {
     }
   }
 
-  /** The note's name, written on the note so you know which key to press. */
-  private label(f: LaneFrame, text: string, cx: number, cy: number, size: number): void {
+  /**
+   * Text state for a run of note labels. Assigning `ctx.font` re-parses the
+   * font string and re-resolves the family, which is one of the more
+   * expensive things you can do per call on a 2D context — so it is set once
+   * around the note loop rather than once per note.
+   */
+  private beginLabels(size: number): void {
     const ctx = this.ctx;
-    ctx.fillStyle = f.theme === "light" ? "#e9e9ea" : "#0b0b0c";
-    ctx.font = `500 ${size}px ${MONO}`;
-    ctx.textAlign = "center";
+    ctx.font = `700 ${size}px ${MONO}`;
+    ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.fillText(text, cx, cy + 0.5);
-    ctx.textBaseline = "alphabetic";
+    this.metrics ??= {
+      letter: ctx.measureText("C").width,
+      // Measured at the accidental's own size, then restored below.
+      sharp: ((): number => {
+        ctx.font = `700 ${ACCIDENTAL_SIZE}px ${MONO}`;
+        const w = ctx.measureText("#").width;
+        ctx.font = `700 ${size}px ${MONO}`;
+        return w;
+      })(),
+    };
+    this.sharps.length = 0;
   }
 
-  private idle(f: LaneFrame, cx: number, cy: number): void {
+  /**
+   * Flush the accidentals collected during the note loop. They are drawn here,
+   * in one pass, rather than beside their letters — switching `ctx.font` per
+   * note is exactly the cost `beginLabels` exists to avoid, so the size change
+   * happens twice a frame instead of twice a sharp.
+   */
+  private endLabels(): void {
     const ctx = this.ctx;
-    ctx.fillStyle = f.palette.txt3;
-    ctx.font = `500 8.5px ${MONO}`;
-    ctx.textAlign = "center";
-    ctx.fillText("PRESS START FOR THE COUNT-IN", cx, cy);
+    if (this.sharps.length) {
+      ctx.font = `700 ${ACCIDENTAL_SIZE}px ${MONO}`;
+      for (const s of this.sharps) ctx.fillText(s.mark, s.x, s.y);
+      this.sharps.length = 0;
+    }
+    ctx.textBaseline = "alphabetic";
+    ctx.textAlign = "left";
   }
+
+  /**
+   * The note's letter, written on the note so you know which key to press.
+   *
+   * A sharp is set smaller and raised beside the letter rather than being a
+   * second full-size character: "C#" at one size is nearly as wide as the
+   * circle holding it, and the accidental is a qualifier on the letter, not
+   * its equal. The pair is centred as a unit, so a sharp note reads as
+   * balanced in its circle as a natural one.
+   */
+  private label(f: LaneFrame, text: string, cx: number, cy: number): void {
+    const ctx = this.ctx;
+    const m = this.metrics!;
+    ctx.fillStyle = INK[f.theme];
+
+    if (text.length === 1) {
+      ctx.fillText(text, cx - m.letter / 2, cy + 0.5);
+      return;
+    }
+
+    const total = m.letter + ACCIDENTAL_GAP + m.sharp;
+    const x = cx - total / 2;
+    ctx.fillText(text[0], x, cy + 0.5);
+    this.sharps.push({ x: x + m.letter + ACCIDENTAL_GAP, y: cy - ACCIDENTAL_RISE, mark: text[1] });
+  }
+
 
   private countIn(f: LaneFrame, W: number, H: number): void {
     if (!f.countIn) return;
     paintCountIn(this.ctx, {
-      theme: f.theme,
       palette: f.palette,
       beats: f.countInBeats,
       beat: f.countInBeat,
@@ -281,8 +599,15 @@ export class PianoRoll implements LaneRenderer {
     });
   }
 
-  private roundRect(x: number, y: number, w: number, h: number, r: number): void {
+  private roundRect(x: number, y: number, w: number, h: number, radius: number): void {
     const ctx = this.ctx;
+    // Clamp to what the box can actually hold. `arcTo` does not do this: ask
+    // for more than half the shorter side and the two corner arcs overlap,
+    // the path doubles back, and the note renders as a pointed lens with a
+    // spike off each end. Callers ask for `h / 2` meaning "fully rounded
+    // ends", and on a 16x26 note that is wider than the box allows. Native
+    // `ctx.roundRect` and CSS `border-radius` both clamp the same way.
+    const r = Math.max(0, Math.min(radius, w / 2, h / 2));
     ctx.beginPath();
     ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r);

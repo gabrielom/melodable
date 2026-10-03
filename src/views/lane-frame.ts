@@ -10,8 +10,12 @@
  */
 
 import type { NoteInstance } from "@/engine/scoring";
+import type { Engraved, Rest } from "@/engine/notation";
 import type { Palette, Theme } from "@/engine/theme";
-import type { LaneOrientation, PadLayout } from "@/stores/settings";
+import type { InstrumentType } from "@/engine/types";
+import type { WrongMark } from "@/views/lane-geometry";
+import type { Chord } from "@/engine/harmony";
+import type { ColourMode, LaneOrientation, NoteLabel, PadLayout } from "@/stores/settings";
 
 export interface LaneFrame {
   /** Audio-clock now, seconds. */
@@ -40,6 +44,70 @@ export interface LaneFrame {
   /** Notes fall top-to-bottom, or scroll right-to-left onto a playhead. */
   orientation: LaneOrientation;
 
+  /**
+   * How much colour the staff carries. Sheet only — the falling views always
+   * pass `all`, since a lane stack with its hues removed has nothing left to
+   * tell one lane from another.
+   */
+  colourMode: ColourMode;
+  /** Bars whose chord was named by hand: loop bar index -> scale degree. */
+  chordOverrides: Readonly<Record<number, number>>;
+
+  /**
+   * The lesson's key signature, as its place on the circle of fifths. Sheet
+   * only; the falling views have no clef to put it after.
+   */
+  keyFifths: number;
+
+  /**
+   * Name each note by its letter, or by its degree in the key (handoff 11 §1).
+   * Only the *labelling* changes: colour, geometry, the grid and every timing
+   * rule are the same run either way.
+   */
+  labelMode: NoteLabel;
+
+  /**
+   * One chord per bar of the loop, derived from the lesson's own notes; null
+   * where a bar has none. Empty when there is no harmony to show — the ribbon
+   * hides rather than drawing a row of empty blocks (handoff 11 §1.5).
+   */
+  chords: readonly (Chord | null)[];
+
+  /**
+   * Strikes that hit nothing, still fading. Drawn at the playhead on the row
+   * of what was actually played — so a lane the lesson never uses has nowhere
+   * to put one, and the falling views simply do not draw it. Sheet always
+   * can: notation has a place for every pitch.
+   */
+  wrongMarks: readonly WrongMark[];
+
+  /**
+   * Which of the two views this is. The renderer knows already, but the shared
+   * colour rule doesn't — pads and piano take the same hue list in a different
+   * order, so `noteInk` has to be told which.
+   */
+  instrument: InstrumentType;
+
+  /**
+   * The lanes this lesson uses, in the order that assigns hues: pad indices
+   * left-to-right, or the piano's distinct pitches low-to-high. A lane's
+   * *position* in this list picks its colour — not its pad number or its
+   * pitch — so a lane keeps the same hue from one lesson to the next.
+   *
+   * Separate from `padLanes` because that also decides which columns exist,
+   * a job the piano gives to `lowNote`/`highNote` instead.
+   */
+  hueOrder: number[];
+
+  /**
+   * Sheet: the step at or above which a note goes on the treble staff.
+   *
+   * Derived per lesson by `handSplit` and passed in rather than recomputed
+   * per frame, for the same reason `noteValues` is: it must be the *lesson's*
+   * answer, so a note never changes staff as the music scrolls.
+   */
+  staffSplit: number;
+
   /** Pads: pad indices in use, left-to-right. */
   padLanes: number[];
   /** Pads: the controller arrangement, for the mini grid in the gutter. */
@@ -48,6 +116,27 @@ export interface LaneFrame {
   /** Piano: visible key range (inclusive), lane === MIDI pitch. */
   lowNote: number;
   highNote: number;
+
+  /**
+   * Sheet: the engraved value of each onset in the loop, keyed by beat.
+   *
+   * Computed from the whole lesson rather than from `instances`, which only
+   * carries what is on screen — a note's value depends on the gap to the note
+   * *after* it, and that one may not be visible yet.
+   */
+  noteValues: ReadonlyMap<number, Engraved>;
+
+  /**
+   * Sheet: the silences, as rests, **per staff**.
+   *
+   * Two lists because the hands rest independently — deriving one set from
+   * the merged onsets would only find the silences both hands happen to
+   * share. Computed once per lesson beside `noteValues`, and repeated per
+   * loop by the renderer the way the barlines are.
+   */
+  rests: { treble: readonly Rest[]; bass: readonly Rest[] };
+  /** Sheet: the playing pattern's length, which is what a rest's beat is within. */
+  loopBeats: number;
 }
 
 /**
@@ -73,4 +162,12 @@ export interface LaneRenderer {
    * never disagree about the geometry.
    */
   visibleBeats(): VisibleWindow;
+  /**
+   * The loop bar of the chord block under a point, or null.
+   *
+   * Recorded by the last paint, like `visibleBeats`: the ribbon scrolls, so
+   * geometry worked out a second time from a clock that has moved on would
+   * name the wrong bar. Null in a view drawing no ribbon.
+   */
+  ribbonBarAt(x: number, y: number): number | null;
 }

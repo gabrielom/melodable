@@ -11,13 +11,31 @@
  * timestamp mapped onto it) — never Date.now().
  */
 
-import type { Lesson, Rating } from "./types";
-import { RATING_SCORE, TIMING_WINDOWS } from "./types";
+import { gridFor, momentsOf, snapLength, snapTo } from "./quantize";
+import type { HoldResult, Lesson, Rating } from "./types";
+import { HOLD_MIN_BEATS, HOLD_WINDOWS, RATING_SCORE, TIMING_WINDOWS, WRONG_GRACE } from "./types";
 
 /** A lesson note routed to a lane, still in musical time. */
 export interface TargetNote {
   lane: number;
   beat: number;
+  /** Written length in beats; 0 for an instant note. See `NoteEvent`. */
+  duration: number;
+  /**
+   * The length the clip actually carries, before the hold floor flattens it.
+   *
+   * `duration` answers "is this a hold, and how long do I have to keep it
+   * down"; below `HOLD_MIN_BEATS` the answer is no and it is zeroed, which is
+   * exactly right for scoring and exactly wrong for notation. Every quaver at
+   * any tempo is under the floor, so the staff had nothing left to read and
+   * fell back to the gap to the next onset — drawing a quaver followed by a
+   * quaver rest as a **crotchet**, which beams to nothing. A montuno of
+   * running quavers came out as a row of alternating quavers and crotchets.
+   * The chord ribbon already sidesteps this by reading `lesson.notes`; the
+   * staff cannot, because a loop region rebases the beats. So both lengths
+   * travel together and neither has to be re-derived.
+   */
+  written: number;
 }
 
 /** One occurrence of a target note in a specific loop, in clock time. */
@@ -29,6 +47,60 @@ export interface NoteInstance {
   time: number;
   resolved: boolean;
   rating: Rating | null;
+
+  // ---- sustain. All zero/null on an instant note, which is most of them.
+
+  /** Written length in beats. Above `HOLD_MIN_BEATS` this note is held. */
+  duration: number;
+  /** Clock time the written note ends — `time` plus its length. */
+  endTime: number;
+  /** Clock time the player struck it, while the hold is open. */
+  heldFrom: number | null;
+  /** Clock time the player let go. Null until the hold closes. */
+  releasedAt: number | null;
+  /** How much of the written length was covered, once the hold has closed. */
+  hold: HoldResult | null;
+}
+
+/**
+ * What a strike turned out to be: a note of the lesson, graded; or nothing at
+ * all, which is its own kind of answer and not the absence of one.
+ */
+export type HitResult =
+  | { kind: "hit"; rating: Exclude<Rating, "miss">; instance: NoteInstance }
+  /** Nothing was there. Charged. */
+  | { kind: "wrong" }
+  /**
+   * Too far off to grade, but near enough a target to have been an attempt at
+   * it. Not charged — that target's own miss is the charge, and billing both
+   * would take two zeros for one mistake.
+   */
+  | { kind: "ignored" };
+
+/** True for a note long enough that letting go of it is part of playing it. */
+export function isHeldNote(n: { duration: number }): boolean {
+  return n.duration >= HOLD_MIN_BEATS;
+}
+
+/**
+ * Fraction of the written length the player covered, 0..1.
+ *
+ * Measured from the note's *written* onset, not from where the player struck
+ * it. The two judgements are independent by design: striking late is already
+ * an `early`/`late` onset rating, and charging it again to the sustain would
+ * punish one mistake twice. Overholding is not an error at all, so this is
+ * clamped at 1 — only letting go early is information the player can act on.
+ */
+export function heldFraction(inst: NoteInstance, releaseTime: number): number {
+  const length = inst.endTime - inst.time;
+  if (length <= 0) return 1;
+  return Math.min(1, Math.max(0, (releaseTime - inst.time) / length));
+}
+
+export function gradeHold(fraction: number): HoldResult {
+  if (fraction >= HOLD_WINDOWS.held) return "held";
+  if (fraction >= HOLD_WINDOWS.short) return "short";
+  return "dropped";
 }
 
 /**
@@ -73,17 +145,88 @@ export function classify(dtSeconds: number): Exclude<Rating, "miss"> | null {
 }
 
 /**
- * Route a lesson's notes into lanes. Notes whose pitch has no lane (an
- * unmapped drum note, say) are dropped — better than grading a lane the
- * player can't see.
+ * Route a lesson's notes into lanes, on the grid the clip is written on.
+ *
+ * Notes whose pitch has no lane (an unmapped drum note, say) are dropped —
+ * better than grading a lane the player can't see.
+ *
+ * **This is the one place an imported clip's timing is straightened**, and it
+ * is here because it is the single funnel every reader comes through: the
+ * scorer grades these beats, the transport schedules them, and all four
+ * renderers draw them. Quantising anywhere further downstream would put a
+ * note's drawn position and its graded position on different beats, and the
+ * playhead is the grading line — they have to be the same number.
+ *
+ * `lesson.notes` keeps the raw timing. The chord ribbon still reads it, for
+ * the reason it gives: it needs lengths before the hold floor flattens them.
+ *
+ * A lesson that was authored on the grid — every built-in — snaps to itself,
+ * so this is a no-op for the library and only bites on imports. What it costs
+ * is that a clip played with swing or rubato is graded as though it were
+ * even, which for a trainer is the right way round: the exercise is to play
+ * in time, not to reproduce someone else's wobble.
  */
 export function lessonTargets(lesson: Lesson, laneOf: (pitch: number) => number | null): TargetNote[] {
+  const grid = gridFor(momentsOf(lesson.notes));
   const out: TargetNote[] = [];
   for (const n of lesson.notes) {
     const lane = laneOf(n.pitch);
-    if (lane !== null) out.push({ lane, beat: n.time });
+    // A length under the floor is an ornament, not a hold — normalised away
+    // here so nothing downstream has to keep re-deciding.
+    if (lane !== null) {
+      const written = snapLength(n.time, n.duration ?? 0, grid);
+      out.push({
+        lane,
+        beat: snapTo(n.time, grid),
+        duration: written >= HOLD_MIN_BEATS ? written : 0,
+        written,
+      });
+    }
   }
   return out.sort((a, b) => a.beat - b.beat);
+}
+
+/** How one lane went over a run. `accuracy` is 0..1, score-weighted like the run's. */
+export interface LaneStat {
+  lane: number;
+  accuracy: number;
+  /** Notes struck early and late — which way the lane drifted. */
+  early: number;
+  late: number;
+  /** Notes of this lane resolved in the run. */
+  total: number;
+}
+
+/** A weakest lane, ready to draw: which way it leant, when it clearly did. */
+export interface WeakLane extends LaneStat {
+  drift: "early" | "late" | null;
+}
+
+/** How many weakest lanes the summary names. */
+export const WEAKEST_LANES = 3;
+
+/**
+ * The lanes that need work most: the lowest first, at most `WEAKEST_LANES`.
+ *
+ * A lane is left out once it reads 100 — judged on the number shown, the
+ * same stance `passes` takes, so a lane is never listed beside a score of
+ * 100. A clean run has nothing to show. Ties go to the lane with more notes,
+ * where the same accuracy is the steadier reading, then to the lower lane so
+ * the order holds still between identical runs.
+ *
+ * Drift is the reason `early` and `late` are split at all — "you rush E4" is
+ * something to act on in a way "E4 is 64%" is not. It names the side a lane
+ * leant to, and nothing when it leant to neither.
+ */
+export function weakestLanes(stats: readonly LaneStat[], limit = WEAKEST_LANES): WeakLane[] {
+  return stats
+    .filter((l) => Math.round(l.accuracy * 100) < 100)
+    .sort((a, b) => a.accuracy - b.accuracy || b.total - a.total || a.lane - b.lane)
+    .slice(0, limit)
+    .map((l) => ({
+      ...l,
+      drift: l.early === l.late ? null : l.early > l.late ? "early" : "late",
+    }));
 }
 
 export class Scorer {
@@ -101,6 +244,9 @@ export class Scorer {
   combo = 0;
   bestCombo = 0;
 
+  /** Strikes that landed on nothing. See `hit`. */
+  private wrong = 0;
+
   /** How many notes landed in each band, for the end-of-run breakdown. */
   private counts: Record<Rating, number> = {
     perfect: 0,
@@ -109,6 +255,24 @@ export class Scorer {
     late: 0,
     miss: 0,
   };
+
+  /**
+   * `counts`, per lane — the same notes, filed by the lane they were written
+   * on. Kept as the run goes, beside `counts`, so it covers every repeat:
+   * the version this replaces read the surviving instances at the end, and
+   * those are only the last few repeats, `prune` having dropped the rest.
+   */
+  private laneCounts = new Map<number, Record<Rating, number>>();
+
+  /**
+   * The sustain tally, kept apart from `counts` on purpose: a hold is a second
+   * judgement on the same note, so folding it into the rating counts would
+   * make a run look like it had twice as many notes as it does.
+   */
+  private holdCounts: Record<HoldResult, number> = { held: 0, short: 0, dropped: 0 };
+
+  /** Notes currently being held, at most one per lane. */
+  private open = new Map<number, NoteInstance>();
 
   constructor(targets: TargetNote[]) {
     this.targets = targets;
@@ -124,32 +288,37 @@ export class Scorer {
     return this.counts;
   }
 
+  /** How the run's held notes were sustained. Empty when nothing was held. */
+  get holdTally(): Readonly<Record<HoldResult, number>> {
+    return this.holdCounts;
+  }
+
+
   /**
-   * Per-lane breakdown for the summary: how accurate the lane was, and which
-   * way it drifted. The drift column is the reason splitting `early` from
-   * `late` is worth doing — "you rush the snare" is actionable in a way that
-   * "you are 78% on the snare" is not.
+   * How each lane went over the whole run, for the summary's weakest lanes.
+   * Only the lesson's notes: a wrong note is outside every lane's figure for
+   * the reason it is outside `tally`. A lane with nothing resolved is absent.
    */
-  laneStats(): Array<{ lane: number; accuracy: number; early: number; late: number; total: number }> {
-    const by = new Map<number, { points: number; total: number; early: number; late: number }>();
-    for (const inst of this.all) {
-      if (!inst.resolved || !inst.rating) continue;
-      const e = by.get(inst.lane) ?? { points: 0, total: 0, early: 0, late: 0 };
-      e.points += RATING_SCORE[inst.rating] / 100;
-      e.total += 1;
-      if (inst.rating === "early") e.early += 1;
-      if (inst.rating === "late") e.late += 1;
-      by.set(inst.lane, e);
+  laneStats(): LaneStat[] {
+    const out: LaneStat[] = [];
+    for (const [lane, c] of this.laneCounts) {
+      const total = c.perfect + c.great + c.early + c.late + c.miss;
+      if (total === 0) continue;
+      let points = 0;
+      for (const r of Object.keys(c) as Rating[]) points += (RATING_SCORE[r] / 100) * c[r];
+      out.push({ lane, accuracy: points / total, early: c.early, late: c.late, total });
     }
-    return [...by.entries()]
-      .map(([lane, e]) => ({
-        lane,
-        accuracy: e.total === 0 ? 1 : e.points / e.total,
-        early: e.early,
-        late: e.late,
-        total: e.total,
-      }))
-      .sort((a, b) => a.accuracy - b.accuracy);
+    return out;
+  }
+
+  /** File a resolved note under its lane, beside `counts`. */
+  private countLane(lane: number, rating: Rating): void {
+    let c = this.laneCounts.get(lane);
+    if (!c) {
+      c = { perfect: 0, great: 0, early: 0, late: 0, miss: 0 };
+      this.laneCounts.set(lane, c);
+    }
+    c[rating] += 1;
   }
 
   /** Score-weighted accuracy 0..1 over everything resolved so far. */
@@ -174,16 +343,36 @@ export class Scorer {
         time: timeOf(loopIndex, t.beat),
         resolved: false,
         rating: null,
+        duration: t.duration,
+        endTime: timeOf(loopIndex, t.beat + t.duration),
+        heldFrom: null,
+        releasedAt: null,
+        hold: null,
       });
     }
   }
 
+  /** How many strikes hit nothing at all. */
+  get wrongCount(): number {
+    return this.wrong;
+  }
+
   /**
    * Grade a strike on `lane` at clock time `time` against the nearest
-   * unresolved instance in that lane. Returns null for a stray hit (nothing
-   * within the "good" window) — unpenalized in v1, per the plan.
+   * unresolved instance in that lane.
+   *
+   * A strike with no target inside the loose window is a **wrong note**: it
+   * covers both a lane the lesson never asks for, which has no instances at
+   * all, and a lane it does ask for struck nowhere near one of them. There is
+   * no third case, so one rule answers both.
+   *
+   * A wrong note is charged like a note you were asked for and did not play:
+   * it adds to the denominator with no points, and it breaks the combo. It is
+   * counted apart from `tally` on purpose — the same reason holds are. The
+   * tally answers "how did the lesson's notes go", and a strike that was not
+   * one of them would inflate that count with a note nobody wrote.
    */
-  hit(lane: number, time: number): { rating: Exclude<Rating, "miss">; instance: NoteInstance } | null {
+  hit(lane: number, time: number): HitResult {
     let best: NoteInstance | null = null;
     let bestDt = Infinity;
     for (const inst of this.all) {
@@ -194,20 +383,112 @@ export class Scorer {
         best = inst;
       }
     }
-    if (!best || bestDt > TIMING_WINDOWS.loose) return null;
+    if (!best || bestDt > TIMING_WINDOWS.loose) {
+      // Near a target of this lane — resolved or not — and so an attempt at
+      // it, however bad. `resolved` is deliberately not consulted: by the time
+      // a late strike lands, the note it was aimed at has usually already been
+      // swept as a miss, and that is exactly the case this must not charge.
+      for (const inst of this.all) {
+        if (inst.lane === lane && Math.abs(inst.time - time) <= WRONG_GRACE) {
+          return { kind: "ignored" };
+        }
+      }
+      this.wrong += 1;
+      this.total += 1;
+      this.loopTotal += 1;
+      this.combo = 0;
+      return { kind: "wrong" };
+    }
 
     const rating = classify(time - best.time)!;
     best.resolved = true;
     best.rating = rating;
     const pts = RATING_SCORE[rating] / 100;
     this.counts[rating] += 1;
+    this.countLane(best.lane, rating);
     this.hitPoints += pts;
     this.total += 1;
     this.loopHitPoints += pts;
     this.loopTotal += 1;
     this.combo += 1;
     this.bestCombo = Math.max(this.bestCombo, this.combo);
-    return { rating, instance: best };
+
+    // A lane can only be held once at a time, so striking it again ends
+    // whatever was sounding — treated as a release at this instant, the same
+    // way a keyboard behaves.
+    this.closeHold(best.lane, time);
+    if (isHeldNote(best)) {
+      best.heldFrom = time;
+      this.open.set(best.lane, best);
+    }
+    return { kind: "hit", rating, instance: best };
+  }
+
+  /**
+   * The player let go of `lane` at clock time `time`. Grades whatever hold was
+   * open there and returns it, or null if nothing was.
+   *
+   * A release with no open hold is not an error and not scored: it is a
+   * note-off for a stray hit, or for a note whose hold already closed at its
+   * written end because the player overheld it.
+   */
+  release(lane: number, time: number): NoteInstance | null {
+    return this.closeHold(lane, time);
+  }
+
+  /**
+   * Close any hold on `lane` and judge it. The one path that ever writes a
+   * `hold` result, so the combo rule lives here too: letting go of over half
+   * the note keeps the run alive, dropping it does not.
+   */
+  private closeHold(lane: number, time: number): NoteInstance | null {
+    const inst = this.open.get(lane);
+    if (!inst) return null;
+    this.open.delete(lane);
+    inst.releasedAt = time;
+    inst.hold = gradeHold(heldFraction(inst, time));
+    this.holdCounts[inst.hold] += 1;
+    // A short hold survives; a dropped one is a note you did not really play.
+    if (inst.hold === "dropped") this.combo = 0;
+    return inst;
+  }
+
+  /**
+   * Close holds that have run past the note's written end, at clock time
+   * `now`. Call once a frame.
+   *
+   * This is also what makes a controller that never sends note-off harmless:
+   * its holds simply close on time and read as `held`, so the player is
+   * scored on their onsets and not marked down for hardware that cannot
+   * report a release. It is the same rule as overholding, which the design
+   * says is not an error.
+   */
+  sweepHolds(now: number): NoteInstance[] {
+    const closed: NoteInstance[] = [];
+    for (const [lane, inst] of this.open) {
+      if (now >= inst.endTime) {
+        this.open.delete(lane);
+        closed.push(this.closeHoldAt(inst, inst.endTime));
+      }
+    }
+    return closed;
+  }
+
+  /** `closeHold` for an instance already taken out of the open table. */
+  private closeHoldAt(inst: NoteInstance, time: number): NoteInstance {
+    inst.releasedAt = time;
+    inst.hold = gradeHold(heldFraction(inst, time));
+    this.holdCounts[inst.hold] += 1;
+    if (inst.hold === "dropped") this.combo = 0;
+    return inst;
+  }
+
+  /** End of the run: whatever is still held is judged with what we have. */
+  closeAllHolds(now: number): void {
+    for (const [lane, inst] of this.open) {
+      this.open.delete(lane);
+      this.closeHoldAt(inst, Math.min(now, inst.endTime));
+    }
   }
 
   /**
@@ -222,6 +503,7 @@ export class Scorer {
         inst.resolved = true;
         inst.rating = "miss";
         this.counts.miss += 1;
+        this.countLane(inst.lane, "miss");
         this.total += 1;
         this.loopTotal += 1;
         missed.push(inst);
@@ -243,16 +525,120 @@ export class Scorer {
     return acc;
   }
 
-  /** Drop instances from loops before `loopIndex` (they've scrolled away). */
+  /**
+   * Drop instances from loops before `loopIndex` (they've scrolled away).
+   *
+   * A hold open on a pruned instance goes with it: the note is off screen and
+   * out of the scorer, so there is nothing left for a release to close. In
+   * practice this cannot happen — an instance is only pruned once it has
+   * scrolled past the lane's trailing edge, long after its own end — but the
+   * open table must not outlive `all` or a release would grade a ghost.
+   */
   pruneBefore(loopIndex: number): void {
     this.all = this.all.filter((i) => i.loopIndex >= loopIndex);
     for (const l of this.spawned) if (l < loopIndex) this.spawned.delete(l);
-  }
-
-  /** Recompute unresolved instance times after a tempo change. */
-  retime(timeOf: (loopIndex: number, beat: number) => number): void {
-    for (const inst of this.all) {
-      if (!inst.resolved) inst.time = timeOf(inst.loopIndex, inst.beat);
+    for (const [lane, inst] of this.open) {
+      if (inst.loopIndex < loopIndex) this.open.delete(lane);
     }
   }
+
+  /**
+   * Recompute unresolved instance times after a tempo change.
+   *
+   * `endTime` moves with `time`, so a held note keeps its written length in
+   * beats rather than in seconds — slowing down makes the hold longer, which
+   * is what "half a bar" means. A note already being held is left alone: its
+   * onset is settled, and shifting the end under the player mid-hold would
+   * change the answer to a question they are still answering.
+   */
+  retime(timeOf: (loopIndex: number, beat: number) => number): void {
+    for (const inst of this.all) {
+      if (inst.resolved) continue;
+      inst.time = timeOf(inst.loopIndex, inst.beat);
+      inst.endTime = timeOf(inst.loopIndex, inst.beat + inst.duration);
+    }
+  }
+}
+
+/** Inclusive range of repeats that overlap the visible slice of the run. */
+export interface LoopSpan {
+  first: number;
+  last: number;
+}
+
+/**
+ * Which repeats need instances for the lane to be able to draw them.
+ *
+ * The lane shows a fixed number of bars either side of the playhead, and the
+ * pattern is usually shorter than that — a one-bar groove in a five-bar lane
+ * fits five times over. Spawning a fixed "current and next" left the rest of
+ * the track empty, so notes appeared partway across it rather than scrolling
+ * in from the edge.
+ *
+ * `behind`/`ahead` come from the renderer's own last-drawn window, so what is
+ * spawned and what is drawn are derived from the same numbers. The current
+ * repeat and the one after it are always included: during a count-in the
+ * window is not meaningful yet, and a strike landing just before a repeat's
+ * first note still needs that instance to exist to be graded against.
+ */
+/**
+ * The run parked at its first beat, for the lane to draw before the transport
+ * starts — so opening a lesson shows what you are about to play instead of an
+ * empty field.
+ *
+ * These are throwaway instances for a single frame: never graded, never held.
+ * The real ones come from `spawnLoop` once the transport is running, which is
+ * why this does not touch the scorer at all.
+ *
+ * `now` is the clock time the playhead sits at, so beat 0 lands exactly on it
+ * and everything after it falls to the right. That is the same position the
+ * lane reaches the instant the count-in ends.
+ */
+export function previewInstances(
+  targets: readonly TargetNote[],
+  loopBeats: number,
+  totalLoops: number,
+  secPerBeat: number,
+  now: number,
+  aheadBeats: number,
+): NoteInstance[] {
+  const lb = Math.max(1e-9, loopBeats);
+  const ahead = Math.max(0, aheadBeats);
+  const loops = Number.isFinite(totalLoops) ? Math.max(1, Math.floor(totalLoops)) : 1;
+  const lastLoop = Math.min(loops - 1, Math.floor(ahead / lb));
+  const out: NoteInstance[] = [];
+  for (let l = 0; l <= lastLoop; l++) {
+    for (let i = 0; i < targets.length; i++) {
+      const beat = l * lb + targets[i].beat;
+      if (beat > ahead) continue;
+      out.push({
+        id: `${l}:${i}`,
+        lane: targets[i].lane,
+        beat: targets[i].beat,
+        loopIndex: l,
+        time: now + beat * secPerBeat,
+        resolved: false,
+        rating: null,
+        duration: targets[i].duration,
+        endTime: now + (beat + targets[i].duration) * secPerBeat,
+        heldFrom: null,
+        releasedAt: null,
+        hold: null,
+      });
+    }
+  }
+  return out;
+}
+
+export function visibleLoopSpan(
+  absBeat: number,
+  loopBeats: number,
+  behind: number,
+  ahead: number,
+): LoopSpan {
+  const lb = Math.max(1e-9, loopBeats);
+  const current = Math.floor(absBeat / lb);
+  const first = Math.max(0, Math.min(current, Math.floor((absBeat - Math.max(0, behind)) / lb)));
+  const last = Math.max(first, current + 1, Math.floor((absBeat + Math.max(0, ahead)) / lb));
+  return { first, last };
 }
