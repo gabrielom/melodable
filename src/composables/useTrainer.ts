@@ -1187,14 +1187,18 @@ export function useTrainer(
   /**
    * The other hand of a one-hand step, played back so the music still sounds
    * whole (the user's choice of handoff 15's open question, as Melodics does
-   * it). On the notes bus — it is the instrument playing, not a guide — at its
-   * written length, a little under the player's own touch.
+   * it).
+   *
+   * **In the guide's own voice** — same level, same length, same bus — so a
+   * one-hand step with nobody playing sounds exactly like the both-hands
+   * lesson does with the guide up. It had its own (louder, cut to each note's
+   * written length, on the notes bus) and the user heard the two hands as two
+   * different instruments. Only when the guide fader is down does it move to
+   * the notes bus, because the other hand is played back whether the guide
+   * is wanted or not.
    */
-  function accompanimentVoice(lane: number, at: number, beats: number): void {
-    // Never shorter than a key struck and let go: a fast quaver at its exact
-    // written length is a click, not a note.
-    const seconds = Math.min(4, Math.max(0.3, beats * transport.secPerBeat));
-    audio.playNote(lane, at, 0.55, beats > 0 ? seconds : 0.9, "notes");
+  function accompanimentVoice(lane: number, at: number): void {
+    audio.playNote(lane, at, 0.4, 0.9, settings.volGuide > 0 ? "guide" : "notes");
   }
 
   /**
@@ -1217,7 +1221,7 @@ export function useTrainer(
         const ab = L * lb + t.beat;
         if (ab >= Math.max(fromBeat, 0) && ab < toBeat) {
           const at = transport.timeOfAbsBeat(ab);
-          if (t.accompaniment) accompanimentVoice(t.lane, at, t.written);
+          if (t.accompaniment) accompanimentVoice(t.lane, at);
           else if (guide.value) guideVoice(t.lane, at);
         }
       }

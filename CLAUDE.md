@@ -465,10 +465,14 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   both-hands ones. The scorer never hits, misses or counts them; striking
   one near its time is `along` — no charge, **no dot** (it is not a mistake);
   far from any note it is wrong as ever. `noteInk` greys it (`txt3`) in
-  every colour mode, the overview strip too. Playback is on the **notes
-  bus** at written length, never under 0.3s (guide bus would be silent by
-  default), and a one-hand *stop* cancels that bus as well; a run that ends
-  on its own does not, so its last chord rings out. **The voice's envelope
+  every colour mode, the overview strip too. **Playback is in the guide's
+  own voice** (`playNote` at 0.4 for 0.9s, the guide bus) so a one-hand step
+  with nobody playing sounds exactly like the both-hands lesson with the
+  guide up — the user heard the first version (louder, cut to written
+  length, notes bus) as a different instrument. With the guide fader at zero
+  it moves to the notes bus, since the other hand plays regardless; a
+  one-hand *stop* cancels that bus as well, and a run that ends on its own
+  does not, so its last chord rings out. **The voice's envelope
   is `noteEnvelope`**, which keeps peak, settle and silence in order for any
   length: its settle point was a fixed 0.16s, and a note shorter than that
   (a quaver at 200 BPM is 0.15s) fell silent and swelled back — Web Audio
