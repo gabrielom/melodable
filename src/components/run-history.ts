@@ -25,7 +25,7 @@ const PLOT_X0 = 26;
  * figure, which is the summary as it was before the lanes came back. Only
  * this end moves — nothing else in the figure is resized to make room.
  */
-export const PLOT_END = { full: 614, withLanes: 424 } as const;
+export const PLOT_END = { full: 614, withLanes: 372 } as const;
 /** 0% sits at y=132, 100% at y=22: `y(v) = 132 − 1.1v`. */
 const PLOT_Y0 = 132;
 const PLOT_SPAN = 110;
@@ -41,15 +41,17 @@ export const CURRENT_DOT_R = 4.1;
 export const GRID_VALUES = [100, 50] as const;
 
 /**
- * The weakest lanes' column. Up to three bars, 24 wide on a 54 pitch, rising
- * from the plot's own zero line; the divider stands between the two halves.
+ * The weakest lanes' column (handoff 15 §03). Up to five bars, 24 wide on a 40
+ * pitch, rising from the plot's own zero line; the divider stands between the
+ * two halves. Fewer lanes keep the pitch and leave the empty slots on the
+ * right — the bars are never stretched to fill.
  */
 export const LANES = {
-  divider: 439,
-  x0: 454,
+  divider: 387,
+  x0: 402,
   x1: PLOT_END.full,
-  first: 468,
-  pitch: 54,
+  first: 416,
+  pitch: 40,
   barW: 24,
   nameY: 146,
   leanY: 157,
@@ -263,7 +265,7 @@ export interface LaneBar {
  * The weakest lanes as bars on the history's axis (handoff 14 §02): a lane at
  * 64% stands exactly as high as a run at 64% would sit, so the dashed line
  * carrying this run's score across them shows at a glance which fell short.
- * Weakest first, left to right; at most three are ever passed in.
+ * Weakest first, left to right; at most five are ever passed in.
  */
 export function laneBars(lanes: readonly { accuracy: number }[]): LaneBar[] {
   return lanes.map((l, i) => {

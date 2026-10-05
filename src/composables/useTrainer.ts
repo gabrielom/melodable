@@ -13,7 +13,8 @@ import { useLessons } from "@/stores/lessons";
 import { useHistory } from "@/stores/history";
 import { useChords } from "@/stores/chords";
 import { useCourses } from "@/stores/courses";
-import { qualifies, stepReport, type StepReport } from "@/engine/course";
+import { qualifies, stepKey, stepReport, type StepReport } from "@/engine/course";
+import { handsOf, stepHandsFor, type StepHand } from "@/engine/hands";
 import { authoredKey } from "@/engine/lesson-edit";
 import type { HoldResult, LinkState, Rating } from "@/engine/types";
 import {
@@ -190,7 +191,38 @@ export function useTrainer(
     return isPiano.value ? pitch : noteToPad(pitch);
   }
 
-  const targets = computed(() => lessonTargets(lesson.value, laneOf));
+  /**
+   * Which hand this run is graded on: one, during a song part's one-hand step
+   * (handoff 15), and both otherwise. Chosen with the lesson in the library
+   * store; a hand the lesson has no notes for falls back to both, so a stale
+   * choice can never leave a run with nothing to play.
+   */
+  const hand = computed<StepHand>(() => {
+    const h = lessons.hand;
+    return h !== "BOTH" && stepHandsFor(lesson.value).includes(h) ? h : "BOTH";
+  });
+
+  /**
+   * The notes of the other hand, index for index with `lesson.notes`, during
+   * a one-hand step — undefined otherwise. They stay in `targets` so the lane,
+   * the staff, the key and the hues are exactly the both-hands ones; they are
+   * only marked, and the scorer, the renderers and the playback each read the
+   * mark.
+   */
+  const accompany = computed(() => {
+    if (hand.value === "BOTH") return undefined;
+    return handsOf(lesson.value.notes).map((h) => h !== hand.value);
+  });
+
+  const targets = computed(() => lessonTargets(lesson.value, laneOf, accompany.value));
+  /** The steps a song part has, for the summary's report — by lesson id. */
+  function handsOfLesson(id: string): StepHand[] {
+    const l = lessons.lessons.find((x) => x.id === id);
+    return l ? stepHandsFor(l) : ["BOTH"];
+  }
+
+  /** The notes this run grades — every note, unless one hand is being learned. */
+  const gradedCount = computed(() => targets.value.filter((t) => !t.accompaniment).length);
 
   /** Piano: the distinct pitches this lesson asks for — the keys to mark. */
   const lessonPitches = computed(() =>
@@ -575,7 +607,7 @@ export function useTrainer(
     // The count-in occupies the first stretch of the visible window, so only
     // the remainder of it can hold run content.
     const runAhead = Math.max(0, ahead - transport.countInBeats);
-    const key = `${lesson.value.id}|${transport.loopBeats}|${transport.totalLoops}|${Math.ceil(runAhead)}`;
+    const key = `${lesson.value.id}|${hand.value}|${transport.loopBeats}|${transport.totalLoops}|${Math.ceil(runAhead)}`;
     if (!previewCache || previewCache.key !== key) {
       previewCache = {
         key,
@@ -759,7 +791,7 @@ export function useTrainer(
     //
     // The click and the guide are queued ahead of the playhead; without this
     // they keep sounding for a beat or two after the transport has stopped.
-    audio.cancelScheduled("metronome", "guide");
+    cancelPlayback();
   }
 
   /**
@@ -864,7 +896,7 @@ export function useTrainer(
     wrongMarks.length = 0;
     transport.stop();
     playing.value = false;
-    audio.cancelScheduled("metronome", "guide");
+    cancelPlayback();
     transport = new Transport({
       bpm: lesson.value.bpm,
       bars: lesson.value.bars,
@@ -974,6 +1006,9 @@ export function useTrainer(
     if (transport.position(now).countIn) return null;
     const at = time ?? now;
     const res = scorer.hit(lane, at);
+    // Played along with the other hand of a one-hand step: no charge, and no
+    // dot either — it is not a mistake, only not the hand being learned.
+    if (res.kind === "along") return null;
     if (res.kind !== "hit") {
       // Both kinds get a dot, because both are a strike the player can see
       // they made. Only `wrong` is charged — an `ignored` one was near enough
@@ -1067,7 +1102,7 @@ export function useTrainer(
             audio.click(transport.timeOfAbsBeat(c.absBeat), c.accent);
           }
         }
-        if (guide.value) scheduleGuide(win.from, win.to);
+        if (guide.value || accompany.value) schedulePlayback(win.from, win.to);
       }
 
       // Spawn every repeat the lane can actually see, not a fixed two. The
@@ -1149,19 +1184,49 @@ export function useTrainer(
     else audio.playDrum(PADS[lane].type, at, 0.45, "guide");
   }
 
-  /** Play the target part quietly so the player can hear what to aim for. */
-  function scheduleGuide(fromBeat: number, toBeat: number): void {
+  /**
+   * The other hand of a one-hand step, played back so the music still sounds
+   * whole (the user's choice of handoff 15's open question, as Melodics does
+   * it). On the notes bus — it is the instrument playing, not a guide — at its
+   * written length, a little under the player's own touch.
+   */
+  function accompanimentVoice(lane: number, at: number, beats: number): void {
+    const seconds = Math.min(4, Math.max(0.15, beats * transport.secPerBeat));
+    audio.playNote(lane, at, 0.55, beats > 0 ? seconds : 0.9, "notes");
+  }
+
+  /**
+   * What the app plays under the run: the guide part, quietly, when its fader
+   * is up — so the player can hear what to aim for — and the other hand of a
+   * one-hand step, always.
+   *
+   * Off the pattern the transport is playing, so a loop region schedules its
+   * own notes and not the lesson's from beat 0.
+   */
+  function schedulePlayback(fromBeat: number, toBeat: number): void {
     const lb = transport.loopBeats;
     const firstLoop = Math.max(0, Math.floor(fromBeat / lb));
     const lastLoopIdx = Math.floor(toBeat / lb) + 1;
     for (let L = firstLoop; L <= lastLoopIdx; L++) {
-      for (const t of targets.value) {
+      for (const t of patternTargets.value) {
         const ab = L * lb + t.beat;
         if (ab >= Math.max(fromBeat, 0) && ab < toBeat) {
-          guideVoice(t.lane, transport.timeOfAbsBeat(ab));
+          const at = transport.timeOfAbsBeat(ab);
+          if (t.accompaniment) accompanimentVoice(t.lane, at, t.written);
+          else if (guide.value) guideVoice(t.lane, at);
         }
       }
     }
+  }
+
+  /**
+   * Silence what the app has queued ahead of the playhead. The other hand is
+   * on the notes bus, so a one-hand step clears that too — otherwise up to a
+   * second of it would play on after the run has stopped.
+   */
+  function cancelPlayback(): void {
+    if (accompany.value) audio.cancelScheduled("metronome", "guide", "notes");
+    else audio.cancelScheduled("metronome", "guide");
   }
 
   /**
@@ -1178,10 +1243,14 @@ export function useTrainer(
     syncStats();
 
     const acc = scorer.accuracy;
+    // One hand's runs are a history of their own: a right hand alone and both
+    // hands together are different exercises, and one chart mixing them would
+    // climb and fall with whichever was played last.
+    const historyKey = stepKey(lesson.value.id, hand.value);
     // Read the previous best *before* recording, or this run would be its own
     // predecessor and nothing could ever be a new best.
-    const previousBest = history.best(lesson.value.id);
-    history.record(lesson.value.id, acc);
+    const previousBest = history.best(historyKey);
+    history.record(historyKey, acc);
 
     // A step of a song counts towards it — at the lesson's own tempo only.
     // Progress is read on either side of the record so the summary can say
@@ -1190,13 +1259,15 @@ export function useTrainer(
     let step: StepReport | null = null;
     if (course) {
       const before = courses.progressOf(course.id);
-      courses.record(course.id, lesson.value.id, acc, transport.bpm, lesson.value.bpm);
+      courses.record(course.id, historyKey, acc, transport.bpm, lesson.value.bpm);
       step = stepReport(
         course,
         before,
         courses.progressOf(course.id),
         lesson.value.id,
         qualifies(transport.bpm, lesson.value.bpm),
+        hand.value,
+        handsOfLesson,
       );
     }
     runResult.value = {
@@ -1206,7 +1277,7 @@ export function useTrainer(
       tally: { ...scorer.tally },
       holds: { ...scorer.holdTally },
       wrong: scorer.wrongCount,
-      attempts: [...history.attempts(lesson.value.id)],
+      attempts: [...history.attempts(historyKey)],
       step,
       lanes: weakestLanes(scorer.laneStats()).map((l) => ({
         ...l,
@@ -1216,7 +1287,7 @@ export function useTrainer(
 
     transport.stop();
     playing.value = false;
-    audio.cancelScheduled("metronome", "guide");
+    cancelPlayback();
     runComplete.value = true;
 
     // Inside a song the summary's NEXT is the way forward, and it goes to the
@@ -1292,10 +1363,10 @@ export function useTrainer(
   // trainer to a ready state for the new lesson — and so does editing one,
   // which replaces the lesson object: a new tempo has to reach the transport,
   // and the transport is only built here.
-  watch(
-    () => lesson.value,
-    () => resetForLesson(),
-  );
+  //
+  // Changing hand is the same: the other hand's notes stop being graded, or
+  // start, and the scorer is only built here.
+  watch([() => lesson.value, hand], () => resetForLesson());
 
   // Rebuild the renderer when the canvas mounts/swaps, the instrument changes
   // (pads ↔ piano use different canvases and renderers), or the view mode does.
@@ -1315,6 +1386,8 @@ export function useTrainer(
 
   return {
     lesson,
+    hand,
+    gradedCount,
     playing,
     runComplete,
     runResult,

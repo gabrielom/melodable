@@ -33,7 +33,8 @@ import { chordName, diatonicTriad, romanOf } from "@/engine/harmony";
 import RunSummary from "@/components/RunSummary.vue";
 import SongLightbox from "@/components/SongLightbox.vue";
 import KeyMenu from "@/components/KeyMenu.vue";
-import { openingStep, songState } from "@/engine/course";
+import { songState, stepLabel } from "@/engine/course";
+import { HAND_TITLE, describeStep, stepHandsFor, type StepHand } from "@/engine/hands";
 import { lessonRepeats } from "@/engine/scoring";
 import type { LessonEdit } from "@/engine/lesson-edit";
 import { isDrumPadNote, portToOpen } from "@/engine/midi-port";
@@ -67,44 +68,71 @@ const courses = useCourses();
  */
 const songMenu = ref<string | null>(null);
 
+/**
+ * The steps each song part is learned in: right hand, left hand and both for
+ * a piano part that has notes in both hands (handoff 15), both alone for
+ * everything else. Read off the lesson, so it follows an edit or an import.
+ */
+function handsOfLesson(id: string): StepHand[] {
+  const l = lessons.lessons.find((x) => x.id === id);
+  return l ? stepHandsFor(l) : ["BOTH"];
+}
+
 const songMenuState = computed(() => {
   const c = courses.courses.find((x) => x.id === songMenu.value);
-  return c ? songState(c, courses.progressOf(c.id)) : null;
+  return c ? songState(c, courses.progressOf(c.id), handsOfLesson) : null;
 });
 /** How many sections of each song are complete — edit mode names it on the card. */
 const songsComplete = computed<Record<string, number>>(() =>
   Object.fromEntries(
-    courses.courses.map((c) => [c.id, songState(c, courses.progressOf(c.id)).passedCount]),
+    courses.courses.map((c) => [c.id, songState(c, courses.progressOf(c.id), handsOfLesson).passedCount]),
   ),
 );
 
-/** Each section's run length and tempo, for the picker's rows and meta line. */
+/**
+ * Each section's run length and tempo, for the picker's rows and meta line,
+ * and what each of its steps plays, for the step cards.
+ */
 const songMenuSections = computed(() => {
   const c = courses.courses.find((x) => x.id === songMenu.value);
   if (!c) return [];
-  return c.lessonIds.map((id) => {
+  return c.lessonIds.map((id, i) => {
     const l = lessons.lessons.find((x) => x.id === id);
-    return l ? { bars: l.bars * lessonRepeats(l), bpm: l.bpm } : { bars: 0, bpm: 0 };
+    if (!l) return { bars: 0, bpm: 0 };
+    const last = i === c.lessonIds.length - 1;
+    const label = stepLabel(i, c.lessonIds.length);
+    // "PART C" → "Part C": the letter is a name and keeps its capital.
+    const completes = last ? "the song" : `Part ${label.slice(5)}`;
+    const hands: StepHand[] = last ? ["BOTH"] : stepHandsFor(l);
+    return {
+      bars: l.bars * lessonRepeats(l),
+      bpm: l.bpm,
+      describe: Object.fromEntries(hands.map((h) => [h, describeStep(l.notes, h, completes)])),
+    };
   });
 });
 
 function openSong(courseId: string) {
   const c = courses.courses.find((x) => x.id === courseId);
   if (!c) return;
-  lessons.selectId(c.lessonIds[openingStep(c, courses.progressOf(c.id))]);
+  // The suggested step, loaded behind the picker: the first part not yet
+  // complete at its first step not yet passed, or the full song once all is.
+  const st = songState(c, courses.progressOf(c.id), handsOfLesson);
+  const at = st.suggested ?? c.lessonIds.length - 1;
+  lessons.selectId(c.lessonIds[at], st.suggestedHand ?? "BOTH");
   view.value = "trainer";
   songMenu.value = courseId;
 }
 
 /**
- * A section of the song, played straight away — from the picker or from the
- * summary. The lesson-change watcher resets the trainer for it first, so the
- * run starts only after that has happened.
+ * A step of the song — a part, with one hand or both — played straight away,
+ * from the picker or from the summary. The lesson-change watcher resets the
+ * trainer for it first, so the run starts only after that has happened.
  */
-async function playStep(lessonId: string) {
+async function playStep(lessonId: string, hand: StepHand = "BOTH") {
   songMenu.value = null;
-  if (lessonId === lessons.current.id) return onPlay();
-  lessons.selectId(lessonId);
+  if (lessonId === lessons.current.id && hand === lessons.hand) return onPlay();
+  lessons.selectId(lessonId, hand);
   await nextTick();
   await onPlay();
 }
@@ -239,6 +267,8 @@ const laneCanvas = ref<HTMLCanvasElement | null>(null);
 const overviewCanvas = ref<HTMLCanvasElement | null>(null);
 const {
   lesson,
+  hand,
+  gradedCount,
   playing,
   runComplete,
   runResult,
@@ -1364,7 +1394,11 @@ watch(
       <span v-if="view === 'home'" class="wordmark">MELODABLE</span>
 
       <div class="spacer" />
-      <span v-if="view === 'trainer'" class="title">{{ lesson.name }}</span>
+      <!-- A one-hand step says which hand: the lane greys the other, and the
+           title is where the bar names what is being played. -->
+      <span v-if="view === 'trainer'" class="title">{{
+        hand === "BOTH" ? lesson.name : `${lesson.name} · ${HAND_TITLE[hand]}`
+      }}</span>
       <div class="spacer" />
 
       <span v-if="view === 'home'" class="count num">
@@ -1819,7 +1853,7 @@ watch(
       :bpm="Math.round(bpm)"
       :bars="lesson.bars"
       :repeats="totalLoops"
-      :note-count="lesson.notes.length"
+      :note-count="gradedCount"
       :accuracy="runResult.accuracy"
       :best-combo="runResult.bestCombo"
       :previous-best="runResult.previousBest"

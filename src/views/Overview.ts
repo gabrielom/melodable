@@ -301,10 +301,14 @@ export class Overview {
         const row = rowOf(t.lane);
         // Graded notes wear their rating; everything still to come wears its
         // lane's dimmed hue. The same rule, and the same values, as the lanes
-        // below — the strip is a miniature of them, not its own language.
-        ctx.fillStyle = rating
-          ? p.rating[rating]
-          : hueOf(p, f.instrument, hueIndex(row)).dim;
+        // below — the strip is a miniature of them, not its own language. So
+        // the other hand of a one-hand step is greyed here too, as `noteInk`
+        // greys it there.
+        ctx.fillStyle = t.accompaniment
+          ? p.txt3
+          : rating
+            ? p.rating[rating]
+            : hueOf(p, f.instrument, hueIndex(row)).dim;
         ctx.fillRect(Math.round(xOf(r * loop + t.beat)), Math.round(rowTop(row, rows, H)), DOT, DOT);
       });
     }

@@ -37,12 +37,19 @@ import type { LaneFrame } from "@/views/lane-frame";
  * coming reads as notation and nothing else. `mono` drops both, the printed
  * page, where a notehead's colour says nothing and its position says
  * everything. Neither changes what the scorer does.
+ *
+ * The other hand, during a song part's one-hand step (handoff 15), wears
+ * **neither** language: it is not a target, since nothing is asked of it, and
+ * it never gets a result. It is greyed — `txt3`, the palette's quietest ink —
+ * in every mode, `mono` included, because which hand is being learned is not
+ * a colour choice the player made but a fact about the run.
  */
 export function noteInk(
   f: Pick<LaneFrame, "palette" | "instrument" | "countIn" | "colourMode">,
-  inst: Pick<NoteInstance, "resolved" | "rating">,
+  inst: Pick<NoteInstance, "resolved" | "rating"> & { accompaniment?: boolean },
   laneIndex: number,
 ): string {
+  if (inst.accompaniment) return f.palette.txt3;
   if (f.colourMode === "mono") return f.palette.txt;
   const judged = inst.resolved && inst.rating && !f.countIn;
   // Unjudged: the target half. `results` has silenced it, so a note still to

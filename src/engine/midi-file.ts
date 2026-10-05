@@ -20,6 +20,8 @@ export interface RawMidiNote {
   pitch: number;
   velocity: number;
   channel: number;
+  /** Which track of the file it came from, 0-based. */
+  track: number;
   /**
    * `note_off_tick − note_on_tick`. The file already carries this and the
    * importer used to throw it away; a held note in the clip has to survive
@@ -175,7 +177,7 @@ export function parseMidiFile(buffer: ArrayBuffer): ParsedMidi {
         const vel = u8();
         // A note-on with velocity 0 is the conventional note-off.
         if (hi === 0x90 && vel > 0) {
-          const note: RawMidiNote = { tick, pitch, velocity: vel, channel, durationTicks: 0 };
+          const note: RawMidiNote = { tick, pitch, velocity: vel, channel, track: t, durationTicks: 0 };
           // Re-striking a pitch that is still sounding ends the first one
           // here; a key cannot be held twice at once.
           closeNote(open, channel, pitch, tick);
@@ -201,6 +203,35 @@ export function parseMidiFile(buffer: ArrayBuffer): ParsedMidi {
   notes.sort((a, b) => a.tick - b.tick);
   const bpm = Math.round(60000000 / tempoUs);
   return { notes, ppq, bpm, beatsPerBar };
+}
+
+/** A part of a file: the track and channel a note came from. */
+const partOf = (n: RawMidiNote) => n.track * 16 + n.channel;
+
+/**
+ * The hand each part of a piano file is played by, when the file says so:
+ * exactly two parts with notes in them — two tracks, or two channels on one —
+ * the one sitting higher on average on the right. Anything else (one part, or three that
+ * might be melody, chords and bass) says nothing about hands, and the notes
+ * are left for the staff's split to place.
+ */
+export function statedHands(notes: readonly RawMidiNote[]): Map<number, "R" | "L"> | null {
+  const parts = new Map<number, number[]>();
+  for (const n of notes) {
+    const k = partOf(n);
+    const at = parts.get(k);
+    if (at) at.push(n.pitch);
+    else parts.set(k, [n.pitch]);
+  }
+  if (parts.size !== 2) return null;
+  // The mean, so a hand that crosses over now and then still reads as itself.
+  const mean = (ps: number[]) => ps.reduce((t, p) => t + p, 0) / ps.length;
+  const [[a, pa], [b, pb]] = [...parts.entries()];
+  const aHigher = mean(pa) >= mean(pb);
+  return new Map([
+    [a, aHigher ? "R" : "L"],
+    [b, aHigher ? "L" : "R"],
+  ]);
 }
 
 export interface MidiAnalysis {
@@ -282,8 +313,13 @@ export function midiToLesson(
     return remap.get(pitch)!;
   };
 
+  // A piano clip that kept its hands apart says which is which, and its notes
+  // carry it, so a song part's one-hand steps follow the file, not a guess.
+  const hands = instrument === "piano" ? statedHands(parsed.notes) : null;
+
   const notes: NoteEvent[] = raw
     .map((n) => ({
+      ...(hands ? { hand: hands.get(partOf(n)) } : {}),
       time: Number((n.beat - shift).toFixed(4)),
       pitch: instrument === "pads" ? padPitchFor(n.pitch) : n.pitch,
       velocity: n.velocity,

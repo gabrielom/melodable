@@ -164,7 +164,8 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   bar, and past that the list scrolls while the header and buttons hold.
   That cap needs the scrim to be **flex, not grid**: a grid item in an
   auto-sized track has nothing to resolve a percentage max-height against,
-  and the sheet silently grew past the window.
+  and the sheet silently grew past the window. That list is now **pads
+  only** — a piano song gets handoff 15's two panes (next-but-one entry).
   On home a song stands where its first step would be and its steps are not
   drawn. **A song's card is its full song's card, unchanged** — no strip, no
   step count, no progress line; that was built and removed at the user's
@@ -358,8 +359,9 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
 - **Weakest lanes are back, on the history chart's own axis** — the user
   missed them after handoff 09 took them out, chose "beside the chart" from
   three layouts, and handoff 14 (11i) then drew that as **one figure**: a
-  620×166 SVG whose left 424 units are the run history and whose right are up
-  to `WEAKEST_LANES` (3) bars on the same `y = 132 − 1.1v` scale, with a
+  620×166 SVG whose left 372 units are the run history and whose right are up
+  to `WEAKEST_LANES` (**5** since handoff 15, was 3) bars, 24 wide on a 40
+  pitch, on the same `y = 132 − 1.1v` scale, with a
   dashed line carrying this run's score from its dot across them — a bar
   under the line fell short of the run. Lowest first, each in the lane's own
   dimmed hue (`hueOf` at its place in `hueOrder`, so it reads as that lane),
@@ -368,9 +370,15 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   judged on the number shown like `passes`; a clean run has none, and then
   the divider, lanes, dashed line and key go and the plot runs the **whole
   width, exactly as before**. `laneBars` and `PLOT_END` in
-  `components/run-history.ts` are the geometry, pinned in the tests. A long
-  pad name (`CLOSED HAT` is a whole bar pitch at 9px) is set smaller rather
-  than colliding — the frame's lesson is piano, so that case was ours.
+  `components/run-history.ts` are the geometry, pinned in the tests. Fewer
+  lanes keep the pitch and leave the empty slots on the right; the bars are
+  never stretched. **Draw order is bars → dashed line → words**, and each
+  value is outlined in the sheet's surface (`--gutter`, `paint-order:
+  stroke`): the line has to cross every bar to show which beat the run, and a
+  value just under the run's score would otherwise be struck through. A long
+  pad name (`CLOSED HAT` is half again the 40 pitch at 9px) is set smaller,
+  names kept 4 units apart, rather than colliding — the frames' lessons are
+  piano, so that case was ours.
   **The figures are the whole run's.** `Scorer.laneStats` is counted as notes
   resolve (`countLane`, beside `counts`, in `hit` and `sweepMisses`). The
   first version read the surviving instances at the end, and `pruneBefore`
@@ -381,7 +389,7 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   336px beside a panel of lanes and its type shrank with it; the figure is
   now exactly the sheet's content width — **the sheet is 668px border-box**,
   the design's 620 being a content-box figure — so every label is drawn at
-  the size written. Only the plot's end moves (424 or 614).
+  the size written. Only the plot's end moves (372 or 614).
 - **The chart's scores are on hover, and BEST is always drawn.** Hovering a
   run names its score below the dot. The pointer answers to a **strip per
   run** (`hitStrips`), halfway to each neighbour and the height of the plot —
@@ -429,6 +437,53 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   hex in dark (their question 1). Their permanent BEST badge was left out at
   first and is now built, on the user's word, on the best run rather than
   only this one.
+- **Handoff 15: a piano part is learned right hand, left hand, then both.**
+  Each part of a piano song becomes three steps; pads parts, a piano part
+  with notes in only one hand, and the full song are both hands alone
+  (`stepHandsFor`). **A part is complete when its both-hands step passes** —
+  R and L are practice, and passing both completes it even if they were
+  never played. Counting stays per part (the `2 / 5`, the stepper). Nothing
+  is locked. The suggestion is the first incomplete part at its first step
+  not yet passed (`handToPlay`), so a part already complete is never
+  suggested for its hands.
+  **Progress per step lives under `stepKey`**: the lesson id for both hands,
+  `id#R` / `id#L` for one. Both-hands keeps the bare id because that is what
+  every part score was saved under before, so old progress *is* the BOTH
+  best with no migration. **Run history is per step too** (the same key):
+  a right hand alone and both hands together are different exercises.
+  **Which hand plays which note** (`engine/hands.ts`): a clip that kept its
+  hands on two tracks or two channels says so, and the importer writes
+  `NoteEvent.hand` (`statedHands`, by mean pitch — exactly two parts, or it
+  says nothing). Otherwise **the grand staff's own split** (`handSplit`). The
+  handoff says middle C; that is `handSplit`'s default, and using the staff's
+  line instead means a one-hand step is exactly that hand's staff, and the
+  montuno's left-hand C4/D4 stay left — the reason `handSplit` exists.
+  **The trainer during a one-hand step** was undrawn; the user chose the
+  designer's suggestion: **the other hand is played back by the app and
+  drawn greyed, never graded.** Its notes stay in `targets`, marked
+  `accompaniment`, so the lane, staff, key, hues and range are exactly the
+  both-hands ones. The scorer never hits, misses or counts them; striking
+  one near its time is `along` — no charge, **no dot** (it is not a mistake);
+  far from any note it is wrong as ever. `noteInk` greys it (`txt3`) in
+  every colour mode, the overview strip too. Playback is on the **notes
+  bus** at written length (guide bus would be silent by default), and a
+  one-hand stop cancels that bus as well. The bar's title names the hand.
+  The selected hand lives in the lessons store beside the current lesson
+  (`selectId(id, hand)`); every other way of choosing a lesson resets it.
+  **The summary after a one-hand run** says `PART C · LEFT HAND · RUN
+  COMPLETE`, flags `LEFT HAND PASSED` (only a both-hands pass says `PART C
+  COMPLETE`), and **NEXT goes to the next step** — R → L → BOTH, then the
+  next part at its first open step — both confirmed by the user.
+  **The picker for a piano song is two panes**: parts on the left (chip,
+  R/L/BOTH chips, both-hands best; choosing a row only shows its steps) and
+  the chosen part's step cards on the right, each saying what that hand
+  plays (`describeStep`: chords or single notes, how many, lowest to
+  highest). The parts list scrolls on its own past about eight parts at the
+  1050×620 floor; the steps pane holds still. **Two divergences, both
+  ours:** the steps pane heading says `PART C · 16 BARS` where the frame
+  says `BARS 29–44` — parts are separate clips and where one sits in the
+  song is not known, so a position would be a guess; and a part with one
+  hand gets no hand steps (an empty step would pass itself).
 - **Sheet is a third trainer mode, not a third instrument** (handoff 10 §1).
   `ROLL | SHEET` swaps the renderer under the same transport and scorer —
   invariant 4 still holds, and `SheetStaff` is a renderer plus a pitch→staff

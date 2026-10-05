@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { computed, ref, watch } from "vue";
 import type { Lesson } from "@/engine/types";
+import type { StepHand } from "@/engine/hands";
 import { BUILTIN_LESSONS } from "@/data/lessons";
 import { usableImports } from "@/engine/library";
 import { applyEdit, usableEdits, type LessonEdit } from "@/engine/lesson-edit";
@@ -20,13 +21,27 @@ export const useLessons = defineStore("lessons", () => {
   const current = computed(() => lessons.value[currentIndex.value] ?? lessons.value[0]);
   const hasNext = computed(() => currentIndex.value < lessons.value.length - 1);
 
+  /**
+   * Which hand the current lesson is being played with: one, when it is a song
+   * part's one-hand step (handoff 15), and both otherwise. Chosen with the
+   * lesson, and back to both whenever a lesson is chosen without one — it is a
+   * way of playing *this* part, and means nothing for the next.
+   */
+  const hand = ref<StepHand>("BOTH");
+
   function selectIndex(i: number): void {
-    if (i >= 0 && i < lessons.value.length) currentIndex.value = i;
+    if (i >= 0 && i < lessons.value.length) {
+      currentIndex.value = i;
+      hand.value = "BOTH";
+    }
   }
 
-  function selectId(id: string): void {
+  function selectId(id: string, withHand: StepHand = "BOTH"): void {
     const i = lessons.value.findIndex((l) => l.id === id);
-    if (i >= 0) currentIndex.value = i;
+    if (i >= 0) {
+      currentIndex.value = i;
+      hand.value = withHand;
+    }
   }
 
   /**
@@ -40,6 +55,7 @@ export const useLessons = defineStore("lessons", () => {
     for (let i = currentIndex.value + 1; i < lessons.value.length; i++) {
       if (skip(lessons.value[i])) continue;
       currentIndex.value = i;
+      hand.value = "BOTH";
       return current.value;
     }
     return null;
@@ -58,6 +74,7 @@ export const useLessons = defineStore("lessons", () => {
   function addLesson(lesson: Lesson): void {
     lessons.value = [...lessons.value, lesson];
     currentIndex.value = lessons.value.length - 1;
+    hand.value = "BOTH";
     void persistSet("importedLessons", imported.value);
   }
 
@@ -122,6 +139,7 @@ export const useLessons = defineStore("lessons", () => {
     hydrated,
     currentIndex,
     current,
+    hand,
     hasNext,
     selectIndex,
     selectId,

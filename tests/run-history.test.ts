@@ -43,11 +43,11 @@ describe("run-history geometry", () => {
   it("stops the plot short of the lanes, and only its end moves", () => {
     for (const n of [2, 7, 28]) {
       expect(xOf(0, n, PLOT_END.withLanes)).toBe(26);
-      expect(xOf(n - 1, n, PLOT_END.withLanes)).toBeCloseTo(424, 9);
+      expect(xOf(n - 1, n, PLOT_END.withLanes)).toBeCloseTo(372, 9);
     }
     const c = historyChart([0.5, 0.6, 0.72], PLOT_END.withLanes);
-    expect(c.current!.x).toBeCloseTo(424, 9);
-    expect(c.x1).toBe(424);
+    expect(c.current!.x).toBeCloseTo(372, 9);
+    expect(c.x1).toBe(372);
     // The scale is the same either way: a score sits at one height.
     expect(c.current!.y).toBe(historyChart([0.5, 0.6, 0.72]).current!.y);
   });
@@ -282,20 +282,28 @@ describe("the hovered score's chip", () => {
 
 describe("the weakest lanes on the history's axis", () => {
   it("stands a lane exactly as high as a run of the same score", () => {
-    // Handoff 14's own frame: E4 at 64, G4 at 76, C5 at 83.
-    const bars = laneBars([{ accuracy: 0.64 }, { accuracy: 0.76 }, { accuracy: 0.83 }]);
-    expect(bars.map((b) => b.x)).toEqual([468, 522, 576]);
+    // Handoff 15's own frame: E4 64, D5 69, G4 76, C4 80, C5 83.
+    const scores = [0.64, 0.69, 0.76, 0.8, 0.83];
+    const bars = laneBars(scores.map((accuracy) => ({ accuracy })));
+    expect(bars.map((b) => b.x)).toEqual([416, 456, 496, 536, 576]);
+    expect(bars.map((b) => b.cx)).toEqual([428, 468, 508, 548, 588]);
     expect(bars[0].y).toBeCloseTo(61.6, 9);
     expect(bars[0].h).toBeCloseTo(70.4, 9);
-    expect(bars[2].y).toBeCloseTo(40.7, 9);
-    for (const [i, a] of [0.64, 0.76, 0.83].entries()) {
+    expect(bars[1].y).toBeCloseTo(56.1, 9);
+    expect(bars[4].y).toBeCloseTo(40.7, 9);
+    for (const [i, a] of scores.entries()) {
       expect(bars[i].y).toBeCloseTo(yOf(a), 9);
       expect(bars[i].y + bars[i].h).toBeCloseTo(yOf(0), 9);
     }
   });
 
-  it("keeps three bars inside the lanes' column", () => {
-    const bars = laneBars([{ accuracy: 0.1 }, { accuracy: 0.5 }, { accuracy: 0.99 }]);
+  it("keeps the pitch with fewer lanes, leaving the empty slots on the right", () => {
+    // Not stretched to fill: two lanes stand where the frame's first two do.
+    expect(laneBars([{ accuracy: 0.5 }, { accuracy: 0.6 }]).map((b) => b.x)).toEqual([416, 456]);
+  });
+
+  it("keeps five bars inside the lanes' column", () => {
+    const bars = laneBars([0.1, 0.3, 0.5, 0.7, 0.99].map((accuracy) => ({ accuracy })));
     for (const b of bars) {
       expect(b.x).toBeGreaterThanOrEqual(LANES.x0);
       expect(b.x + LANES.barW).toBeLessThanOrEqual(LANES.x1);

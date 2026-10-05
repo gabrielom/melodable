@@ -112,16 +112,19 @@ export const useCourses = defineStore("courses", () => {
     void persistSet("courseProgress", progress.value);
   }
 
-  /** Count a finished run towards its song. See `withRun` for what counts. */
+  /**
+   * Count a finished run towards its song, at the step `key` names — a part's
+   * hand, or both (`stepKey`). See `withRun` for what counts.
+   */
   function record(
     courseId: string,
-    lessonId: string,
+    key: string,
     accuracy: number,
     runBpm: number,
     lessonBpm: number,
   ): void {
     const was = progressOf(courseId);
-    const next = withRun(was, lessonId, accuracy, runBpm, lessonBpm);
+    const next = withRun(was, key, accuracy, runBpm, lessonBpm);
     if (next === was) return;
     progress.value = { ...progress.value, [courseId]: next };
     void persistSet("courseProgress", progress.value);

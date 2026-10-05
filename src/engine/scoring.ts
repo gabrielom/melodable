@@ -36,6 +36,13 @@ export interface TargetNote {
    * travel together and neither has to be re-derived.
    */
   written: number;
+  /**
+   * The other hand, during a song part's one-hand step (handoff 15): played
+   * back by the app and drawn greyed, so the music still sounds and reads
+   * whole, and **never graded** — not hit, not missed, in no tally. Absent on
+   * every note of an ordinary run.
+   */
+  accompaniment?: boolean;
 }
 
 /** One occurrence of a target note in a specific loop, in clock time. */
@@ -47,6 +54,8 @@ export interface NoteInstance {
   time: number;
   resolved: boolean;
   rating: Rating | null;
+  /** The other hand: drawn and played, never graded. See `TargetNote`. */
+  accompaniment: boolean;
 
   // ---- sustain. All zero/null on an instant note, which is most of them.
 
@@ -75,7 +84,13 @@ export type HitResult =
    * it. Not charged — that target's own miss is the charge, and billing both
    * would take two zeros for one mistake.
    */
-  | { kind: "ignored" };
+  | { kind: "ignored" }
+  /**
+   * Struck along with the other hand during a one-hand step, near one of its
+   * notes. Playing it is not a mistake — the hand is simply not the one being
+   * learned — so it costs nothing and leaves no mark.
+   */
+  | { kind: "along" };
 
 /** True for a note long enough that letting go of it is part of playing it. */
 export function isHeldNote(n: { duration: number }): boolean {
@@ -166,10 +181,14 @@ export function classify(dtSeconds: number): Exclude<Rating, "miss"> | null {
  * even, which for a trainer is the right way round: the exercise is to play
  * in time, not to reproduce someone else's wobble.
  */
-export function lessonTargets(lesson: Lesson, laneOf: (pitch: number) => number | null): TargetNote[] {
+export function lessonTargets(
+  lesson: Lesson,
+  laneOf: (pitch: number) => number | null,
+  accompany?: readonly boolean[],
+): TargetNote[] {
   const grid = gridFor(momentsOf(lesson.notes));
   const out: TargetNote[] = [];
-  for (const n of lesson.notes) {
+  lesson.notes.forEach((n, i) => {
     const lane = laneOf(n.pitch);
     // A length under the floor is an ornament, not a hold — normalised away
     // here so nothing downstream has to keep re-deciding.
@@ -180,9 +199,11 @@ export function lessonTargets(lesson: Lesson, laneOf: (pitch: number) => number 
         beat: snapTo(n.time, grid),
         duration: written >= HOLD_MIN_BEATS ? written : 0,
         written,
+        // `accompany` is index for index with the notes: the other hand's.
+        ...(accompany?.[i] ? { accompaniment: true } : {}),
       });
     }
-  }
+  });
   return out.sort((a, b) => a.beat - b.beat);
 }
 
@@ -202,8 +223,8 @@ export interface WeakLane extends LaneStat {
   drift: "early" | "late" | null;
 }
 
-/** How many weakest lanes the summary names. */
-export const WEAKEST_LANES = 3;
+/** How many weakest lanes the summary names (handoff 15 §03; was three). */
+export const WEAKEST_LANES = 5;
 
 /**
  * The lanes that need work most: the lowest first, at most `WEAKEST_LANES`.
@@ -343,6 +364,7 @@ export class Scorer {
         time: timeOf(loopIndex, t.beat),
         resolved: false,
         rating: null,
+        accompaniment: t.accompaniment === true,
         duration: t.duration,
         endTime: timeOf(loopIndex, t.beat + t.duration),
         heldFrom: null,
@@ -376,7 +398,7 @@ export class Scorer {
     let best: NoteInstance | null = null;
     let bestDt = Infinity;
     for (const inst of this.all) {
-      if (inst.lane !== lane || inst.resolved) continue;
+      if (inst.lane !== lane || inst.resolved || inst.accompaniment) continue;
       const dt = Math.abs(inst.time - time);
       if (dt < bestDt) {
         bestDt = dt;
@@ -384,12 +406,19 @@ export class Scorer {
       }
     }
     if (!best || bestDt > TIMING_WINDOWS.loose) {
+      // Playing along with the other hand during a one-hand step: not the
+      // hand being learned, and not a mistake either.
+      for (const inst of this.all) {
+        if (inst.accompaniment && inst.lane === lane && Math.abs(inst.time - time) <= WRONG_GRACE) {
+          return { kind: "along" };
+        }
+      }
       // Near a target of this lane — resolved or not — and so an attempt at
       // it, however bad. `resolved` is deliberately not consulted: by the time
       // a late strike lands, the note it was aimed at has usually already been
       // swept as a miss, and that is exactly the case this must not charge.
       for (const inst of this.all) {
-        if (inst.lane === lane && Math.abs(inst.time - time) <= WRONG_GRACE) {
+        if (!inst.accompaniment && inst.lane === lane && Math.abs(inst.time - time) <= WRONG_GRACE) {
           return { kind: "ignored" };
         }
       }
@@ -499,6 +528,7 @@ export class Scorer {
   sweepMisses(now: number): NoteInstance[] {
     const missed: NoteInstance[] = [];
     for (const inst of this.all) {
+      if (inst.accompaniment) continue;
       if (!inst.resolved && inst.time < now - TIMING_WINDOWS.loose) {
         inst.resolved = true;
         inst.rating = "miss";
@@ -619,6 +649,7 @@ export function previewInstances(
         time: now + beat * secPerBeat,
         resolved: false,
         rating: null,
+        accompaniment: targets[i].accompaniment === true,
         duration: targets[i].duration,
         endTime: now + (beat + targets[i].duration) * secPerBeat,
         heldFrom: null,

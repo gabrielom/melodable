@@ -37,7 +37,8 @@ import {
   tipAt,
   yOf,
 } from "@/components/run-history";
-import type { StepReport } from "@/engine/course";
+import { handToPlay, type StepReport } from "@/engine/course";
+import { HAND_NAME, HAND_TITLE, stepName, type StepHand } from "@/engine/hands";
 import SongProgress from "@/components/SongProgress.vue";
 import { useSheetFit } from "@/composables/useSheetFit";
 
@@ -83,8 +84,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "again"): void;
   (e: "lessons"): void;
-  /** Open another section of the song — any of them; none is locked. */
-  (e: "step", lessonId: string): void;
+  /** Open another step of the song — any of them; none is locked. */
+  (e: "step", lessonId: string, hand: StepHand): void;
 }>();
 
 const settings = useSettings();
@@ -208,12 +209,22 @@ const sentence = (label: string) =>
 
 const song = computed(() => props.step ?? null);
 
-const title = computed(() =>
-  song.value ? `${song.value.label} · RUN COMPLETE` : "RUN COMPLETE",
-);
-const heading = computed(() =>
-  song.value ? `${song.value.courseName} · ${sentence(song.value.label)}` : props.lessonName,
-);
+/**
+ * A one-hand step is named for its hand everywhere the part is named — the
+ * user confirmed handoff 15's suggestion: `PART C · LEFT HAND · RUN COMPLETE`.
+ * A part with no hands to learn apart is only ever played with both, and
+ * keeps its plain name.
+ */
+const title = computed(() => {
+  const s = song.value;
+  return s ? `${stepName(s.label, s.hand, s.handed && s.hand !== "BOTH")} · RUN COMPLETE` : "RUN COMPLETE";
+});
+const heading = computed(() => {
+  const s = song.value;
+  if (!s) return props.lessonName;
+  const part = `${s.courseName} · ${sentence(s.label)}`;
+  return s.handed && s.hand !== "BOTH" ? `${part} · ${HAND_TITLE[s.hand]}` : part;
+});
 
 /**
  * The flag in the header. Inside a song, completing a section is the news, so
@@ -222,12 +233,43 @@ const heading = computed(() =>
  */
 const flag = computed<{ text: string; song: boolean } | null>(() => {
   const s = song.value;
-  if (s?.justPassed) return { text: s.complete ? "SONG COMPLETE" : `${s.label} COMPLETE`, song: true };
+  if (s?.partJustPassed) return { text: s.complete ? "SONG COMPLETE" : `${s.label} COMPLETE`, song: true };
+  // A hand passed is news too, but not a part complete: it says which.
+  if (s?.justPassed) return { text: `${HAND_NAME[s.hand]} PASSED`, song: true };
   return isNewBest.value ? { text: "NEW BEST", song: false } : null;
 });
 
-/** This section, once the run is in. */
-const thisPassed = computed(() => song.value?.steps[song.value.index].state === "passed");
+/** This step, once the run is in. */
+const thisPassed = computed(() => song.value?.passed ?? false);
+
+/** "RUN PART C AGAIN", or for one hand "RUN LEFT HAND AGAIN" — the header names the part. */
+const againLabel = computed(() => {
+  const s = song.value;
+  if (!s) return "RUN AGAIN";
+  return s.hand === "BOTH" ? `RUN ${s.label} AGAIN` : `RUN ${HAND_NAME[s.hand]} AGAIN`;
+});
+
+/**
+ * Where NEXT goes: the next step, the user's answer to handoff 15's question —
+ * right hand, left hand, both, then the next part. Within the part it names
+ * the hand alone; into the next part it names that part and its step.
+ */
+const nextLabel = computed(() => {
+  const s = song.value;
+  const f = s?.following;
+  if (!s || !f) return null;
+  if (f.index === s.index) return `NEXT · ${HAND_NAME[f.hand]}`;
+  return `NEXT · ${stepName(f.step.label, f.hand, f.step.hands.length > 1 && f.hand !== "BOTH")}`;
+});
+function goNext() {
+  const f = song.value?.following;
+  if (f) emit("step", f.step.lessonId, f.hand);
+}
+/** A stepper node: that part, at its first step not yet passed. */
+function openPart(lessonId: string) {
+  const step = song.value?.steps.find((t) => t.lessonId === lessonId);
+  if (step) emit("step", lessonId, handToPlay(step));
+}
 
 /**
  * The run slower than the lesson counts for nothing towards completing it,
@@ -254,10 +296,12 @@ const laneName = (lane: number) =>
 const laneColour = (hue: number) => hueOf(palette.value, props.instrument, hue).dim;
 /**
  * A name's size under its bar. 9px, as drawn, unless it would run into the
- * next bar: a note name never does, but `CLOSED HAT` is a whole pitch wide at
- * that size, so a long pad name is set smaller rather than colliding.
+ * next one: a note name never does, but `CLOSED HAT` is half again the 40
+ * pitch at that size, so a long pad name is set smaller rather than colliding.
+ * Names keep 4 units apart — closer, `CLOSED HAT OPEN HAT` read as one
+ * phrase — and handoff 15's frame is piano, so this case is ours.
  */
-const NAME_ROOM = LANES.pitch - 6;
+const NAME_ROOM = LANES.pitch - 4;
 const MONO_ADVANCE = 0.6;
 const nameSize = (name: string) => Math.min(9, NAME_ROOM / (MONO_ADVANCE * name.length));
 
@@ -372,14 +416,27 @@ const chartLabel = computed(() => {
           <template v-if="hasLanes">
             <line class="divider" :x1="LANES.divider" :x2="LANES.divider" y1="14" y2="164" />
             <line class="zero" :x1="LANES.x0" :x2="LANES.x1" :y1="yOf(0)" :y2="yOf(0)" />
-            <g v-for="b in bars" :key="b.key">
-              <rect :x="b.x" :y="b.y" :width="LANES.barW" :height="b.h" rx="1" :fill="b.colour" />
+            <!-- Bars, then the line, then the words (handoff 15 §03). The line
+                 has to cross every bar — that is how a lane that beat the run
+                 shows — and the values go over it, outlined, so one sitting
+                 right on the line still reads. -->
+            <rect
+              v-for="b in bars"
+              :key="`bar-${b.key}`"
+              :x="b.x"
+              :y="b.y"
+              :width="LANES.barW"
+              :height="b.h"
+              rx="1"
+              :fill="b.colour"
+            />
+            <line class="runline" :x1="chart.current?.x ?? chart.x1" :x2="LANES.x1" :y1="runY" :y2="runY" />
+            <g v-for="b in bars" :key="`words-${b.key}`">
               <text class="lval" :x="b.cx" :y="b.y - 5">{{ b.value }}</text>
               <text class="lname" :x="b.cx" :y="LANES.nameY" :font-size="b.size">{{ b.name }}</text>
               <!-- Which way it leant: a result, so the rating's own colour. -->
               <text class="llean" :x="b.cx" :y="LANES.leanY" :style="{ fill: b.leanColour }">{{ b.lean ?? "—" }}</text>
             </g>
-            <line class="runline" :x1="chart.current?.x ?? chart.x1" :x2="LANES.x1" :y1="runY" :y2="runY" />
           </template>
 
           <!-- Each label sits where the thing it describes sits. -->
@@ -460,31 +517,27 @@ const chartLabel = computed(() => {
         :passed-count="song.passedCount"
         :suggested="song.suggested"
         :played="song.index"
-        :just-passed="song.justPassed"
-        @step="(id) => emit('step', id)"
+        :just-passed="song.partJustPassed"
+        @step="openPart"
       />
 
       <div class="actions">
         <!-- In a song, moving on is always on offer — nothing is locked. It is
              the main button once this section is complete, and beside another
              go at it until then. -->
-        <template v-if="song && song.following && thisPassed">
-          <button class="act primary" @click="emit('step', song.following.lessonId)">
-            <i class="tri" aria-hidden="true" /><span>NEXT · {{ song.following.label }}</span>
+        <template v-if="song && nextLabel && thisPassed">
+          <button class="act primary" @click="goNext">
+            <i class="tri" aria-hidden="true" /><span>{{ nextLabel }}</span>
           </button>
-          <button class="act plain" @click="emit('again')">RUN {{ song.label }} AGAIN</button>
+          <button class="act plain" @click="emit('again')">{{ againLabel }}</button>
         </template>
         <template v-else>
           <button class="act primary" @click="emit('again')">
             <i class="tri" aria-hidden="true" />
-            <span>{{ song ? `RUN ${song.label} AGAIN` : "RUN AGAIN" }}</span>
+            <span>{{ againLabel }}</span>
           </button>
-          <button
-            v-if="song && song.following"
-            class="act plain"
-            @click="emit('step', song.following.lessonId)"
-          >
-            NEXT · {{ song.following.label }}
+          <button v-if="song && nextLabel" class="act plain" @click="goNext">
+            {{ nextLabel }}
           </button>
           <span v-if="slowNote" class="side-note">{{ slowNote }}</span>
         </template>
@@ -595,9 +648,9 @@ const chartLabel = computed(() => {
 /* ------------------------------------------------------------- the figure */
 .figure { display: flex; flex-direction: column; gap: 6px; }
 /* The two headers stand over their halves of the figure, so their widths are
-   the figure's own: the plot ends at 424 of 620 and the lanes start at 454. */
+   the figure's own: the plot ends at 372 of 620 and the lanes start at 402. */
 .fhead { display: flex; align-items: flex-end; height: 15px; }
-.fleft { width: calc(100% * 424 / 620); flex: none; display: flex; align-items: flex-end; }
+.fleft { width: calc(100% * 372 / 620); flex: none; display: flex; align-items: flex-end; }
 .fleft.full { width: 100%; }
 .hscore { margin-left: auto; font-size: 15px; line-height: 1; font-weight: 400; color: var(--txt); }
 .fright {
@@ -626,7 +679,18 @@ const chartLabel = computed(() => {
 .tick { font-size: 8px; fill: var(--txt3); }
 .divider { stroke: var(--hair); stroke-width: 1; }
 .zero { stroke: var(--todo); stroke-width: 1; }
-.lval { font-size: 9.5px; fill: var(--txt); text-anchor: middle; }
+/* Drawn over the dashed line, outlined in the sheet's own surface so a value
+   sitting just under the run's score breaks the line around it rather than
+   being struck through (handoff 15 §03). */
+.lval {
+  font-size: 9.5px;
+  fill: var(--txt);
+  text-anchor: middle;
+  stroke: var(--gutter);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
 .lname { font-weight: 500; fill: var(--txt); text-anchor: middle; }
 .llean { font-size: 7px; font-weight: 500; letter-spacing: 0.8px; fill: var(--txt3); text-anchor: middle; }
 /* This run's score, across the lanes: a lane under the line fell short of

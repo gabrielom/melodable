@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   PASS_MARK,
   type Course,
+  type HandsOf,
+  handToPlay,
   openingStep,
   passes,
   pointsToGo,
@@ -9,6 +11,7 @@ import {
   songState,
   stepLabel,
   stepReport,
+  stepKey,
   stepsOf,
   usableCourses,
   usableProgress,
@@ -129,13 +132,13 @@ describe("stepReport", () => {
     expect(r.passedCount).toBe(2);
     expect(r.complete).toBe(false);
     expect(r.suggested).toBe(2);
-    expect(r.following?.label).toBe("PART C");
+    expect(r.following?.step.label).toBe("PART C");
   });
 
   it("still points on after a run short of the mark — nothing is locked", () => {
     const r = stepReport(SONG, { a: 0.9, b: 0.9 }, { a: 0.9, b: 0.9, c: 0.72 }, "c", true)!;
     expect(r.justPassed).toBe(false);
-    expect(r.following).toMatchObject({ label: "PART D", state: "todo" });
+    expect(r.following?.step).toMatchObject({ label: "PART D", state: "todo" });
   });
 
   it("carries that a run did not qualify, so the screen can say why", () => {
@@ -167,6 +170,86 @@ describe("stepReport", () => {
 
   it("has nothing to say about a lesson outside the song", () => {
     expect(stepReport(SONG, {}, {}, "elsewhere", true)).toBeNull();
+  });
+});
+
+describe("parts learned one hand at a time (handoff 15)", () => {
+  // A piano song: every part has both hands to learn, the full song does not.
+  const PIANO: HandsOf = () => ["R", "L", "BOTH"];
+  const R = (id: string) => stepKey(id, "R");
+  const L = (id: string) => stepKey(id, "L");
+
+  it("gives each part R, L and BOTH, and the full song BOTH alone", () => {
+    const steps = stepsOf(SONG, {}, PIANO);
+    expect(steps.slice(0, 4).every((s) => s.hands.map((h) => h.hand).join() === "R,L,BOTH")).toBe(true);
+    expect(steps[4].hands.map((h) => h.hand)).toEqual(["BOTH"]);
+    expect(songState(SONG, {}, PIANO).stepCount).toBe(13);
+  });
+
+  it("keeps a part score saved before hands existed as its both-hands best", () => {
+    // The key a part's score was always stored under is the BOTH step's.
+    expect(stepKey("c", "BOTH")).toBe("c");
+    const c = stepsOf(SONG, { c: 0.86 }, PIANO)[2];
+    expect(c.hands[2]).toMatchObject({ hand: "BOTH", best: 0.86, state: "passed" });
+    expect(c.state).toBe("passed");
+  });
+
+  it("completes a part on its both-hands step alone — the hands are practice", () => {
+    expect(stepsOf(SONG, { [R("a")]: 0.95, [L("a")]: 0.95 }, PIANO)[0].state).toBe("todo");
+    expect(stepsOf(SONG, { a: 0.8 }, PIANO)[0].state).toBe("passed");
+  });
+
+  it("counts parts, not steps", () => {
+    const p = { a: 0.9, [R("b")]: 0.9, [L("b")]: 0.9 };
+    expect(songState(SONG, p, PIANO).passedCount).toBe(1);
+  });
+
+  it("suggests the first part not complete, at its first step not yet passed", () => {
+    const p = { a: 0.91, b: 0.86, [R("c")]: 0.88, [L("c")]: 0.72 };
+    const st = songState(SONG, p, PIANO);
+    expect(st.suggested).toBe(2);
+    expect(st.suggestedHand).toBe("L");
+    // Nothing played yet: part A, right hand.
+    expect(songState(SONG, {}, PIANO).suggestedHand).toBe("R");
+    // Everything complete: nothing to suggest.
+    const done = { a: 0.9, b: 0.9, c: 0.9, d: 0.9, full: 0.9 };
+    expect(songState(SONG, done, PIANO).suggestedHand).toBeNull();
+  });
+
+  it("plays a complete part with both hands, and an incomplete one at its first open step", () => {
+    const steps = stepsOf(SONG, { a: 0.9, [R("b")]: 0.9 }, PIANO);
+    expect(handToPlay(steps[0])).toBe("BOTH");
+    expect(handToPlay(steps[1])).toBe("L");
+  });
+
+  it("records a hand's run under its own key", () => {
+    expect(withRun({}, L("c"), 0.72, 200, 200)).toEqual({ "c#L": 0.72 });
+  });
+
+  it("sends NEXT through the hands, then on to the next part", () => {
+    const after = { [R("c")]: 0.88 };
+    const r = stepReport(SONG, {}, after, "c", true, "R", PIANO)!;
+    expect(r.hand).toBe("R");
+    expect(r.handed).toBe(true);
+    expect(r.justPassed).toBe(true);
+    expect(r.partJustPassed).toBe(false);
+    expect(r.following).toMatchObject({ index: 2, hand: "L" });
+
+    const both = stepReport(SONG, after, { ...after, c: 0.83 }, "c", true, "BOTH", PIANO)!;
+    expect(both.partJustPassed).toBe(true);
+    expect(both.following).toMatchObject({ index: 3, hand: "R" });
+  });
+
+  it("goes past the hands of a part already complete", () => {
+    const p = { d: 0.9 };
+    const r = stepReport(SONG, p, { ...p, c: 0.85 }, "c", true, "BOTH", PIANO)!;
+    expect(r.following).toMatchObject({ index: 3, hand: "BOTH" });
+  });
+
+  it("keeps a pads song one step a part", () => {
+    const steps = stepsOf(SONG, {}, () => ["BOTH"]);
+    expect(steps.every((s) => s.hands.length === 1)).toBe(true);
+    expect(stepReport(SONG, {}, { a: 0.5 }, "a", true, "BOTH", () => ["BOTH"])!.handed).toBe(false);
   });
 });
 

@@ -20,6 +20,12 @@ export interface NoteEvent {
    * a bar from the head showing how much of the written length you covered.
    */
   duration?: number;
+  /**
+   * The hand that plays it, when the clip said so — a file that kept its
+   * hands on separate tracks or channels. Absent, `handsOf` places the note
+   * by the staff's split. Only a song part's one-hand steps read it.
+   */
+  hand?: "R" | "L";
 }
 
 /**

@@ -550,18 +550,22 @@ describe("weakestLanes", () => {
     total,
   });
 
-  it("names the weakest three, lowest first, with the side each leant to", () => {
+  it("names the weakest five, lowest first, with the side each leant to", () => {
     const got = weakestLanes([
       stat(3, 0.83, 2, 2),
       stat(1, 0.64, 1, 5),
+      stat(6, 0.95),
       stat(4, 0.9),
+      stat(5, 0.92, 0, 3),
       stat(2, 0.76, 4, 1),
     ]);
-    expect(WEAKEST_LANES).toBe(3);
+    expect(WEAKEST_LANES).toBe(5);
     expect(got.map((l) => [l.lane, l.drift])).toEqual([
       [1, "late"],
       [2, "early"],
       [3, null],
+      [4, null],
+      [5, "late"],
     ]);
   });
 
