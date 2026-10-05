@@ -19,6 +19,24 @@ export type Bus = "notes" | "guide" | "metronome";
 
 export const BUSES: readonly Bus[] = ["notes", "guide", "metronome"];
 
+/**
+ * When the piano voice reaches its peak, settles, and falls silent, in
+ * seconds after the onset — always in that order.
+ *
+ * The settle point was a fixed 0.16s, and a note shorter than that put its
+ * silence *before* its settle. Web Audio plays automation events in time
+ * order, not in the order they were scheduled, so the note fell silent and
+ * then swelled back up for a moment: a blip on every short note. Nothing
+ * played that short until the other hand of a one-hand step was played at its
+ * written length — a quaver at 200 BPM is 0.15s.
+ */
+export function noteEnvelope(duration: number): { attack: number; decay: number; release: number } {
+  const release = Math.max(0.02, duration);
+  const attack = Math.min(0.006, release / 4);
+  const decay = Math.min(0.16, attack + (release - attack) / 2);
+  return { attack, decay, release };
+}
+
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -310,10 +328,11 @@ export class AudioEngine {
 
     const lp = this.filter("lowpass", Math.min(freq * 6 + 800, 12000), 0.7);
     const amp = this.ctx.createGain();
+    const env = noteEnvelope(duration);
     amp.gain.setValueAtTime(0.0001, t);
-    amp.gain.exponentialRampToValueAtTime(0.32 * vol, t + 0.006);
-    amp.gain.exponentialRampToValueAtTime(0.12 * vol, t + 0.16);
-    amp.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+    amp.gain.exponentialRampToValueAtTime(0.32 * vol, t + env.attack);
+    amp.gain.exponentialRampToValueAtTime(0.12 * vol, t + env.decay);
+    amp.gain.exponentialRampToValueAtTime(0.0001, t + env.release);
     lp.connect(amp);
     amp.connect(this.out(bus));
 

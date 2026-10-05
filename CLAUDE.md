@@ -466,8 +466,18 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   one near its time is `along` — no charge, **no dot** (it is not a mistake);
   far from any note it is wrong as ever. `noteInk` greys it (`txt3`) in
   every colour mode, the overview strip too. Playback is on the **notes
-  bus** at written length (guide bus would be silent by default), and a
-  one-hand stop cancels that bus as well. The bar's title names the hand.
+  bus** at written length, never under 0.3s (guide bus would be silent by
+  default), and a one-hand *stop* cancels that bus as well; a run that ends
+  on its own does not, so its last chord rings out. **The voice's envelope
+  is `noteEnvelope`**, which keeps peak, settle and silence in order for any
+  length: its settle point was a fixed 0.16s, and a note shorter than that
+  (a quaver at 200 BPM is 0.15s) fell silent and swelled back — Web Audio
+  plays automation in time order. That blip on every short note is what the
+  user heard as the audio "sounding odd". `schedulePlayback` also stops at
+  the run's last pass; the lookahead used to queue a second past the end.
+  With the guide fader up, a one-hand step plays **both** hands from the app
+  — the guide is your hand, the accompaniment the other — which is the guide
+  doing its job, not a duplicate. The bar's title names the hand.
   The selected hand lives in the lessons store beside the current lesson
   (`selectId(id, hand)`); every other way of choosing a lesson resets it.
   **The summary after a one-hand run** says `PART C · LEFT HAND · RUN

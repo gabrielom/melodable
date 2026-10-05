@@ -1191,7 +1191,9 @@ export function useTrainer(
    * written length, a little under the player's own touch.
    */
   function accompanimentVoice(lane: number, at: number, beats: number): void {
-    const seconds = Math.min(4, Math.max(0.15, beats * transport.secPerBeat));
+    // Never shorter than a key struck and let go: a fast quaver at its exact
+    // written length is a click, not a note.
+    const seconds = Math.min(4, Math.max(0.3, beats * transport.secPerBeat));
     audio.playNote(lane, at, 0.55, beats > 0 ? seconds : 0.9, "notes");
   }
 
@@ -1206,7 +1208,10 @@ export function useTrainer(
   function schedulePlayback(fromBeat: number, toBeat: number): void {
     const lb = transport.loopBeats;
     const firstLoop = Math.max(0, Math.floor(fromBeat / lb));
-    const lastLoopIdx = Math.floor(toBeat / lb) + 1;
+    // Never past the run's last pass: the window reaches a second ahead, and
+    // the end of a run would otherwise queue a second of a pass that never
+    // comes.
+    const lastLoopIdx = Math.min(Math.floor(toBeat / lb) + 1, transport.totalLoops - 1);
     for (let L = firstLoop; L <= lastLoopIdx; L++) {
       for (const t of patternTargets.value) {
         const ab = L * lb + t.beat;
@@ -1287,7 +1292,10 @@ export function useTrainer(
 
     transport.stop();
     playing.value = false;
-    cancelPlayback();
+    // A run that played to its end has nothing queued past it (see
+    // `schedulePlayback`), so the notes bus is left alone and the last chord
+    // rings out rather than being cut off under the summary.
+    audio.cancelScheduled("metronome", "guide");
     runComplete.value = true;
 
     // Inside a song the summary's NEXT is the way forward, and it goes to the
