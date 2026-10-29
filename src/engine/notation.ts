@@ -711,6 +711,8 @@ export interface Spelling {
   step: number;
   /** What to draw before the notehead, or null when the signature covers it. */
   accidental: "sharp" | "flat" | "natural" | null;
+  /** The written letter's alteration in semitones: −1 flat, 0 natural, +1 sharp. */
+  alter: number;
 }
 
 /**
@@ -733,6 +735,7 @@ export function spell(pitch: number, fifths: number): Spelling {
     // Exact: the octave that puts this letter, so altered, on this pitch.
     step: ((pitch - alter - LETTER_SEMITONE[letter]) / 12 - 1) * 7 + letter - BOTTOM_LINE_DIATONIC,
     accidental: alter === alters[letter] ? null : alter === 0 ? "natural" : alter > 0 ? "sharp" : "flat",
+    alter,
   });
 
   // In the key, so nothing to draw.
@@ -752,7 +755,55 @@ export function spell(pitch: number, fifths: number): Spelling {
   }
   // Nothing a single accidental can reach (a double alteration). Fall back to
   // the C-major spelling rather than refusing to draw the note at all.
-  return { step: staffStep(pitch), accidental: accidentalFor(pitch) };
+  const accidental = accidentalFor(pitch);
+  return { step: staffStep(pitch), accidental, alter: accidental === "sharp" ? 1 : 0 };
+}
+
+/** One written note, for `barAccidentals`: where it is and how it is altered. */
+export interface WrittenNote {
+  /**
+   * The bar it is in, on its own staff — anything that is equal for two notes
+   * exactly when they share both. An accidental lasts to the end of its bar
+   * and belongs to one staff.
+   */
+  bar: string | number;
+  /** Its line or space (`Spelling.step`). */
+  step: number;
+  /** Its alteration (`Spelling.alter`). */
+  alter: number;
+}
+
+/**
+ * Which accidentals a run of notes actually needs drawn, as a score writes
+ * them: **an accidental lasts until the barline**, on the line or space it was
+ * written on and in that staff only.
+ *
+ * `spell` answers for one note against the signature alone, so every B♮ of a
+ * bar in C minor came out wearing its own natural sign — the second, the
+ * third, every chord of the Lavoe transcription's G7 bar — where the printed
+ * score marks the first and lets it stand. So this walks the notes in order
+ * and keeps, per bar and staff position, the alteration in force: the key's to
+ * begin with, then the last one written. A note matching it is drawn bare;
+ * one that differs draws its own, a natural when it returns to the plain
+ * letter. Each bar starts over from the signature, which is why the next bar's
+ * first B♮ is marked again, as the score marks it.
+ *
+ * `notes` must be in time order (a chord's notes together, in any order).
+ */
+export function barAccidentals(
+  notes: readonly WrittenNote[],
+  fifths: number,
+): ("sharp" | "flat" | "natural" | null)[] {
+  const alters = signatureAlters(fifths);
+  const inForce = new Map<string, number>();
+  return notes.map((n) => {
+    const key = `${n.bar}|${n.step}`;
+    const letter = (((n.step + BOTTOM_LINE_DIATONIC) % 7) + 7) % 7;
+    const current = inForce.get(key) ?? alters[letter];
+    inForce.set(key, n.alter);
+    if (n.alter === current) return null;
+    return n.alter === 0 ? "natural" : n.alter > 0 ? "sharp" : "flat";
+  });
 }
 
 // --------------------------------------------------------- scale degrees

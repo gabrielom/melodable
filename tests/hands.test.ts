@@ -3,9 +3,12 @@ import {
   describeStep,
   handFacts,
   handsOf,
+  needsGrandStaff,
   stepHandsFor,
   stepName,
+  writtenOnBass,
 } from "../src/engine/hands";
+import { handSplit } from "../src/engine/notation";
 import { statedHands, midiToLesson, type ParsedMidi, type RawMidiNote } from "../src/engine/midi-file";
 import { Scorer, lessonTargets } from "../src/engine/scoring";
 import { noteInk } from "../src/views/lane-geometry";
@@ -177,5 +180,46 @@ describe("the other hand of a one-hand step", () => {
         );
       }
     }
+  });
+});
+
+describe("which staff a note is written on", () => {
+  // The Lavoe transcription's own case: the left hand plays F4 in the intro,
+  // the right hand plays the same F4 in section C, and the printed score puts
+  // one on each staff. No line between the hands can do that; the hand can.
+  const LAVOE: NoteEvent[] = [
+    // Intro: left hand G3 C4 E♭4 and F4 under the right hand's chords.
+    n(0, 55, { hand: "L" }), n(0, 60, { hand: "L" }), n(0, 63, { hand: "L" }),
+    n(0, 72, { hand: "R" }), n(0, 75, { hand: "R" }),
+    n(1, 65, { hand: "L" }), n(1, 82, { hand: "R" }),
+    // Section C: the right hand's F4 A♭4 over the left hand's F3.
+    n(4, 53, { hand: "L" }), n(4, 65, { hand: "R" }), n(4, 68, { hand: "R" }),
+  ];
+
+  it("follows the hand the clip says plays it, wherever it reaches", () => {
+    const split = handSplit(LAVOE);
+    expect(writtenOnBass(true, "L", 65, split)).toBe(true); // the left hand's F4
+    expect(writtenOnBass(true, "R", 65, split)).toBe(false); // the right hand's
+    expect(writtenOnBass(true, "L", 63, split)).toBe(true); // E♭4, with its chord
+  });
+
+  it("falls back to the split, in the spelling the split was drawn in", () => {
+    // D♯4/E♭4 is under a split at E4 (step 0): C minor would spell it E♭, a
+    // step higher, which is how every left-hand E♭4 used to reach the treble.
+    expect(writtenOnBass(true, undefined, 63, 0)).toBe(true);
+    expect(writtenOnBass(true, undefined, 65, 0)).toBe(false);
+  });
+
+  it("puts everything on the one staff when there is only one", () => {
+    expect(writtenOnBass(false, "L", 40, 0)).toBe(false);
+  });
+
+  it("gives a clip that states both hands a grand staff, whatever its range", () => {
+    // Both hands inside the treble staff's reach — still two staves, because
+    // the file was written for two.
+    const narrow = [n(0, 64, { hand: "L" }), n(0, 72, { hand: "R" })];
+    expect(needsGrandStaff(narrow)).toBe(true);
+    expect(needsGrandStaff([n(0, 64), n(0, 72)])).toBe(false);
+    expect(needsGrandStaff(LAVOE)).toBe(true);
   });
 });

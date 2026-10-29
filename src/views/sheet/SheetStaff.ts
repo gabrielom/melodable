@@ -26,8 +26,7 @@ import {
   CLEF_TREBLE,
   GRAND_STEP_OFFSET,
   bassSignatureMarks,
-  needsBassStaff,
-  onBassStaff,
+  barAccidentals,
   FIGURE_BEAMS,
   FLAG,
   FLAG_EM_TIP,
@@ -69,6 +68,7 @@ import {
 import { hueOf, readableInk } from "@/engine/theme";
 import type { LaneFrame, LaneRenderer, VisibleWindow } from "@/views/lane-frame";
 import type { NoteInstance } from "@/engine/scoring";
+import { writtenOnBass } from "@/engine/hands";
 
 /** Distance between two staff lines — every other measurement scales off it. */
 const SPACE = 17;
@@ -236,14 +236,18 @@ const MUSIC = '"Noto Music", serif';
 /** A note placed on the staff, ready to draw. */
 interface Placed {
   inst: NoteInstance;
+  /** On the bass staff of a grand staff — see `writtenOnBass`. */
+  bass: boolean;
   x: number;
   /** Centre of the notehead. */
   y: number;
   step: number;
   /** The same position in its *own* staff's coordinates, for ledger lines. */
   local: number;
-  /** What the key leaves to be drawn before this note, if anything. */
+  /** What is drawn before this note, if anything — see `barAccidentals`. */
   accidental: "sharp" | "flat" | "natural" | null;
+  /** Its alteration, which is what decides that. */
+  alter: number;
   fig: Engraved;
   ink: string;
   laneIndex: number;
@@ -288,12 +292,14 @@ interface System {
   /** The whole system's extent, for the grid, the barlines and the playhead. */
   top: number;
   bottom: number;
-  /** Whether a step goes on the bass staff — false outright when there isn't one. */
-  bass(step: number): boolean;
-  /** Canvas y of a step spelled against the treble staff's bottom line. */
-  yOf(step: number): number;
+  /**
+   * Canvas y of a step spelled against the treble staff's bottom line, on the
+   * staff `bass` names. Which staff is the caller's to say — a note's hand
+   * decides it, not its pitch (see `writtenOnBass`).
+   */
+  yOf(step: number, bass: boolean): number;
   /** That step in its own staff's coordinates — what ledger lines count in. */
-  localOf(step: number): number;
+  localOf(step: number, bass: boolean): number;
 }
 
 export class SheetStaff implements LaneRenderer {
@@ -343,7 +349,7 @@ export class SheetStaff implements LaneRenderer {
 
     // The key signature lives in the gutter, so it sets the track's origin.
     const marks = signatureMarks(f.keyFifths);
-    const grand = needsBassStaff(f.hueOrder, f.staffSplit);
+    const grand = f.grandStaff;
     // The brace takes a column of its own in front of the clef rather than
     // sitting on top of it, so the gutter grows by exactly its width — and by
     // the few pixels the wider bass clef pushes the signature, so the metre
@@ -377,9 +383,6 @@ export class SheetStaff implements LaneRenderer {
     };
 
     const p = f.palette;
-    // Staff position of a pitch, as a y on the canvas — on whichever staff it
-    // belongs to, which is the only thing that changes about any of this.
-    const yOfStep = (step: number) => sys.yOf(step);
 
     this.grid(f, trackX, W, sys, xOfBeat);
     this.staffLines(ctx, trackX, W - trackX, sys.trebleTop, p.txt3);
@@ -391,8 +394,11 @@ export class SheetStaff implements LaneRenderer {
     // lane outside the roll's range is.
     for (const m of f.wrongMarks) {
       const beat = f.absBeat + (m.time - f.now) / f.secPerBeat;
-      paintWrong(ctx, xOfBeat(beat), yOfStep(spell(m.lane, f.keyFifths).step),
-        WRONG_DOT_R, p.rating.miss, p.lane);
+      const y = sys.yOf(
+        spell(m.lane, f.keyFifths).step,
+        writtenOnBass(sys.grand, undefined, m.lane, f.staffSplit),
+      );
+      paintWrong(ctx, xOfBeat(beat), y, WRONG_DOT_R, p.rating.miss, p.lane);
     }
 
     this.historyFade(f, trackX, hitX, fieldH);
@@ -480,9 +486,9 @@ export class SheetStaff implements LaneRenderer {
    * the bottom.
    */
   private system(f: LaneFrame, fieldH: number): System {
-    // Where the hands divide, decided by the lesson rather than by C4.
-    const split = f.staffSplit;
-    const grand = needsBassStaff(f.hueOrder, split);
+    // Decided per lesson (`needsGrandStaff`): a clip that states its hands is
+    // written on two staves, as its own score is.
+    const grand = f.grandStaff;
     const height = grand ? STAFF_H * 2 + GRAND_GAP : STAFF_H;
     const trebleTop = Math.round((fieldH - height) / 2);
     const trebleBottom = trebleTop + STAFF_H;
@@ -496,13 +502,11 @@ export class SheetStaff implements LaneRenderer {
       bassBottom,
       top: trebleTop,
       bottom: grand ? bassBottom : trebleBottom,
-      bass: (step) => grand && onBassStaff(step, split),
-      yOf: (step) =>
-        grand && onBassStaff(step, split)
+      yOf: (step, bass) =>
+        grand && bass
           ? bassBottom - (step + GRAND_STEP_OFFSET) * HALF_SPACE
           : trebleBottom - step * HALF_SPACE,
-      localOf: (step) =>
-        grand && onBassStaff(step, split) ? step + GRAND_STEP_OFFSET : step,
+      localOf: (step, bass) => (grand && bass ? step + GRAND_STEP_OFFSET : step),
     };
   }
 
@@ -698,20 +702,23 @@ export class SheetStaff implements LaneRenderer {
     const placed: Placed[] = [];
     for (const inst of f.instances) {
       const x = xOfBeat(this.absBeatOf(inst, f));
-      // Spelled in the lesson's key, so a note the signature already covers
-      // arrives bare and one outside it says so.
-      const { step, accidental } = spell(inst.lane, f.keyFifths);
+      // Spelled in the lesson's key. What it is drawn with waits for the
+      // whole bar (below): the signature alone is not the whole answer.
+      const { step, accidental, alter } = spell(inst.lane, f.keyFifths);
       const laneIndex = Math.max(0, f.hueOrder.indexOf(inst.lane));
+      const bass = writtenOnBass(sys.grand, inst.hand, inst.lane, f.staffSplit);
       placed.push({
         inst,
+        bass,
         x,
-        y: sys.yOf(step),
+        y: sys.yOf(step, bass),
         step,
-        // Ledger lines count from the note's *own* staff, so a low left-hand
-        // note gets them off the bass staff and not off the treble one it is
-        // nowhere near.
-        local: sys.localOf(step),
+        // Ledger lines count from the note's *own* staff, so a left-hand note
+        // reaching up to F4 gets them off the bass staff — as the printed
+        // score draws it — and not off the treble one.
+        local: sys.localOf(step, bass),
         accidental,
+        alter,
         fig: f.noteValues.get(inst.beat) ?? figureFor(inst.duration),
         ink: noteInk(f, inst, laneIndex),
         laneIndex,
@@ -724,6 +731,20 @@ export class SheetStaff implements LaneRenderer {
       (a, b) =>
         a.inst.loopIndex - b.inst.loopIndex || a.inst.beat - b.inst.beat || a.step - b.step,
     );
+    // An accidental lasts to the barline, on its own staff (`barAccidentals`):
+    // the second B♮ of a bar is drawn bare, as the score draws it. A pass of the
+    // pattern is whole bars, so a bar never straddles two passes.
+    const written = barAccidentals(
+      placed.map((n) => ({
+        bar: `${n.inst.loopIndex}:${Math.floor(n.inst.beat / f.beatsPerBar + 1e-6)}:${n.bass ? "b" : "t"}`,
+        step: n.step,
+        alter: n.alter,
+      })),
+      f.keyFifths,
+    );
+    placed.forEach((n, i) => {
+      n.accidental = written[i];
+    });
 
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
@@ -739,7 +760,7 @@ export class SheetStaff implements LaneRenderer {
       for (const bass of [true, false]) {
         this.engrave(
           f,
-          columnsOf(placed.filter((n) => sys.bass(n.step) === bass)),
+          columnsOf(placed.filter((n) => n.bass === bass)),
           size,
           bass ? f.rests.bass : f.rests.treble,
         );
@@ -779,8 +800,12 @@ export class SheetStaff implements LaneRenderer {
     const W = this.el.clientWidth;
     const from = f.absBeat - this.window.behind;
     const to = f.absBeat + this.window.ahead;
-    const firstPass = Math.floor(from / f.loopBeats);
-    const lastPass = Math.ceil(to / f.loopBeats);
+    // Only the run's own passes. The count-in before it is not music yet, and
+    // drawing the pattern's rests there put the piece's *last* bar of rests
+    // in front of its first — a quaver rest on a count-in with nothing to rest
+    // from. Past the end there is nothing at all.
+    const firstPass = Math.max(0, Math.floor(from / f.loopBeats));
+    const lastPass = Math.min(f.passes - 1, Math.ceil(to / f.loopBeats));
 
     ctx.save();
     ctx.fillStyle = f.palette.txt;
@@ -981,7 +1006,9 @@ export class SheetStaff implements LaneRenderer {
     return (
       base +
       degreeRowDrop(
-        sys.localOf(spell(lowest, f.keyFifths).step),
+        // The lesson's lowest note is the left hand's, on the bass staff
+        // whenever there is one.
+        sys.localOf(spell(lowest, f.keyFifths).step, sys.grand),
         HALF_SPACE,
         DEGREE_DROP,
         DEGREE_CLEAR,

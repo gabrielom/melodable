@@ -107,6 +107,12 @@ export interface LaneFrame {
    * answer, so a note never changes staff as the music scrolls.
    */
   staffSplit: number;
+  /**
+   * Sheet: whether the lesson is written on a grand staff (`needsGrandStaff`).
+   * When it is, a note goes on its hand's staff — `NoteInstance.hand` — and
+   * `staffSplit` only places what has no hand: a wrong strike.
+   */
+  grandStaff: boolean;
 
   /** Pads: pad indices in use, left-to-right. */
   padLanes: number[];
@@ -137,6 +143,12 @@ export interface LaneFrame {
   rests: { treble: readonly Rest[]; bass: readonly Rest[] };
   /** Sheet: the playing pattern's length, which is what a rest's beat is within. */
   loopBeats: number;
+  /**
+   * Sheet: how many times the pattern plays — `Infinity` while looping. Rests
+   * are drawn for these passes only, never into the count-in before the run
+   * or past its end.
+   */
+  passes: number;
 }
 
 /**

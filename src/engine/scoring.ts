@@ -12,6 +12,7 @@
  */
 
 import { gridFor, momentsOf, snapLength, snapTo } from "./quantize";
+import type { Hand } from "./hands";
 import type { HoldResult, Lesson, Rating } from "./types";
 import { HOLD_MIN_BEATS, HOLD_WINDOWS, RATING_SCORE, TIMING_WINDOWS, WRONG_GRACE } from "./types";
 
@@ -43,6 +44,11 @@ export interface TargetNote {
    * every note of an ordinary run.
    */
   accompaniment?: boolean;
+  /**
+   * The hand that plays it — and so, on a grand staff, the staff it is
+   * written on. Piano only; see `handsOf` for where it comes from.
+   */
+  hand?: Hand;
 }
 
 /** One occurrence of a target note in a specific loop, in clock time. */
@@ -56,6 +62,8 @@ export interface NoteInstance {
   rating: Rating | null;
   /** The other hand: drawn and played, never graded. See `TargetNote`. */
   accompaniment: boolean;
+  /** The hand that plays it, and so its staff. See `TargetNote`. */
+  hand?: Hand;
 
   // ---- sustain. All zero/null on an instant note, which is most of them.
 
@@ -185,6 +193,7 @@ export function lessonTargets(
   lesson: Lesson,
   laneOf: (pitch: number) => number | null,
   accompany?: readonly boolean[],
+  hands?: readonly Hand[],
 ): TargetNote[] {
   const grid = gridFor(momentsOf(lesson.notes));
   const out: TargetNote[] = [];
@@ -199,8 +208,9 @@ export function lessonTargets(
         beat: snapTo(n.time, grid),
         duration: written >= HOLD_MIN_BEATS ? written : 0,
         written,
-        // `accompany` is index for index with the notes: the other hand's.
+        // `accompany` and `hands` are index for index with the notes.
         ...(accompany?.[i] ? { accompaniment: true } : {}),
+        ...(hands?.[i] ? { hand: hands[i] } : {}),
       });
     }
   });
@@ -365,6 +375,7 @@ export class Scorer {
         resolved: false,
         rating: null,
         accompaniment: t.accompaniment === true,
+        ...(t.hand ? { hand: t.hand } : {}),
         duration: t.duration,
         endTime: timeOf(loopIndex, t.beat + t.duration),
         heldFrom: null,
@@ -650,6 +661,7 @@ export function previewInstances(
         resolved: false,
         rating: null,
         accompaniment: targets[i].accompaniment === true,
+        ...(targets[i].hand ? { hand: targets[i].hand } : {}),
         duration: targets[i].duration,
         endTime: now + (beat + targets[i].duration) * secPerBeat,
         heldFrom: null,

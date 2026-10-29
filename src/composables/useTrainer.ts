@@ -14,7 +14,7 @@ import { useHistory } from "@/stores/history";
 import { useChords } from "@/stores/chords";
 import { useCourses } from "@/stores/courses";
 import { qualifies, stepKey, stepReport, type StepReport } from "@/engine/course";
-import { handsOf, stepHandsFor, type StepHand } from "@/engine/hands";
+import { handsOf, needsGrandStaff, stepHandsFor, type StepHand } from "@/engine/hands";
 import { authoredKey } from "@/engine/lesson-edit";
 import type { HoldResult, LinkState, Rating } from "@/engine/types";
 import {
@@ -44,15 +44,7 @@ import { PadLanes } from "@/views/pads/PadLanes";
 import { PianoRoll } from "@/views/piano/PianoRoll";
 import { SheetStaff } from "@/views/sheet/SheetStaff";
 import { useNotationFont } from "@/composables/useNotationFont";
-import {
-  engraveOnsets,
-  handSplit,
-  keySignatureFor,
-  needsBassStaff,
-  onBassStaff,
-  restsFor,
-  staffStep,
-} from "@/engine/notation";
+import { engraveOnsets, handSplit, keySignatureFor, restsFor } from "@/engine/notation";
 import { chordsForLoop, diatonicTriad, hasHarmony } from "@/engine/harmony";
 import {
   clampRegion,
@@ -203,6 +195,15 @@ export function useTrainer(
   });
 
   /**
+   * The hand each note is played with, index for index with `lesson.notes` —
+   * piano only. It is also the staff a note is written on: a clip that kept
+   * its hands apart is engraved the way its own score is, the left hand on the
+   * bass staff wherever it reaches, and a one-hand step plays exactly one
+   * staff's notes.
+   */
+  const noteHands = computed(() => (isPiano.value ? handsOf(lesson.value.notes) : undefined));
+
+  /**
    * The notes of the other hand, index for index with `lesson.notes`, during
    * a one-hand step — undefined otherwise. They stay in `targets` so the lane,
    * the staff, the key and the hues are exactly the both-hands ones; they are
@@ -210,11 +211,14 @@ export function useTrainer(
    * mark.
    */
   const accompany = computed(() => {
-    if (hand.value === "BOTH") return undefined;
-    return handsOf(lesson.value.notes).map((h) => h !== hand.value);
+    const hands = noteHands.value;
+    if (hand.value === "BOTH" || !hands) return undefined;
+    return hands.map((h) => h !== hand.value);
   });
 
-  const targets = computed(() => lessonTargets(lesson.value, laneOf, accompany.value));
+  const targets = computed(() =>
+    lessonTargets(lesson.value, laneOf, accompany.value, noteHands.value),
+  );
   /** The steps a song part has, for the summary's report — by lesson id. */
   function handsOfLesson(id: string): StepHand[] {
     const l = lessons.lessons.find((x) => x.id === id);
@@ -318,6 +322,9 @@ export function useTrainer(
    */
   const staffSplit = computed(() => (isPiano.value ? handSplit(lesson.value.notes) : 0));
 
+  /** Whether the sheet draws a grand staff for this lesson (`needsGrandStaff`). */
+  const grandStaff = computed(() => isPiano.value && needsGrandStaff(lesson.value.notes));
+
   /**
    * The silences, as rests, split by staff.
    *
@@ -328,7 +335,6 @@ export function useTrainer(
    */
   const rests = computed(() => {
     if (!isPiano.value) return { treble: [], bass: [] };
-    const split = staffSplit.value;
     const bars = patternBeats.value;
     const pick = (notes: typeof patternTargets.value) =>
       restsFor(notes, lesson.value.beatsPerBar, bars);
@@ -336,10 +342,11 @@ export function useTrainer(
     // every note is "treble", so asking for the bass staff's rests hands
     // `restsFor` an empty set and gets back a bar rest for every bar of the
     // piece — silence for a staff that is carrying the whole lesson.
-    if (!needsBassStaff(lessonPitches.value, split)) {
+    if (!grandStaff.value) {
       return { treble: pick(patternTargets.value), bass: [] };
     }
-    const onBass = (t: { lane: number }) => onBassStaff(staffStep(t.lane), split);
+    // By hand, the same answer the notes' own staves come from.
+    const onBass = (t: { hand?: string }) => t.hand === "L";
     return {
       treble: pick(patternTargets.value.filter((t) => !onBass(t))),
       bass: pick(patternTargets.value.filter(onBass)),
@@ -672,6 +679,8 @@ export function useTrainer(
       instrument: lesson.value.instrument,
       hueOrder: isPiano.value ? lessonPitches.value : lanes.value,
       staffSplit: staffSplit.value,
+      grandStaff: grandStaff.value,
+      passes: transport.totalLoops,
       padLanes: lanes.value,
       padLayout: settings.padLayout,
       lowNote: pianoRange.value[0],

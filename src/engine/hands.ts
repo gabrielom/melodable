@@ -17,7 +17,7 @@
  * also means a one-hand step plays exactly the notes on that hand's staff.
  */
 import type { NoteEvent } from "./types";
-import { handSplit, onBassStaff, staffStep } from "./notation";
+import { handSplit, needsBassStaff, onBassStaff, staffStep } from "./notation";
 import { noteName } from "./pitch";
 
 export type Hand = "R" | "L";
@@ -60,6 +60,47 @@ export function handsOf(notes: readonly NoteEvent[]): Hand[] {
   return notes.map((n) =>
     isHand(n.hand) ? n.hand : onBassStaff(staffStep(n.pitch), split) ? "L" : "R",
   );
+}
+
+/**
+ * Whether a note goes on the bass staff of a grand staff.
+ *
+ * **By the hand that plays it**, which is how a score is written: the left
+ * hand's staff is the bass one wherever the hand reaches. The imported Lavoe
+ * transcription is the proof that pitch cannot decide it — its left hand
+ * plays F4 in the intro and its right hand plays the same F4 in section C,
+ * and the printed score has one on each staff, so no split line places both.
+ * The file's channels do, and the importer keeps them as `NoteEvent.hand`.
+ *
+ * Without a hand — a strike that hit nothing — the lesson's split places it,
+ * read off `staffStep`, the same spelling `handSplit` drew the line in. The
+ * sheet used to compare the line against the *key's* spelling instead, and in
+ * a flat key E♭4 (D♯4 to `handSplit`) is a step higher than the line was
+ * drawn for: every left-hand E♭4 of the Lavoe climbed onto the treble staff.
+ */
+export function writtenOnBass(
+  grand: boolean,
+  hand: Hand | undefined,
+  lane: number,
+  split: number,
+): boolean {
+  if (!grand) return false;
+  return hand ? hand === "L" : onBassStaff(staffStep(lane), split);
+}
+
+/**
+ * Whether a lesson is written on a grand staff.
+ *
+ * A clip that states both hands was written for two staves, so it gets them,
+ * whatever its range: that is the score the file came from. Otherwise the
+ * range decides (`needsBassStaff`) — a melody that merely dips keeps one
+ * staff and its ledger lines.
+ */
+export function needsGrandStaff(notes: readonly NoteEvent[]): boolean {
+  const stated = new Set(notes.map((n) => n.hand).filter(isHand));
+  if (stated.size === 2) return true;
+  const pitches = [...new Set(notes.map((n) => n.pitch))];
+  return needsBassStaff(pitches, handSplit(notes));
 }
 
 /**

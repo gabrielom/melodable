@@ -564,6 +564,36 @@ Note where the app has **deliberately diverged from the plan**: the plan's adapt
   (`bassSignatureMarks`), which keeps every accidental on the staff up to six
   either way; the seventh flat lands a space under the bottom line and is left
   there, no lesson having ever derived it.
+- **A note is written on its hand's staff, and the split only places what
+  has no hand.** The user put the printed Lavoe transcription beside the
+  sheet and asked for it "written the same way". Its left hand plays F4 in
+  the intro and its right hand plays the same F4 in section C, and the score
+  puts one on each staff — **no split line can place both**, which is the
+  thing to understand before touching this. The file's two channels can, and
+  the importer already keeps them as `NoteEvent.hand` (`statedHands`). So
+  `targets` carry each note's hand (`handsOf`: stated, else the split) and
+  `writtenOnBass` puts `L` on the bass staff wherever it reaches; the rests
+  are split by the same hand. A clip that states both hands gets a grand
+  staff whatever its range (`needsGrandStaff`): it was written for two.
+  The fallback had its own bug, fixed with it: `handSplit` draws its line in
+  `staffStep`'s sharp spelling, and the sheet compared it against the
+  **key's** spelling — in C minor E♭4 is a step above D♯4, so with the line at
+  E4 every left-hand G3–C4–E♭4 chord lost its top note to the treble staff.
+  Everything that places a note now reads `staffStep`, so the line and the
+  notes agree. A wrong strike has no hand and is the one thing still placed
+  by the split. **A clip imported before handoff 15 carries no hands** —
+  only re-importing it brings them, the channels being gone from the store.
+- **An accidental lasts until the barline**, on its own line or space and its
+  own staff (`barAccidentals`). `spell` answers one note against the
+  signature alone, so every B♮ of a C-minor bar wore its own natural — four
+  on one G7 chord bar — where the score marks the first and lets it stand.
+  Each bar starts over from the signature, so the next bar's first B♮ is
+  marked again, as printed. A note returning to the key's alteration in the
+  same bar gets its cancelling accidental.
+- **Rests are drawn for the run's own passes only** (`LaneFrame.passes`).
+  The sheet repeated the pattern's rests for every pass the window touched,
+  the count-in's included, so the piece's last bar of rests appeared in the
+  bar before its first.
 - **Three more numbers measured off Noto Music, and one of them is a bearing.**
   The bass clef is seated on the **midpoint of its two dots** (`0.6445em`) —
   the dots straddle the F line, and that is the font saying where the clef

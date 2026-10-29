@@ -124,6 +124,7 @@ export function regionTargets(
         duration: t.duration,
         written: t.written,
         ...(t.accompaniment ? { accompaniment: true } : {}),
+        ...(t.hand ? { hand: t.hand } : {}),
       });
       sources.push({ loopIndex: r, index });
     });

@@ -35,6 +35,7 @@ import {
   signatureAlters,
   signatureMarks,
   spell,
+  barAccidentals,
   beatsOf,
   engraveOnsets,
   restsFor,
@@ -659,7 +660,7 @@ describe("spell", () => {
     // `staffStep` and `accidentalFor` are the old, key-less pair. In C they
     // are still right, and this pins that nothing moved for existing lessons.
     for (let p = 36; p <= 96; p++) {
-      expect(spell(p, 0)).toEqual({ step: staffStep(p), accidental: accidentalFor(p) });
+      expect(spell(p, 0)).toMatchObject({ step: staffStep(p), accidental: accidentalFor(p) });
     }
   });
 
@@ -669,20 +670,20 @@ describe("spell", () => {
 
   it("keeps a sharpened note on its unaltered letter", () => {
     // F♯5 in E major sits on the top line, where F sits, and takes nothing.
-    expect(spell(78, 4)).toEqual({ step: 8, accidental: null });
+    expect(spell(78, 4)).toEqual({ step: 8, accidental: null, alter: 1 });
     // In C it is the same line, but now it has to say so.
-    expect(spell(78, 0)).toEqual({ step: 8, accidental: "sharp" });
+    expect(spell(78, 0)).toEqual({ step: 8, accidental: "sharp", alter: 1 });
   });
 
   it("asks for a natural where the signature would sharpen", () => {
     // F♮5 in E major: the signature says F♯, so the F has to be cancelled.
-    expect(spell(77, 4)).toEqual({ step: 8, accidental: "natural" });
+    expect(spell(77, 4)).toEqual({ step: 8, accidental: "natural", alter: 0 });
   });
 
   it("spells a flat key with flats, not their sharp equivalents", () => {
     // B♭4 in F major is a B on the third line, covered by the signature —
     // not the A♯ the key-less spelling gave it.
-    expect(spell(70, -1)).toEqual({ step: 4, accidental: null });
+    expect(spell(70, -1)).toEqual({ step: 4, accidental: null, alter: -1 });
     expect(spell(70, 0).accidental).toBe("sharp");
   });
 
@@ -712,6 +713,57 @@ describe("spell", () => {
       const tonic = ((fifths * 7) % 12 + 12) % 12;
       for (const p of major(tonic)) expect(spell(p, fifths).accidental).toBeNull();
     }
+  });
+
+  it("says how the written letter is altered", () => {
+    // B♮4 in C minor: the letter B, plain — which the signature would flatten.
+    expect(spell(71, -3)).toMatchObject({ step: 4, accidental: "natural", alter: 0 });
+    // E♭4, covered by the signature, is still a flattened E.
+    expect(spell(63, -3)).toMatchObject({ step: 0, accidental: null, alter: -1 });
+  });
+});
+
+describe("barAccidentals", () => {
+  const CMIN = -3;
+  /** Notes as `spell` writes them, one bar and staff unless told otherwise. */
+  const at = (pitch: number, bar: string | number = "0:t") => {
+    const { step, alter } = spell(pitch, CMIN);
+    return { bar, step, alter };
+  };
+
+  it("marks the first B♮ of a bar in C minor and lets the rest stand", () => {
+    // The Lavoe's Coro, G bars: G B♮ D G G B♮ D G — one natural, as printed.
+    const bar = [67, 71, 74, 67, 67, 71, 74, 67].map((p) => at(p));
+    expect(barAccidentals(bar, CMIN)).toEqual([null, "natural", null, null, null, null, null, null]);
+  });
+
+  it("marks it again in the next bar, where the signature is back in force", () => {
+    const two = [at(71, "0:t"), at(71, "0:t"), at(71, "1:t")];
+    expect(barAccidentals(two, CMIN)).toEqual(["natural", null, "natural"]);
+  });
+
+  it("cancels its own accidental when the bar returns to the key's note", () => {
+    // B♮ then B♭ in one bar: the flat has to be written back.
+    expect(barAccidentals([at(71), at(70)], CMIN)).toEqual(["natural", "flat"]);
+  });
+
+  it("holds an accidental to its own line and its own staff", () => {
+    // B♮4 then B♮3 is two staff positions; the same B♮4 on the other staff is
+    // another staff. Each is marked.
+    expect(barAccidentals([at(71), at(59)], CMIN)).toEqual(["natural", "natural"]);
+    expect(barAccidentals([at(71, "0:t"), at(71, "0:b")], CMIN)).toEqual(["natural", "natural"]);
+  });
+
+  it("marks every note of a chord that needs it, once", () => {
+    // The final G7 bar: [B♮4 D5 F5] four times — the naturals on the first.
+    const chord = () => [at(71), at(74), at(77)];
+    const bar = [...chord(), ...chord(), ...chord(), ...chord()];
+    expect(barAccidentals(bar, CMIN).filter(Boolean)).toEqual(["natural"]);
+  });
+
+  it("draws nothing for notes the signature covers", () => {
+    const scale = [60, 62, 63, 65, 67, 68, 70].map((p) => at(p));
+    expect(barAccidentals(scale, CMIN).every((a) => a === null)).toBe(true);
   });
 });
 
